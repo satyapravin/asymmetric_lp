@@ -467,8 +467,31 @@ class BacktestEngine:
             return False
         
         current_ratio = total_value_0 / total_value
-        target_ratio = self.config.TARGET_INVENTORY_RATIO
-        deviation = abs(current_ratio - target_ratio)
+        
+        # Use the inventory model to get the dynamic target ratio
+        try:
+            # Convert balances to wei for model (assuming 18 decimals for both tokens)
+            token0_balance_wei = int(self.balance_0 * 1e18)
+            token1_balance_wei = int(self.balance_1 * 1e18)
+            
+            # Get model calculation
+            model_result = self.inventory_model.calculate_lp_ranges(
+                token0_balance=token0_balance_wei,
+                token1_balance=token1_balance_wei,
+                spot_price=current_price,
+                price_history=self.price_history,
+                token_a_address=self.config.TOKEN_A_ADDRESS,
+                token_b_address=self.config.TOKEN_B_ADDRESS,
+                client=None  # Not needed for backtesting
+            )
+            
+            target_ratio = model_result.get('target_ratio', self.config.TARGET_INVENTORY_RATIO)
+            deviation = abs(current_ratio - target_ratio)
+            
+        except Exception as e:
+            logger.warning(f"Error getting model target ratio: {e}, using config default")
+            target_ratio = self.config.TARGET_INVENTORY_RATIO
+            deviation = abs(current_ratio - target_ratio)
         
         # Reasonable rebalancing threshold for backtesting
         # Use 10% threshold to avoid excessive rebalancing
