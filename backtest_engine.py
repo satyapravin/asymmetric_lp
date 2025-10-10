@@ -400,29 +400,39 @@ class BacktestEngine:
         # Convert to numpy array
         values = np.array(self.portfolio_values)
         
-        # Calculate minute returns from portfolio values
-        returns = np.diff(values) / values[:-1]
+        # Calculate daily returns from portfolio values for realistic Sharpe ratio
+        # Resample to daily returns (assuming 1440 minutes per day)
+        minutes_per_day = 1440
+        daily_returns = []
         
-        if len(returns) < 2:
+        for i in range(0, len(values) - 1, minutes_per_day):
+            if i + minutes_per_day < len(values):
+                daily_return = (values[i + minutes_per_day] - values[i]) / values[i]
+                daily_returns.append(daily_return)
+        
+        if len(daily_returns) < 2:
             return 0.0
         
-        # Calculate Sharpe ratio correctly:
-        # 1. Average minute return
-        # 2. Divide by minute return volatility
-        # 3. Multiply by sqrt(365 * 1440)
+        # Convert to numpy array
+        daily_returns = np.array(daily_returns)
         
-        # Average minute return
-        avg_minute_return = np.mean(returns)
+        # Calculate Sharpe ratio from daily returns:
+        # 1. Average daily return
+        # 2. Divide by daily return volatility  
+        # 3. Multiply by sqrt(365)
         
-        # Minute return volatility
-        minute_volatility = np.std(returns)
+        # Average daily return
+        avg_daily_return = np.mean(daily_returns)
+        
+        # Daily return volatility
+        daily_volatility = np.std(daily_returns)
         
         # Calculate Sharpe ratio
-        if minute_volatility == 0:
+        if daily_volatility == 0:
             return 0.0
         
-        # Sharpe ratio = (avg return / volatility) * sqrt(minutes per year)
-        sharpe_ratio = (avg_minute_return / minute_volatility) * np.sqrt(365 * 1440)
+        # Sharpe ratio = (avg daily return / daily volatility) * sqrt(365)
+        sharpe_ratio = (avg_daily_return / daily_volatility) * np.sqrt(365)
         
         return sharpe_ratio
     
