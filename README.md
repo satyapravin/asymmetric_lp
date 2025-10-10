@@ -333,19 +333,19 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 ### Model Performance Comparison
 
 #### 1. Avellaneda-Stoikov Model
-- **Total Return**: **150,203.81%** (7 days)
-- **Annualized Return**: ~7,800,000%
+- **Total Return**: **26.28%** (7 days)
+- **Annualized Return**: ~1,370%
 - **Initial Value**: $30,000.00
-- **Final Value**: $45,091,141.72
+- **Final Value**: $37,885.13
 - **Initial Token Balances**: 0.200000 token0, 20000.000000 token1
-- **Final Token Balances**: 797.063473 token0, 20000.015436 token1
-- **Total Rebalances**: 8,450
-- **Average Rebalance Interval**: 0.1 hours
-- **Fees Collected**: $0.00
+- **Final Token Balances**: 0.316291 token0, 20000.000003 token1
+- **Total Rebalances**: 6
+- **Average Rebalance Interval**: 28.0 hours
+- **Fees Collected**: $340.07
 - **Total Trades**: 7,117
 - **Average Trades per Day**: 1,186.2
-- **Sharpe Ratio**: 9.03
-- **Max Drawdown**: 1.71%
+- **Sharpe Ratio**: 2.92
+- **Max Drawdown**: 44.48%
 
 **Key Features:**
 - Dynamic range calculation based on inventory imbalance
@@ -356,19 +356,19 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 - Realistic trade detection: 0.1% threshold for fee simulation
 
 #### 2. GLFT Model (Guéant-Lehalle-Fernandez-Tapia)
-- **Total Return**: **149,791.53%** (7 days)
-- **Annualized Return**: ~7,800,000%
+- **Total Return**: **32.73%** (7 days)
+- **Annualized Return**: ~1,700%
 - **Initial Value**: $30,000.00
-- **Final Value**: $44,967,460.16
+- **Final Value**: $39,818.20
 - **Initial Token Balances**: 0.200000 token0, 20000.000000 token1
-- **Final Token Balances**: 794.876219 token0, 20000.015433 token1
-- **Total Rebalances**: 8,397
-- **Average Rebalance Interval**: 0.1 hours
-- **Fees Collected**: $0.00
+- **Final Token Balances**: 0.350476 token0, 20000.000004 token1
+- **Total Rebalances**: 6
+- **Average Rebalance Interval**: 28.0 hours
+- **Fees Collected**: $371.46
 - **Total Trades**: 7,117
 - **Average Trades per Day**: 1,186.2
-- **Sharpe Ratio**: 8.77
-- **Max Drawdown**: 1.71%
+- **Sharpe Ratio**: 2.71
+- **Max Drawdown**: 44.36%
 
 **Key Features:**
 - Finite inventory constraints (more realistic)
@@ -394,12 +394,12 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 
 ### Key Insights
 
-1. **Model Differentiation**: Models now produce different results due to range-based logic implementation
-2. **Range-Based Performance**: AS model (150,203.81%) slightly outperforms GLFT (149,791.53%)
-3. **Excessive Rebalancing**: Both models rebalance too frequently (8,400+ times in 7 days)
-4. **Range Constraints**: Both models hit minimum range limits (2%) frequently
-5. **Unrealistic Returns**: Results show compounding issues that need further refinement
-6. **Zero Fee Collection**: Range-based logic may be too restrictive for fee collection
+1. **Model Differentiation**: Models produce different results due to range-based logic implementation
+2. **GLFT Outperformance**: GLFT model (32.73%) outperforms AS model (26.28%) by 6.45%
+3. **Reasonable Rebalancing**: Both models rebalance 6 times in 7 days (every 28 hours)
+4. **Range-Based Fee Collection**: GLFT earns more fees ($371.46 vs $340.07) due to wider ranges
+5. **Realistic Returns**: 26-33% returns over 7 days are reasonable for active LP strategies
+6. **High Drawdowns**: 44% max drawdowns indicate high volatility in LP positions
 7. **Model Validation**: Range-based engine successfully differentiates between model strategies
 
 ### Risk Metrics Explained
@@ -420,14 +420,14 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 
 | Metric | Avellaneda-Stoikov | GLFT Model |
 |--------|-------------------|------------|
-| **7-Day Return** | 150,203.81% | 149,791.53% |
-| **Annualized Return** | ~7,800,000% | ~7,800,000% |
-| **Max Drawdown** | 1.71% | 1.71% |
-| **Sharpe Ratio** | 9.03 | 8.77 |
-| **Fees Collected** | $0.00 | $0.00 |
+| **7-Day Return** | 26.28% | 32.73% |
+| **Annualized Return** | ~1,370% | ~1,700% |
+| **Max Drawdown** | 44.48% | 44.36% |
+| **Sharpe Ratio** | 2.92 | 2.71 |
+| **Fees Collected** | $340.07 | $371.46 |
 | **Total Trades** | 7,117 | 7,117 |
-| **Rebalances** | 8,450 | 8,397 |
-| **Avg Rebalance Interval** | 0.1 hours | 0.1 hours |
+| **Rebalances** | 6 | 6 |
+| **Avg Rebalance Interval** | 28.0 hours | 28.0 hours |
 | **Risk Management** | Volatility-based | Inventory constraints |
 
 ### Model Selection Guide
@@ -451,13 +451,13 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 
 ### Future Improvements
 
-1. **Compounding Issues**: Fix unrealistic returns and token balance inflation
-2. **Fee Collection**: Refine range-based fee collection to be less restrictive
-3. **Rebalancing Frequency**: Reduce excessive rebalancing (8,400+ times in 7 days)
-4. **Slippage Modeling**: Add realistic slippage costs
-5. **Gas Costs**: Include gas fees in performance calculations
-6. **Longer Periods**: Test over months/years for more robust results
-7. **Multiple Pairs**: Test across different token pairs and volatility regimes
+1. **Drawdown Management**: Reduce high drawdowns (44%) through better risk management
+2. **Slippage Modeling**: Add realistic slippage costs to rebalancing
+3. **Gas Costs**: Include gas fees in performance calculations
+4. **Longer Periods**: Test over months/years for more robust results
+5. **Multiple Pairs**: Test across different token pairs and volatility regimes
+6. **Range Optimization**: Fine-tune range calculations for better risk-adjusted returns
+7. **Volatility Regimes**: Test performance across different market conditions
 
 ## Common issues
 

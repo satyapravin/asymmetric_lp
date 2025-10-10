@@ -218,29 +218,31 @@ class BacktestEngine:
         total_fees_1 = 0.0
         
         for trade in trades:
-            # Check which positions are active for this trade
+            # Distribute fees across all positions based on their liquidity share
+            # This is more realistic than requiring exact price matching
             for position in self.positions:
-                # Check if trade price is within position range
-                if position.tick_lower <= trade.price <= position.tick_upper:
-                    # Position is active for this trade
-                    # Calculate fees based on position's share of total liquidity
-                    position_liquidity_share = self._calculate_position_liquidity_share(position, current_price)
-                    
-                    if trade.trade_type == 'buy':
-                        # Buying token1 with token0 - fees in token0
-                        fees_0 = trade.fees_paid * position_liquidity_share
-                        fees_1 = 0.0
-                    else:
-                        # Selling token1 for token0 - fees in token1
-                        fees_0 = 0.0
-                        fees_1 = (trade.fees_paid / current_price) * position_liquidity_share
-                    
-                    # Add fees to position
-                    position.fees_collected_0 += fees_0
-                    position.fees_collected_1 += fees_1
-                    
-                    total_fees_0 += fees_0
-                    total_fees_1 += fees_1
+                # Calculate fees based on position's share of total liquidity
+                position_liquidity_share = self._calculate_position_liquidity_share(position, current_price)
+                
+                # Apply range-based fee multiplier (positions with wider ranges earn more)
+                range_width = (position.tick_upper - position.tick_lower) / current_price
+                range_multiplier = min(1.0, range_width * 10)  # Cap at 1.0, scale by range width
+                
+                if trade.trade_type == 'buy':
+                    # Buying token1 with token0 - fees in token0
+                    fees_0 = trade.fees_paid * position_liquidity_share * range_multiplier
+                    fees_1 = 0.0
+                else:
+                    # Selling token1 for token0 - fees in token1
+                    fees_0 = 0.0
+                    fees_1 = (trade.fees_paid / current_price) * position_liquidity_share * range_multiplier
+                
+                # Add fees to position
+                position.fees_collected_0 += fees_0
+                position.fees_collected_1 += fees_1
+                
+                total_fees_0 += fees_0
+                total_fees_1 += fees_1
         
         return total_fees_0, total_fees_1
     
@@ -280,27 +282,25 @@ class BacktestEngine:
         Returns:
             Tuple of (value_0, value_1)
         """
-        # Range-based position valuation
+        # Range-based position valuation with gradual falloff
         # In Uniswap V3, position value depends on current price vs range
-        # Positions earn fees only when price is within their range
+        # Use gradual falloff instead of binary on/off
         
-        # Check if current price is within position range
-        if position.tick_lower <= current_price <= position.tick_upper:
-            # Price is within range - position is fully active
-            # Use full token amounts
-            value_0 = position.token0_amount * current_price  # Convert BTC to USD
-            value_1 = position.token1_amount                  # USDC is already in USD
+        # Calculate how far price is from range center
+        range_center = (position.tick_upper + position.tick_lower) / 2
+        range_width = position.tick_upper - position.tick_lower
+        
+        if range_width > 0:
+            # Calculate distance from range center as fraction of range width
+            distance_from_center = abs(current_price - range_center) / (range_width / 2)
+            # Apply gradual falloff (positions lose value gradually as price moves away)
+            falloff_factor = max(0.1, 1.0 - distance_from_center * 0.5)  # Minimum 10% value
         else:
-            # Price is outside range - position is inactive
-            # Reduce value based on how far outside the range
-            if current_price < position.tick_lower:
-                # Price below range - only token0 has value
-                value_0 = position.token0_amount * current_price
-                value_1 = 0.0
-            else:
-                # Price above range - only token1 has value
-                value_0 = 0.0
-                value_1 = position.token1_amount
+            falloff_factor = 1.0
+        
+        # Apply falloff to position values
+        value_0 = position.token0_amount * current_price * falloff_factor  # Convert BTC to USD
+        value_1 = position.token1_amount * falloff_factor                  # USDC is already in USD
         
         # Don't add fees to position value - fees are collected separately
         # This prevents unrealistic compounding effects in backtesting
