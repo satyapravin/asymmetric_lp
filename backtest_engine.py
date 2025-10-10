@@ -300,15 +300,16 @@ class BacktestEngine:
         # Convert to numpy array
         values = np.array(self.portfolio_values)
         
-        # Calculate daily returns from portfolio values
-        daily_returns = np.diff(values) / values[:-1]
+        # Calculate returns from portfolio values
+        returns = np.diff(values) / values[:-1]
         
-        if len(daily_returns) < 2:
+        if len(returns) < 2:
             return 0.0
         
-        # Calculate excess returns (daily risk-free rate)
-        daily_risk_free = risk_free_rate / 365
-        excess_returns = daily_returns - daily_risk_free
+        # Since we have minute-by-minute data, use minute risk-free rate
+        # Annual risk-free rate / (365 * 24 * 60) = minute risk-free rate
+        minute_risk_free = risk_free_rate / (365 * 24 * 60)
+        excess_returns = returns - minute_risk_free
         
         # Calculate Sharpe ratio
         if np.std(excess_returns) == 0:
@@ -316,8 +317,8 @@ class BacktestEngine:
         
         sharpe = np.mean(excess_returns) / np.std(excess_returns)
         
-        # Annualize (assuming daily returns)
-        sharpe_annualized = sharpe * np.sqrt(365)
+        # Annualize (assuming minute returns)
+        sharpe_annualized = sharpe * np.sqrt(365 * 24 * 60)
         
         return sharpe_annualized
     
