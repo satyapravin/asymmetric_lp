@@ -16,25 +16,33 @@ logger = logging.getLogger(__name__)
 class UniswapV3Client:
     """Client for interacting with Uniswap V3 protocol"""
     
-    def __init__(self, config: Config = None):
+    def __init__(self, config: Config = None, read_only: bool = False):
         """Initialize the Uniswap V3 client"""
         self.config = config or Config()
-        self.config.validate_config()
         
         # Initialize Web3 connection
         self.w3 = Web3(Web3.HTTPProvider(self.config.ETHEREUM_RPC_URL))
         if not self.w3.is_connected():
             raise ConnectionError("Failed to connect to Ethereum network")
         
-        # Initialize account
-        self.account = Account.from_key(self.config.PRIVATE_KEY)
-        self.wallet_address = self.account.address
+        # Initialize account only if not in read-only mode
+        if not read_only and self.config.PRIVATE_KEY:
+            self.account = Account.from_key(self.config.PRIVATE_KEY)
+            self.wallet_address = self.account.address
+        else:
+            self.account = None
+            self.wallet_address = None
+        
+        # Validate config only for non-read-only mode
+        if not read_only:
+            self.config.validate_config()
         
         # Get chain info from environment
         self.chain_info = self.config.get_chain_info()
         
         logger.info(f"Connected to {self.chain_info['chain_name']} (Chain ID: {self.chain_info['chain_id']})")
-        logger.info(f"Wallet: {self.wallet_address}")
+        if self.wallet_address:
+            logger.info(f"Wallet: {self.wallet_address}")
         
         # Use contract addresses from environment
         self.factory_address = self.config.UNISWAP_V3_FACTORY
@@ -245,7 +253,11 @@ class UniswapV3Client:
     def get_pool_address(self, token0: str, token1: str, fee: int) -> str:
         """Get the pool address for a given token pair and fee tier"""
         try:
-            pool_address = self.factory.functions.getPool(token0, token1, fee).call()
+            # Ensure addresses are checksummed
+            token0_checksummed = self.w3.to_checksum_address(token0)
+            token1_checksummed = self.w3.to_checksum_address(token1)
+            
+            pool_address = self.factory.functions.getPool(token0_checksummed, token1_checksummed, fee).call()
             if pool_address == "0x0000000000000000000000000000000000000000":
                 raise ValueError(f"No pool found for tokens {token0}/{token1} with fee {fee}")
             return pool_address
@@ -268,9 +280,12 @@ class UniswapV3Client:
             if token_address in self.token_decimals_cache:
                 return self.token_decimals_cache[token_address]
             
+            # Ensure address is checksummed
+            token_address_checksummed = self.w3.to_checksum_address(token_address)
+            
             # Create ERC20 contract instance
             token_contract = self.w3.eth.contract(
-                address=token_address,
+                address=token_address_checksummed,
                 abi=self.erc20_abi
             )
             

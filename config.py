@@ -223,7 +223,17 @@ class Config:
         """Check if address is valid Ethereum address format"""
         if not address:
             return False
-        return address.startswith('0x') and len(address) == 42 and all(c in '0123456789abcdefABCDEF' for c in address[2:])
+        # Check basic format
+        if not (address.startswith('0x') and len(address) == 42 and all(c in '0123456789abcdefABCDEF' for c in address[2:])):
+            return False
+        
+        # Try to checksum the address to validate it's properly formatted
+        try:
+            from web3 import Web3
+            Web3.to_checksum_address(address)
+            return True
+        except Exception:
+            return False
     
     @classmethod
     def get_chain_info(cls) -> Dict[str, Any]:

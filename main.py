@@ -301,9 +301,17 @@ def run_historical_mode(args):
     print(f"   Period: {result.start_time.strftime('%Y-%m-%d')} to {result.end_time.strftime('%Y-%m-%d')}")
     print(f"   Duration: {(result.end_time - result.start_time).days} days")
     
-    # Calculate performance metrics
-    initial_value = result.initial_balance_0 + result.initial_balance_1 * 50000  # Assume $50k BTC
-    final_value = result.final_balance_0 + result.final_balance_1 * 50000  # Assume $50k BTC
+    # Calculate performance metrics using actual prices from OHLC data
+    # Load OHLC data to get actual prices
+    import pandas as pd
+    df = pd.read_csv(args.ohlc_file)
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    
+    initial_price = df['close'].iloc[0]
+    final_price = df['close'].iloc[-1]
+    
+    initial_value = result.initial_balance_0 + (result.initial_balance_1 * initial_price)
+    final_value = result.final_balance_0 + (result.final_balance_1 * final_price)
     total_return = (final_value - initial_value) / initial_value
     
     print(f"   Initial Value: ${initial_value:,.2f}")
