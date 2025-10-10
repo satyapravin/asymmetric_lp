@@ -320,6 +320,8 @@ def run_historical_mode(args):
     print(f"   Total Fees Collected: ${result.total_fees_collected:.2f}")
     print(f"   Total Rebalances: {result.total_rebalances}")
     print(f"   Total Trades Detected: {result.total_trades}")
+    print(f"   Sharpe Ratio: {result.sharpe_ratio:.2f}")
+    print(f"   Max Drawdown: {result.max_drawdown:.2%}")
     
     if result.total_rebalances > 0:
         avg_rebalance_interval = (result.end_time - result.start_time).total_seconds() / result.total_rebalances

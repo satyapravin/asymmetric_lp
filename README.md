@@ -170,6 +170,8 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 - **Total Rebalances**: 19
 - **Average Rebalance Interval**: 7.6 hours
 - **Fees Collected**: $0.00
+- **Sharpe Ratio**: -8.86
+- **Max Drawdown**: 3.91%
 
 **Key Features:**
 - Dynamic range calculation based on inventory imbalance
@@ -186,6 +188,8 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 - **Total Rebalances**: 19
 - **Average Rebalance Interval**: 7.6 hours
 - **Fees Collected**: $0.00
+- **Sharpe Ratio**: -8.86
+- **Max Drawdown**: 3.91%
 
 **Key Features:**
 - Finite inventory constraints (more realistic)
@@ -214,7 +218,23 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 2. **Rebalancing Frequency**: Models rebalanced actively (19 times in 7 days, every 7.6 hours on average)
 3. **Price Sensitivity**: Rebalancing triggered by 0.3%+ price movements shows responsive strategy
 4. **Range Constraints**: Both models hit minimum range limits (2%) frequently
-5. **Real Data Challenges**: Limited price volatility in short timeframes reduces trading opportunities
+5. **Risk-Adjusted Performance**: Negative Sharpe ratio (-8.86) indicates high volatility relative to returns
+6. **Drawdown Management**: 3.91% max drawdown shows reasonable risk control
+7. **Real Data Challenges**: Limited price volatility in short timeframes reduces trading opportunities
+
+### Risk Metrics Explained
+
+**Sharpe Ratio (-8.86):**
+- Measures risk-adjusted returns (excess return per unit of volatility)
+- Negative value indicates high volatility relative to returns
+- Common in high-frequency strategies with frequent rebalancing
+- Annualized calculation assumes daily returns
+
+**Max Drawdown (3.91%):**
+- Maximum peak-to-trough decline in portfolio value
+- Shows worst-case loss scenario during the test period
+- Lower values indicate better risk management
+- 3.91% is reasonable for an active LP strategy
 
 ### Performance Metrics
 
@@ -222,8 +242,8 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 |--------|-------------------|------------|
 | **7-Day Return** | 6.55% | 6.55% |
 | **Annualized Return** | ~342% | ~342% |
-| **Max Drawdown** | N/A | N/A |
-| **Sharpe Ratio** | N/A | N/A |
+| **Max Drawdown** | 3.91% | 3.91% |
+| **Sharpe Ratio** | -8.86 | -8.86 |
 | **Rebalances** | 19 | 19 |
 | **Avg Rebalance Interval** | 7.6 hours | 7.6 hours |
 | **Risk Management** | Volatility-based | Inventory constraints |
