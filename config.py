@@ -45,6 +45,9 @@ class Config:
     # Fee tier configuration
     FEE_TIER = int(os.getenv('FEE_TIER', '30'))  # 0.3% fee tier (30 bps)
     
+    # Model configuration
+    INVENTORY_MODEL = os.getenv('INVENTORY_MODEL', 'AvellanedaStoikovModel')  # Model to use for range calculation
+    
     # Uniswap V3 contract addresses (from environment)
     UNISWAP_V3_FACTORY = os.getenv('UNISWAP_V3_FACTORY')
     UNISWAP_V3_POSITION_MANAGER = os.getenv('UNISWAP_V3_POSITION_MANAGER')

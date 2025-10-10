@@ -11,7 +11,7 @@ from config import Config
 from uniswap_client import UniswapV3Client
 from lp_position_manager import LPPositionManager
 from utils import UniswapV3Utils, ErrorHandler, Logger, retry_on_failure, is_retryable_error
-from inventory_model import InventoryModel
+from models.model_factory import ModelFactory
 from alert_manager import TelegramAlertManager
 from inventory_publisher import InventoryPublisher
 
@@ -36,8 +36,10 @@ class AutomatedRebalancer:
         # Initialize inventory publisher
         self.inventory_publisher = InventoryPublisher(self.config)
         
-        # Initialize inventory model
-        self.inventory_model = InventoryModel(self.config)
+        # Initialize inventory model (can be easily swapped)
+        model_name = getattr(self.config, 'INVENTORY_MODEL', 'AvellanedaStoikovModel')
+        self.inventory_model = ModelFactory.create_model(model_name, self.config)
+        logger.info(f"Using inventory model: {model_name}")
         
         # Monitoring state
         self.is_running = False
