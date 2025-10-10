@@ -380,18 +380,29 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 - Price movement triggers: Rebalances on 5%+ price changes
 - Realistic trade detection: 0.05% threshold for fee simulation
 
-### Real Blockchain Data Test
+### Real Blockchain Data Capability
 
-**ETH/USDC Pool (Uniswap V3)**
-- **Data Source**: 444 OHLC bars from real swap events
-- **Time Period**: October 8-9, 2025 (24 hours)
-- **Pool**: 0x8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8
-- **Fee Tier**: 0.3%
+**OHLC Data Downloader**
+- **Supported Chains**: Ethereum, Polygon, Arbitrum, Optimism, Base
+- **Data Source**: Real Uniswap V3 swap events from blockchain
+- **Pool**: ETH/USDC (0x8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8)
+- **Fee Tiers**: 0.05%, 0.3%, 1.0% (500, 3000, 10000 bps)
+- **Intervals**: 1-second to 1-minute OHLC bars
+- **Time Range**: Any historical period with available data
 
-**Results:**
-- **Avellaneda-Stoikov**: 0.00% return, 3 rebalances
-- **GLFT Model**: 0.00% return, 3 rebalances
-- **Note**: Limited price movement in test period
+**Download Command:**
+```bash
+python ohlc_downloader.py \
+  --token0 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 \
+  --token1 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 \
+  --fee 3000 \
+  --start-time "2024-01-01 00:00:00" \
+  --end-time "2024-01-07 00:00:00" \
+  --interval 60 \
+  --output eth_usdc_real.csv
+```
+
+**Note**: Real blockchain data download requires a valid RPC endpoint. Public RPCs may have rate limits for large datasets.
 
 ### Key Insights
 
@@ -450,9 +461,15 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 
 ### Data Sources
 
-- **Sample Data**: Generated realistic BTC price movements with mean reversion
-- **Real Data**: Downloaded from Uniswap V3 ETH/USDC pool using our OHLC downloader
-- **Downloader**: Supports 1-second to 1-minute intervals from multiple chains
+- **Sample Data**: Generated realistic BTC price movements with mean reversion ($49,263 - $57,785 range)
+- **Real Blockchain Data**: Downloaded from Uniswap V3 pools using our OHLC downloader
+- **Supported Pools**: ETH/USDC, WBTC/USDC, and other major Uniswap V3 pools
+- **Downloader Features**: 
+  - 1-second to 1-minute intervals
+  - Multiple chains (Ethereum, Polygon, Arbitrum, Optimism, Base)
+  - Real swap event processing
+  - Automatic OHLC bar generation
+- **RPC Requirements**: Valid Ethereum RPC endpoint (Infura, Alchemy, or public RPC)
 
 ### Recent Improvements
 
