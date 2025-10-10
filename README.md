@@ -67,17 +67,187 @@ The bot will reject any direct private key in files.
 
 ## Usage
 
-### Live trading
+### Quick Start
+
+1. **Set up your environment**:
+   ```bash
+   cp env.example .env
+   # Edit .env with your configuration
+   ```
+
+2. **Set your private key** (required for live trading):
+   ```bash
+   export MY_PRIVATE_KEY=your_actual_private_key_here
+   ```
+
+3. **Run the bot**:
+   ```bash
+   python main.py
+   ```
+
+### Live Trading Mode
+
+Start the bot in live trading mode (default):
+
 ```bash
 python main.py
 ```
 
-### Backtesting
-```bash
-python main.py --historical-mode --ohlc-file your_data.csv --start-date 2024-01-01 --end-date 2024-01-31
+**What it does:**
+- Connects to your configured blockchain
+- Monitors your LP positions every 60 seconds
+- Rebalances when inventory deviates by more than 30%
+- Sends Telegram notifications (if configured)
+- Publishes inventory data via 0MQ (if enabled)
+
+**Example output:**
+```
+🤖 AsymmetricLP
+==================================================
+🔗 Connected to Ethereum Mainnet (Chain ID: 1)
+💰 Wallet: 0x1234...5678
+📊 Monitoring ETH/USDC positions...
+⚡ Rebalanced: Created 2 new positions
 ```
 
-The backtesting mode simulates trades when price movements exceed the fee tier. It's useful for testing different parameters before going live.
+### Backtesting Mode
+
+Test your strategy on historical data:
+
+```bash
+# Basic backtest
+python main.py --historical-mode --ohlc-file btc_data.csv --start-date 2024-01-01 --end-date 2024-01-31
+
+# With custom parameters
+python main.py --historical-mode \
+  --ohlc-file eth_usdc_data.csv \
+  --start-date 2024-01-01 \
+  --end-date 2024-01-07 \
+  --fee-tier 3000 \
+  --initial-balance-0 10000 \
+  --initial-balance-1 0.2
+```
+
+**Backtest Parameters:**
+- `--ohlc-file`: Path to your OHLC CSV file
+- `--start-date`: Start date (YYYY-MM-DD)
+- `--end-date`: End date (YYYY-MM-DD)
+- `--fee-tier`: Fee tier in basis points (500, 3000, 10000)
+- `--initial-balance-0`: Initial token A balance
+- `--initial-balance-1`: Initial token B balance
+- `--target-ratio`: Target inventory ratio (default 0.5)
+- `--max-deviation`: Max inventory deviation (default 0.3)
+
+**Example backtest output:**
+```
+🎯 Backtest Results:
+   Period: 2024-01-01 to 2024-01-07
+   Duration: 6 days
+   Initial Value: $10,000.00
+   Final Value: $10,654.65
+   Total Return: 6.55%
+   Sharpe Ratio: -8.86
+   Max Drawdown: 3.91%
+   Total Rebalances: 19
+   Average Rebalance Interval: 7.6 hours
+```
+
+### Download Real OHLC Data
+
+Use the built-in OHLC downloader to get real blockchain data:
+
+```bash
+# Download 1-minute ETH/USDC data for last hour
+python ohlc_downloader.py \
+  --token0 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 \
+  --token1 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 \
+  --fee 3000 \
+  --start-time "2024-01-15 10:00:00" \
+  --end-time "2024-01-15 11:00:00" \
+  --interval 60 \
+  --output eth_usdc_1min.csv
+```
+
+**OHLC Downloader Parameters:**
+- `--token0`: Token0 address (WETH)
+- `--token1`: Token1 address (USDC)
+- `--fee`: Fee tier (500, 3000, 10000)
+- `--start-time`: Start time (YYYY-MM-DD HH:MM:SS)
+- `--end-time`: End time (YYYY-MM-DD HH:MM:SS)
+- `--interval`: Interval in seconds (1, 60, 300, etc.)
+- `--output`: Output CSV file
+
+### Generate Sample Data
+
+For testing purposes, generate sample OHLC data:
+
+```bash
+python generate_sample_data.py
+```
+
+This creates `btc_sample_7days.csv` with realistic price movements.
+
+### Command Line Examples
+
+**Live trading with custom fee tier:**
+```bash
+FEE_TIER=500 python main.py  # 0.05% fee tier
+```
+
+**Backtest with different models:**
+```bash
+# Avellaneda-Stoikov model (default)
+INVENTORY_MODEL=AvellanedaStoikovModel python main.py --historical-mode --ohlc-file data.csv
+
+# GLFT model
+INVENTORY_MODEL=GLFTModel python main.py --historical-mode --ohlc-file data.csv
+```
+
+**Backtest with custom inventory settings:**
+```bash
+python main.py --historical-mode \
+  --ohlc-file data.csv \
+  --target-ratio 0.6 \
+  --max-deviation 0.2 \
+  --initial-balance-0 5000 \
+  --initial-balance-1 0.1
+```
+
+### Monitoring and Logs
+
+**View logs:**
+```bash
+tail -f logs/rebalancer.log
+```
+
+**Check bot status:**
+The bot logs all activities including:
+- Connection status
+- Rebalancing events
+- Error messages
+- Performance metrics
+
+**Telegram notifications:**
+Set up in `.env`:
+```bash
+TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_CHAT_ID=your_chat_id
+```
+
+### Troubleshooting
+
+**Common startup issues:**
+1. **"Configuration validation failed"**: Check your `.env` file
+2. **"Failed to connect to Ethereum network"**: Verify your RPC URL
+3. **"No pool found"**: Check token addresses and fee tier
+4. **"Insufficient funds"**: Add ETH for gas and tokens for positions
+
+**Debug mode:**
+```bash
+# Enable verbose logging
+export LOG_LEVEL=DEBUG
+python main.py
+```
 
 ## How the rebalancing works
 
