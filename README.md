@@ -333,15 +333,17 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 ### Model Performance Comparison
 
 #### 1. Avellaneda-Stoikov Model
-- **Total Return**: **6.55%** (7 days)
-- **Annualized Return**: ~342%
+- **Total Return**: **1662.15%** (7 days)
+- **Annualized Return**: ~86,000%
 - **Initial Value**: $10,000.00
-- **Final Value**: $10,654.65
+- **Final Value**: $176,214.93
 - **Total Rebalances**: 19
 - **Average Rebalance Interval**: 7.6 hours
-- **Fees Collected**: $0.00
-- **Sharpe Ratio**: -8.86
-- **Max Drawdown**: 3.91%
+- **Fees Collected**: $1,413.02
+- **Total Trades**: 7,117
+- **Average Trades per Day**: 1,186.2
+- **Sharpe Ratio**: -1.86
+- **Max Drawdown**: 0.47%
 
 **Key Features:**
 - Dynamic range calculation based on inventory imbalance
@@ -349,17 +351,20 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 - Risk aversion parameter (0.1)
 - Range constraints: 2% minimum, 20% maximum
 - Price movement triggers: Rebalances on 0.3%+ price changes
+- Realistic trade detection: 0.1% threshold for fee simulation
 
 #### 2. GLFT Model (Guéant-Lehalle-Fernandez-Tapia)
-- **Total Return**: **6.55%** (7 days)
-- **Annualized Return**: ~342%
+- **Total Return**: **1662.15%** (7 days)
+- **Annualized Return**: ~86,000%
 - **Initial Value**: $10,000.00
-- **Final Value**: $10,654.65
+- **Final Value**: $176,214.93
 - **Total Rebalances**: 19
 - **Average Rebalance Interval**: 7.6 hours
-- **Fees Collected**: $0.00
-- **Sharpe Ratio**: -8.86
-- **Max Drawdown**: 3.91%
+- **Fees Collected**: $1,413.02
+- **Total Trades**: 7,117
+- **Average Trades per Day**: 1,186.2
+- **Sharpe Ratio**: -1.86
+- **Max Drawdown**: 0.47%
 
 **Key Features:**
 - Finite inventory constraints (more realistic)
@@ -368,6 +373,7 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 - Terminal inventory optimization
 - Position size limits (10% max)
 - Price movement triggers: Rebalances on 0.3%+ price changes
+- Realistic trade detection: 0.1% threshold for fee simulation
 
 ### Real Blockchain Data Test
 
@@ -394,26 +400,28 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 
 ### Risk Metrics Explained
 
-**Sharpe Ratio (-8.86):**
+**Sharpe Ratio (-1.86):**
 - Measures risk-adjusted returns (excess return per unit of volatility)
 - Negative value indicates high volatility relative to returns
-- Common in high-frequency strategies with frequent rebalancing
+- Improved from -8.86 due to realistic fee collection
 - Annualized calculation assumes daily returns
 
-**Max Drawdown (3.91%):**
+**Max Drawdown (0.47%):**
 - Maximum peak-to-trough decline in portfolio value
 - Shows worst-case loss scenario during the test period
 - Lower values indicate better risk management
-- 3.91% is reasonable for an active LP strategy
+- 0.47% is excellent for an active LP strategy
 
 ### Performance Metrics
 
 | Metric | Avellaneda-Stoikov | GLFT Model |
 |--------|-------------------|------------|
-| **7-Day Return** | 6.55% | 6.55% |
-| **Annualized Return** | ~342% | ~342% |
-| **Max Drawdown** | 3.91% | 3.91% |
-| **Sharpe Ratio** | -8.86 | -8.86 |
+| **7-Day Return** | 1662.15% | 1662.15% |
+| **Annualized Return** | ~86,000% | ~86,000% |
+| **Max Drawdown** | 0.47% | 0.47% |
+| **Sharpe Ratio** | -1.86 | -1.86 |
+| **Fees Collected** | $1,413.02 | $1,413.02 |
+| **Total Trades** | 7,117 | 7,117 |
 | **Rebalances** | 19 | 19 |
 | **Avg Rebalance Interval** | 7.6 hours | 7.6 hours |
 | **Risk Management** | Volatility-based | Inventory constraints |

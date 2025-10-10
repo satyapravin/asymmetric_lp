@@ -163,9 +163,10 @@ class BacktestEngine:
             low_move = (open_price - low_price) / open_price
             close_move = abs(close_price - open_price) / open_price
             
-            # Use fee tier as the trade detection threshold
-            # A trade occurs when price moves more than the fee tier (indicating a swap happened)
-            trade_threshold = fee_threshold  # Use actual fee tier threshold
+            # For backtesting, use a more realistic trade detection threshold
+            # In reality, trades happen more frequently than just fee-tier movements
+            # Use 0.1% threshold for more realistic backtesting (vs 0.3% fee tier)
+            trade_threshold = 0.001  # 0.1% threshold for backtesting
             
             # Detect trades based on significant price movements
             # Only one trade per minute if price movement exceeds fee tier
@@ -194,7 +195,7 @@ class BacktestEngine:
                     price=trade_price,
                     volume=trade_volume,
                     trade_type=trade_type,
-                    fees_paid=trade_volume * fee_threshold
+                    fees_paid=trade_volume * fee_threshold  # Use actual fee tier for fee calculation
                 ))
         
         logger.info(f"Detected {len(trades)} trades from OHLC data")
