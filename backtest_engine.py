@@ -250,8 +250,8 @@ class BacktestEngine:
         
         # If current price is within the position range, use full amounts
         # If outside range, reduce value based on how far outside
-        value_0 = position.token0_amount
-        value_1 = position.token1_amount * current_price
+        value_0 = position.token0_amount * current_price  # Convert token0 to USD
+        value_1 = position.token1_amount * current_price  # Convert token1 to USD
         
         # Don't add fees to position value - fees are collected separately
         # This prevents unrealistic compounding effects in backtesting
@@ -268,9 +268,9 @@ class BacktestEngine:
         Returns:
             Total portfolio value in USD
         """
-        # Calculate balance values
-        balance_value_0 = self.balance_0
-        balance_value_1 = self.balance_1 * current_price
+        # Calculate balance values in USD
+        balance_value_0 = self.balance_0 * current_price  # Convert token0 to USD
+        balance_value_1 = self.balance_1 * current_price   # Convert token1 to USD
         
         # Add position values
         position_value_0 = 0.0
@@ -457,19 +457,19 @@ class BacktestEngine:
         )
         
         # Create new positions using calculated ranges
-        total_value = self.balance_0 + (self.balance_1 * current_price)
-        if total_value > 0:
+        # Only use available balances, not total portfolio value
+        if self.balance_0 > 0 or self.balance_1 > 0:
             # Use ranges from inventory model
             range_a_pct = ranges['range_a_percentage'] / 100.0
             range_b_pct = ranges['range_b_percentage'] / 100.0
             
-            # Calculate position sizes based on ranges
+            # Calculate position sizes based on available balances
             # Position A: Above current price with range_a_pct
             # Position B: Below current price with range_b_pct
             
-            # Allocate capital based on inventory model recommendations
-            # For simplicity, split capital equally between positions
-            position_value = total_value * 0.5  # Use 50% of capital for each position
+            # Use available balances directly for position sizing
+            # Position A: Use available token0 balance
+            # Position B: Use available token1 balance
             
             # Position A (above current price)
             position_a_upper = current_price * (1 + range_a_pct / 2)
@@ -479,32 +479,34 @@ class BacktestEngine:
             position_b_upper = current_price * (1 + range_b_pct / 2)
             position_b_lower = current_price * (1 - range_b_pct / 2)
             
-            # Create two single-sided positions
+            # Create two single-sided positions using available balances
+            # Position A: token0 above current price (encourages selling token0)
             position_0 = BacktestPosition(
                 token_id=f"pos_a_{timestamp.timestamp()}",
-                token0_amount=position_value,  # Single-sided token0 position
+                token0_amount=self.balance_0,  # Use available token0 balance
                 token1_amount=0.0,
                 tick_lower=int(position_a_lower),  # Simplified tick calculation
                 tick_upper=int(position_a_upper),
-                liquidity=position_value,
+                liquidity=self.balance_0 * current_price,  # Liquidity in USD
                 created_at=timestamp
             )
             
+            # Position B: token1 below current price (encourages buying token1)
             position_1 = BacktestPosition(
                 token_id=f"pos_b_{timestamp.timestamp()}",
                 token0_amount=0.0,
-                token1_amount=position_value / current_price,  # Single-sided token1 position
+                token1_amount=self.balance_1,  # Use available token1 balance
                 tick_lower=int(position_b_lower),
                 tick_upper=int(position_b_upper),
-                liquidity=position_value,
+                liquidity=self.balance_1 * current_price,  # Liquidity in USD
                 created_at=timestamp
             )
             
             self.positions = [position_0, position_1]
             
-            # Update balances
-            self.balance_0 -= position_value
-            self.balance_1 -= position_value / current_price
+            # Update balances - subtract actual token amounts used in positions
+            self.balance_0 -= position_0.token0_amount
+            self.balance_1 -= position_1.token1_amount
             
             logger.info(f"Created positions with ranges: A={range_a_pct:.3f}, B={range_b_pct:.3f}")
         

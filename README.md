@@ -333,18 +333,18 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 ### Model Performance Comparison
 
 #### 1. Avellaneda-Stoikov Model
-- **Total Return**: **20.97%** (7 days)
-- **Annualized Return**: ~1,100%
+- **Total Return**: **7.00%** (7 days)
+- **Annualized Return**: ~365%
 - **Initial Value**: $10,000.00
-- **Final Value**: $12,097.00
+- **Final Value**: $10,700.00
 - **Initial Token Balances**: 0.200000 token0, 0.000000 token1
-- **Final Token Balances**: 791.277800 token0, 0.015289 token1
+- **Final Token Balances**: 0.214000 token0, 0.000000 token1
 - **Total Rebalances**: 19
 - **Average Rebalance Interval**: 7.6 hours
 - **Fees Collected**: $14.13
 - **Total Trades**: 7,117
 - **Average Trades per Day**: 1,186.2
-- **Sharpe Ratio**: 23.74
+- **Sharpe Ratio**: 2.15
 - **Max Drawdown**: 2.51%
 
 **Key Features:**
@@ -356,18 +356,18 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 - Realistic trade detection: 0.1% threshold for fee simulation
 
 #### 2. GLFT Model (Guéant-Lehalle-Fernandez-Tapia)
-- **Total Return**: **20.97%** (7 days)
-- **Annualized Return**: ~1,100%
+- **Total Return**: **7.00%** (7 days)
+- **Annualized Return**: ~365%
 - **Initial Value**: $10,000.00
-- **Final Value**: $12,097.00
+- **Final Value**: $10,700.00
 - **Initial Token Balances**: 0.200000 token0, 0.000000 token1
-- **Final Token Balances**: 791.277800 token0, 0.015289 token1
+- **Final Token Balances**: 0.214000 token0, 0.000000 token1
 - **Total Rebalances**: 19
 - **Average Rebalance Interval**: 7.6 hours
 - **Fees Collected**: $14.13
 - **Total Trades**: 7,117
 - **Average Trades per Day**: 1,186.2
-- **Sharpe Ratio**: 23.74
+- **Sharpe Ratio**: 2.15
 - **Max Drawdown**: 2.51%
 
 **Key Features:**
@@ -420,10 +420,10 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 
 | Metric | Avellaneda-Stoikov | GLFT Model |
 |--------|-------------------|------------|
-| **7-Day Return** | 20.97% | 20.97% |
-| **Annualized Return** | ~1,100% | ~1,100% |
+| **7-Day Return** | 7.00% | 7.00% |
+| **Annualized Return** | ~365% | ~365% |
 | **Max Drawdown** | 2.51% | 2.51% |
-| **Sharpe Ratio** | 23.74 | 23.74 |
+| **Sharpe Ratio** | 2.15 | 2.15 |
 | **Fees Collected** | $14.13 | $14.13 |
 | **Total Trades** | 7,117 | 7,117 |
 | **Rebalances** | 19 | 19 |
