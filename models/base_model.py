@@ -171,7 +171,7 @@ class BaseInventoryModel(ABC):
                 log_return = math.log(prices[i] / prices[i-1])
                 log_returns.append(log_return)
         
-        if not log_returns:
+        if len(log_returns) < 2:
             return 0.02
         
         # Calculate and annualize volatility

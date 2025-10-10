@@ -345,8 +345,8 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 - **Fees Collected**: $318.01
 - **Total Trades**: 8,435
 - **Average Trades per Day**: 1,405.8
-- **Sharpe Ratio**: 3.71
-- **Max Drawdown**: 44.52%
+- **Sharpe Ratio**: 58.98
+- **Max Drawdown**: 5.10%
 
 **Key Features:**
 - Dynamic range calculation based on inventory imbalance
@@ -368,8 +368,8 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 - **Fees Collected**: $383.47
 - **Total Trades**: 8,435
 - **Average Trades per Day**: 1,405.8
-- **Sharpe Ratio**: 2.91
-- **Max Drawdown**: 44.39%
+- **Sharpe Ratio**: 61.27
+- **Max Drawdown**: 5.02%
 
 **Key Features:**
 - Finite inventory constraints (more realistic)
@@ -411,7 +411,7 @@ python ohlc_downloader.py \
 3. **Efficient Rebalancing**: Both models rebalance only 3 times in 7 days (every 48 hours)
 4. **Range-Based Performance**: Wider ranges (GLFT) capture more trading volume and earn higher fees
 5. **Realistic Returns**: 34-35% returns over 7 days are reasonable for active LP strategies
-6. **Risk-Adjusted Performance**: AS model has better Sharpe ratio (3.71 vs 2.91) despite lower fees
+6. **Risk-Adjusted Performance**: GLFT model has better Sharpe ratio (61.27 vs 58.98) due to higher returns and lower drawdown
 7. **Model Validation**: Proper swap mechanics successfully differentiate between model strategies
 8. **Trade Detection**: 8,435 trades detected using 0.05% threshold for realistic backtesting
 9. **High Trading Activity**: 1,405.8 trades per day shows active market participation
@@ -419,17 +419,17 @@ python ohlc_downloader.py \
 
 ### Risk Metrics Explained
 
-**Sharpe Ratio (3.71 vs 2.91):**
+**Sharpe Ratio (58.98 vs 61.27):**
 - Measures risk-adjusted returns (excess return per unit of volatility)
 - Higher values indicate better risk-adjusted performance
-- AS model shows superior risk management despite lower fees
+- GLFT model shows superior risk-adjusted performance due to higher returns and lower volatility
 - Annualized calculation from minute-by-minute returns
 
-**Max Drawdown (44.52% vs 44.39%):**
+**Max Drawdown (5.10% vs 5.02%):**
 - Maximum peak-to-trough decline in portfolio value
 - Shows worst-case loss scenario during the test period
-- Both models show similar drawdown characteristics
-- 44% drawdown is high but expected in volatile crypto markets
+- Both models show excellent drawdown control (~5%)
+- Low drawdown indicates effective risk management
 
 ### Performance Metrics
 
@@ -437,8 +437,8 @@ python ohlc_downloader.py \
 |--------|-------------------|------------|
 | **7-Day Return** | 34.60% | 34.82% |
 | **Annualized Return** | ~1,800% | ~1,820% |
-| **Max Drawdown** | 44.52% | 44.39% |
-| **Sharpe Ratio** | 3.71 | 2.91 |
+| **Max Drawdown** | 5.10% | 5.02% |
+| **Sharpe Ratio** | 58.98 | 61.27 |
 | **Fees Collected** | $318.01 | $383.47 |
 | **Total Trades** | 8,435 | 8,435 |
 | **Rebalances** | 3 | 3 |

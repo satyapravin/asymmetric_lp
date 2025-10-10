@@ -165,10 +165,10 @@ class BacktestEngine:
             low_move = (open_price - low_price) / open_price
             close_move = abs(close_price - open_price) / open_price
             
-            # For backtesting, use a more realistic trade detection threshold
-            # In reality, trades happen more frequently than just fee-tier movements
-            # Use 0.1% threshold for more realistic backtesting (vs 0.3% fee tier)
-            trade_threshold = 0.001  # 0.1% threshold for backtesting
+            # Use a realistic trade detection threshold for backtesting
+            # In reality, many small trades happen that don't exceed the fee tier
+            # Use 0.05% threshold for realistic trade detection (vs 0.3% fee tier)
+            trade_threshold = 0.0005  # 0.05% threshold for backtesting
             
             # Detect trades based on significant price movements
             # Only one trade per minute if price movement exceeds fee tier
@@ -223,6 +223,8 @@ class BacktestEngine:
             active_positions = []
             total_active_liquidity = 0.0
             
+            logger.debug(f"Processing trade: price={trade.price:.2f}, volume={trade.volume:.2f}, type={trade.trade_type}, fees_paid={trade.fees_paid:.6f}")
+            
             # Find positions that are active for this trade price
             for position in self.positions:
                 if position.tick_lower <= trade.price <= position.tick_upper:
@@ -231,6 +233,7 @@ class BacktestEngine:
                     if position_liquidity > 0:
                         active_positions.append((position, position_liquidity))
                         total_active_liquidity += position_liquidity
+                        logger.debug(f"Active position: price={trade.price:.2f}, range=[{position.tick_lower:.2f}, {position.tick_upper:.2f}], liquidity={position_liquidity:.2f}")
             
             # Distribute the trade volume across active positions
             if active_positions and total_active_liquidity > 0:
@@ -254,6 +257,8 @@ class BacktestEngine:
                     
                     total_fees_0 += fees_0
                     total_fees_1 += fees_1
+                    
+                    logger.debug(f"Fee distribution: position_share={position_share:.4f}, fees_0={fees_0:.4f}, fees_1={fees_1:.4f}")
         
         return total_fees_0, total_fees_1
     
@@ -337,8 +342,9 @@ class BacktestEngine:
             falloff_factor = 1.0
         
         # Apply falloff to position values
+        # Convert both token amounts to USD for consistent units
         value_0 = position.token0_amount * current_price * falloff_factor  # Convert BTC to USD
-        value_1 = position.token1_amount * falloff_factor                  # USDC is already in USD
+        value_1 = position.token1_amount * falloff_factor                   # USDC is already in USD
         
         # Don't add fees to position value - fees are collected separately
         # This prevents unrealistic compounding effects in backtesting
@@ -368,6 +374,12 @@ class BacktestEngine:
             pos_value_0, pos_value_1 = self.calculate_position_value(position, current_price)
             position_value_0 += pos_value_0
             position_value_1 += pos_value_1
+            
+            # Add collected fees to portfolio value
+            fees_value_0 = position.fees_collected_0 * current_price  # Convert BTC fees to USD
+            fees_value_1 = position.fees_collected_1                  # USDC fees already in USD
+            position_value_0 += fees_value_0
+            position_value_1 += fees_value_1
         
         total_value = balance_value_0 + balance_value_1 + position_value_0 + position_value_1
         return total_value
@@ -474,6 +486,13 @@ class BacktestEngine:
             token0_balance_wei = int(self.balance_0 * 1e18)
             token1_balance_wei = int(self.balance_1 * 1e18)
             
+            # Mock client for token decimals
+            class MockClient:
+                def get_token_decimals(self, address):
+                    return 18
+            
+            mock_client = MockClient()
+            
             # Get model calculation
             model_result = self.inventory_model.calculate_lp_ranges(
                 token0_balance=token0_balance_wei,
@@ -482,7 +501,7 @@ class BacktestEngine:
                 price_history=self.price_history,
                 token_a_address=self.config.TOKEN_A_ADDRESS,
                 token_b_address=self.config.TOKEN_B_ADDRESS,
-                client=None  # Not needed for backtesting
+                client=mock_client
             )
             
             target_ratio = model_result.get('target_ratio', self.config.TARGET_INVENTORY_RATIO)
@@ -598,8 +617,8 @@ class BacktestEngine:
                 token_id=f"pos_a_{timestamp.timestamp()}",
                 token0_amount=position_0_amount,
                 token1_amount=0.0,
-                tick_lower=int(position_a_lower),  # Simplified tick calculation
-                tick_upper=int(position_a_upper),
+                tick_lower=position_a_lower,  # Use actual price values
+                tick_upper=position_a_upper,
                 liquidity=position_0_amount * current_price,  # Liquidity in USD
                 created_at=timestamp
             )
@@ -611,8 +630,8 @@ class BacktestEngine:
                 token_id=f"pos_b_{timestamp.timestamp()}",
                 token0_amount=0.0,
                 token1_amount=position_1_amount,
-                tick_lower=int(position_b_lower),
-                tick_upper=int(position_b_upper),
+                tick_lower=position_b_lower,  # Use actual price values
+                tick_upper=position_b_upper,
                 liquidity=position_1_amount,  # USDC liquidity in USD
                 created_at=timestamp
             )
