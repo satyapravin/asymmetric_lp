@@ -958,7 +958,18 @@ class BacktestEngine:
                 }
                 for trade in result.trades
             ],
-            'rebalances': result.rebalances
+            'rebalances': [
+                {
+                    'timestamp': rebalance['timestamp'].isoformat() if hasattr(rebalance['timestamp'], 'isoformat') else str(rebalance['timestamp']),
+                    'price': rebalance['price'],
+                    'positions_burned': rebalance['positions_burned'],
+                    'fees_collected_0': rebalance['fees_collected_0'],
+                    'fees_collected_1': rebalance['fees_collected_1'],
+                    'new_positions': rebalance['new_positions'],
+                    'ranges': rebalance['ranges']
+                }
+                for rebalance in result.rebalances
+            ]
         }
         
         with open(output_file, 'w') as f:
