@@ -333,17 +333,17 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 ### Model Performance Comparison
 
 #### 1. Avellaneda-Stoikov Model
-- **Total Return**: **1662.15%** (7 days)
-- **Annualized Return**: ~86,000%
+- **Total Return**: **23.10%** (7 days)
+- **Annualized Return**: ~1,200%
 - **Initial Value**: $10,000.00
-- **Final Value**: $176,214.93
+- **Final Value**: $12,310.25
 - **Total Rebalances**: 19
 - **Average Rebalance Interval**: 7.6 hours
-- **Fees Collected**: $1,413.02
+- **Fees Collected**: $14.13
 - **Total Trades**: 7,117
 - **Average Trades per Day**: 1,186.2
-- **Sharpe Ratio**: -1.86
-- **Max Drawdown**: 0.47%
+- **Sharpe Ratio**: -0.92
+- **Max Drawdown**: 2.51%
 
 **Key Features:**
 - Dynamic range calculation based on inventory imbalance
@@ -354,17 +354,17 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 - Realistic trade detection: 0.1% threshold for fee simulation
 
 #### 2. GLFT Model (Guéant-Lehalle-Fernandez-Tapia)
-- **Total Return**: **1662.15%** (7 days)
-- **Annualized Return**: ~86,000%
+- **Total Return**: **23.10%** (7 days)
+- **Annualized Return**: ~1,200%
 - **Initial Value**: $10,000.00
-- **Final Value**: $176,214.93
+- **Final Value**: $12,310.25
 - **Total Rebalances**: 19
 - **Average Rebalance Interval**: 7.6 hours
-- **Fees Collected**: $1,413.02
+- **Fees Collected**: $14.13
 - **Total Trades**: 7,117
 - **Average Trades per Day**: 1,186.2
-- **Sharpe Ratio**: -1.86
-- **Max Drawdown**: 0.47%
+- **Sharpe Ratio**: -0.92
+- **Max Drawdown**: 2.51%
 
 **Key Features:**
 - Finite inventory constraints (more realistic)
@@ -400,27 +400,27 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 
 ### Risk Metrics Explained
 
-**Sharpe Ratio (-1.86):**
+**Sharpe Ratio (-0.92):**
 - Measures risk-adjusted returns (excess return per unit of volatility)
 - Negative value indicates high volatility relative to returns
-- Improved from -8.86 due to realistic fee collection
+- Common in high-frequency strategies with frequent rebalancing
 - Annualized calculation assumes daily returns
 
-**Max Drawdown (0.47%):**
+**Max Drawdown (2.51%):**
 - Maximum peak-to-trough decline in portfolio value
 - Shows worst-case loss scenario during the test period
 - Lower values indicate better risk management
-- 0.47% is excellent for an active LP strategy
+- 2.51% is reasonable for an active LP strategy
 
 ### Performance Metrics
 
 | Metric | Avellaneda-Stoikov | GLFT Model |
 |--------|-------------------|------------|
-| **7-Day Return** | 1662.15% | 1662.15% |
-| **Annualized Return** | ~86,000% | ~86,000% |
-| **Max Drawdown** | 0.47% | 0.47% |
-| **Sharpe Ratio** | -1.86 | -1.86 |
-| **Fees Collected** | $1,413.02 | $1,413.02 |
+| **7-Day Return** | 23.10% | 23.10% |
+| **Annualized Return** | ~1,200% | ~1,200% |
+| **Max Drawdown** | 2.51% | 2.51% |
+| **Sharpe Ratio** | -0.92 | -0.92 |
+| **Fees Collected** | $14.13 | $14.13 |
 | **Total Trades** | 7,117 | 7,117 |
 | **Rebalances** | 19 | 19 |
 | **Avg Rebalance Interval** | 7.6 hours | 7.6 hours |

@@ -86,7 +86,6 @@ class BacktestEngine:
         
         # Performance tracking
         self.portfolio_values = []  # Track portfolio value over time
-        self.returns = []  # Track daily returns
         
         # Fee tier in basis points (e.g., 3000 = 0.3%)
         self.fee_tier_bps = config.FEE_TIER
@@ -144,7 +143,10 @@ class BacktestEngine:
             List of detected trades
         """
         trades = []
-        fee_threshold = self.fee_tier_bps / 10000  # Convert to decimal
+        fee_threshold = self.fee_tier_bps / 10000  # Convert to decimal (3000 bps = 0.3%)
+        
+        # Debug: Check fee tier calculation
+        logger.debug(f"Fee tier: {self.fee_tier_bps} bps = {fee_threshold:.4%}")
         
         for i, row in df.iterrows():
             timestamp = row['timestamp']
@@ -251,9 +253,8 @@ class BacktestEngine:
         value_0 = position.token0_amount
         value_1 = position.token1_amount * current_price
         
-        # Add collected fees to position value
-        value_0 += position.fees_collected_0
-        value_1 += position.fees_collected_1 * current_price
+        # Don't add fees to position value - fees are collected separately
+        # This prevents unrealistic compounding effects in backtesting
         
         return value_0, value_1
     
@@ -285,7 +286,7 @@ class BacktestEngine:
     
     def calculate_sharpe_ratio(self, risk_free_rate: float = 0.02) -> float:
         """
-        Calculate Sharpe ratio from returns
+        Calculate Sharpe ratio from portfolio values
         
         Args:
             risk_free_rate: Annual risk-free rate (default 2%)
@@ -293,14 +294,21 @@ class BacktestEngine:
         Returns:
             Sharpe ratio
         """
-        if len(self.returns) < 2:
+        if len(self.portfolio_values) < 2:
             return 0.0
         
-        # Convert to numpy array for calculations
-        returns = np.array(self.returns)
+        # Convert to numpy array
+        values = np.array(self.portfolio_values)
         
-        # Calculate excess returns (assuming daily returns)
-        excess_returns = returns - (risk_free_rate / 365)  # Daily risk-free rate
+        # Calculate daily returns from portfolio values
+        daily_returns = np.diff(values) / values[:-1]
+        
+        if len(daily_returns) < 2:
+            return 0.0
+        
+        # Calculate excess returns (daily risk-free rate)
+        daily_risk_free = risk_free_rate / 365
+        excess_returns = daily_returns - daily_risk_free
         
         # Calculate Sharpe ratio
         if np.std(excess_returns) == 0:
@@ -608,16 +616,9 @@ class BacktestEngine:
             if self.should_rebalance(current_price):
                 self.rebalance_positions(current_price, timestamp)
             
-            # Track portfolio value and returns
+            # Track portfolio value
             current_portfolio_value = self.calculate_portfolio_value(current_price)
             self.portfolio_values.append(current_portfolio_value)
-            
-            # Calculate daily returns (sample every 1440 minutes = 1 day)
-            if i % 1440 == 0 and prev_portfolio_value is not None:
-                daily_return = (current_portfolio_value - prev_portfolio_value) / prev_portfolio_value
-                self.returns.append(daily_return)
-            
-            prev_portfolio_value = current_portfolio_value
         
         # Calculate final results
         final_price = df['close'].iloc[-1]
