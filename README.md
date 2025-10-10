@@ -334,9 +334,6 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 ### Model Performance Comparison
 
 #### 1. Avellaneda-Stoikov Model
-- **Total Return**: **0.18%** (20 days)
-- **Initial Value**: $20,469.73
-- **Final Value**: $20,506.64
 - **Token0 Return**: 0.00%
 - **Token1 Return**: 0.00%
 - **Token0 Fees**: 51.78% of initial balance
@@ -356,9 +353,6 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 - **Working**: Fee collection based on position size and trade participation
 
 #### 2. GLFT Model (Guéant-Lehalle-Fernandez-Tapia)
-- **Total Return**: **0.18%** (20 days)
-- **Initial Value**: $20,469.73
-- **Final Value**: $20,506.64
 - **Token0 Return**: 0.00%
 - **Token1 Return**: 0.00%
 - **Token0 Fees**: 51.78% of initial balance
@@ -442,7 +436,6 @@ python ohlc_downloader.py \
 
 | Metric | Avellaneda-Stoikov | GLFT Model |
 |--------|-------------------|------------|
-| **20-Day Return** | 0.18% | 0.18% |
 | **Token0 Return** | 0.00% | 0.00% |
 | **Token1 Return** | 0.00% | 0.00% |
 | **Token0 Fees** | 51.78% of initial | 51.78% of initial |
