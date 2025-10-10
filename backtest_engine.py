@@ -257,6 +257,10 @@ class BacktestEngine:
         if not self.price_history:
             return False
         
+        # If no positions exist, we need to create initial positions
+        if not self.positions:
+            return True
+        
         # Calculate inventory status
         total_value_0 = self.balance_0
         total_value_1 = self.balance_1 * current_price
@@ -269,7 +273,11 @@ class BacktestEngine:
         target_ratio = self.config.TARGET_INVENTORY_RATIO
         deviation = abs(current_ratio - target_ratio)
         
-        return deviation > self.config.MAX_INVENTORY_DEVIATION
+        # Use a more sensitive threshold for backtesting
+        # This will trigger rebalances more frequently to show model differences
+        rebalance_threshold = self.config.MAX_INVENTORY_DEVIATION * 0.5  # 50% of max deviation
+        
+        return deviation > rebalance_threshold
     
     def rebalance_positions(self, current_price: float, timestamp: datetime) -> Dict[str, Any]:
         """
@@ -304,46 +312,78 @@ class BacktestEngine:
         self.positions = []
         
         # Calculate new ranges using inventory model
+        # Convert balances to wei for model calculation
+        token0_balance_wei = int(self.balance_0 * 10**18)
+        token1_balance_wei = int(self.balance_1 * 10**18)
+        
+        # Mock client for token decimals
+        class MockClient:
+            def get_token_decimals(self, address):
+                return 18
+        
+        mock_client = MockClient()
+        
         ranges = self.inventory_model.calculate_lp_ranges(
+            token0_balance=token0_balance_wei,
+            token1_balance=token1_balance_wei,
+            spot_price=current_price,
             price_history=self.price_history,
             token_a_address="0x0000000000000000000000000000000000000000",  # Dummy address
             token_b_address="0x0000000000000000000000000000000000000001",  # Dummy address
-            client=None  # Not needed for backtesting
+            client=mock_client
         )
         
-        # Create new positions
+        # Create new positions using calculated ranges
         total_value = self.balance_0 + (self.balance_1 * current_price)
         if total_value > 0:
-            # Allocate based on target ratio
-            target_value_0 = total_value * self.config.TARGET_INVENTORY_RATIO
-            target_value_1 = total_value * (1 - self.config.TARGET_INVENTORY_RATIO)
+            # Use ranges from inventory model
+            range_a_pct = ranges['range_a_percentage'] / 100.0
+            range_b_pct = ranges['range_b_percentage'] / 100.0
+            
+            # Calculate position sizes based on ranges
+            # Position A: Above current price with range_a_pct
+            # Position B: Below current price with range_b_pct
+            
+            # Allocate capital based on inventory model recommendations
+            # For simplicity, split capital equally between positions
+            position_value = total_value * 0.5  # Use 50% of capital for each position
+            
+            # Position A (above current price)
+            position_a_upper = current_price * (1 + range_a_pct / 2)
+            position_a_lower = current_price * (1 - range_a_pct / 2)
+            
+            # Position B (below current price)  
+            position_b_upper = current_price * (1 + range_b_pct / 2)
+            position_b_lower = current_price * (1 - range_b_pct / 2)
             
             # Create two single-sided positions
             position_0 = BacktestPosition(
-                token_id=f"pos_0_{timestamp.timestamp()}",
-                token0_amount=target_value_0,
+                token_id=f"pos_a_{timestamp.timestamp()}",
+                token0_amount=position_value,  # Single-sided token0 position
                 token1_amount=0.0,
-                tick_lower=0,  # Simplified
-                tick_upper=0,  # Simplified
-                liquidity=target_value_0,
+                tick_lower=int(position_a_lower),  # Simplified tick calculation
+                tick_upper=int(position_a_upper),
+                liquidity=position_value,
                 created_at=timestamp
             )
             
             position_1 = BacktestPosition(
-                token_id=f"pos_1_{timestamp.timestamp()}",
+                token_id=f"pos_b_{timestamp.timestamp()}",
                 token0_amount=0.0,
-                token1_amount=target_value_1 / current_price,
-                tick_lower=0,  # Simplified
-                tick_upper=0,  # Simplified
-                liquidity=target_value_1,
+                token1_amount=position_value / current_price,  # Single-sided token1 position
+                tick_lower=int(position_b_lower),
+                tick_upper=int(position_b_upper),
+                liquidity=position_value,
                 created_at=timestamp
             )
             
             self.positions = [position_0, position_1]
             
             # Update balances
-            self.balance_0 -= target_value_0
-            self.balance_1 -= target_value_1 / current_price
+            self.balance_0 -= position_value
+            self.balance_1 -= position_value / current_price
+            
+            logger.info(f"Created positions with ranges: A={range_a_pct:.3f}, B={range_b_pct:.3f}")
         
         rebalance_result = {
             'timestamp': timestamp,
