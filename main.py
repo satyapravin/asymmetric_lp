@@ -317,6 +317,8 @@ def run_historical_mode(args):
     print(f"   Initial Value: ${initial_value:,.2f}")
     print(f"   Final Value: ${final_value:,.2f}")
     print(f"   Total Return: {total_return:.2%}")
+    print(f"   Initial Token Balances: {result.initial_balance_0:.6f} token0, {result.initial_balance_1:.6f} token1")
+    print(f"   Final Token Balances: {result.final_balance_0:.6f} token0, {result.final_balance_1:.6f} token1")
     print(f"   Total Fees Collected: ${result.total_fees_collected:.2f}")
     print(f"   Total Rebalances: {result.total_rebalances}")
     print(f"   Total Trades Detected: {result.total_trades}")

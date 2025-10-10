@@ -337,6 +337,8 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 - **Annualized Return**: ~1,100%
 - **Initial Value**: $10,000.00
 - **Final Value**: $12,097.00
+- **Initial Token Balances**: 0.200000 token0, 0.000000 token1
+- **Final Token Balances**: 791.277800 token0, 0.015289 token1
 - **Total Rebalances**: 19
 - **Average Rebalance Interval**: 7.6 hours
 - **Fees Collected**: $14.13
@@ -358,6 +360,8 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 - **Annualized Return**: ~1,100%
 - **Initial Value**: $10,000.00
 - **Final Value**: $12,097.00
+- **Initial Token Balances**: 0.200000 token0, 0.000000 token1
+- **Final Token Balances**: 791.277800 token0, 0.015289 token1
 - **Total Rebalances**: 19
 - **Average Rebalance Interval**: 7.6 hours
 - **Fees Collected**: $14.13
