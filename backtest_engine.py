@@ -250,8 +250,8 @@ class BacktestEngine:
         
         # If current price is within the position range, use full amounts
         # If outside range, reduce value based on how far outside
-        value_0 = position.token0_amount * current_price  # Convert token0 to USD
-        value_1 = position.token1_amount * current_price  # Convert token1 to USD
+        value_0 = position.token0_amount * current_price  # Convert BTC to USD
+        value_1 = position.token1_amount                  # USDC is already in USD
         
         # Don't add fees to position value - fees are collected separately
         # This prevents unrealistic compounding effects in backtesting
@@ -269,8 +269,9 @@ class BacktestEngine:
             Total portfolio value in USD
         """
         # Calculate balance values in USD
-        balance_value_0 = self.balance_0 * current_price  # Convert token0 to USD
-        balance_value_1 = self.balance_1 * current_price   # Convert token1 to USD
+        # token0 is BTC (priced in USD), token1 is USDC (already in USD)
+        balance_value_0 = self.balance_0 * current_price  # Convert BTC to USD
+        balance_value_1 = self.balance_1                   # USDC is already in USD
         
         # Add position values
         position_value_0 = 0.0
@@ -363,9 +364,9 @@ class BacktestEngine:
         if not self.positions:
             return True
         
-        # Calculate inventory status including position values
-        total_value_0 = self.balance_0
-        total_value_1 = self.balance_1 * current_price
+        # Calculate inventory status including position values (in USD)
+        total_value_0 = self.balance_0 * current_price  # BTC to USD
+        total_value_1 = self.balance_1                  # USDC already in USD
         
         # Add position values to total
         for position in self.positions:
@@ -382,17 +383,17 @@ class BacktestEngine:
         target_ratio = self.config.TARGET_INVENTORY_RATIO
         deviation = abs(current_ratio - target_ratio)
         
-        # More aggressive rebalancing for backtesting to show model differences
-        # Use 3% threshold to trigger rebalances more frequently than production
-        rebalance_threshold = 0.03  # 3% deviation threshold
+        # Reasonable rebalancing threshold for backtesting
+        # Use 10% threshold to avoid excessive rebalancing
+        rebalance_threshold = 0.10  # 10% deviation threshold
         
         # Also check for significant price movements
         if len(self.price_history) >= 2:
             prev_price = self.price_history[-2]['price']
             price_change = abs(current_price - prev_price) / prev_price
             
-            # Rebalance if price moved more than 0.3% (reasonable for backtesting)
-            if price_change > 0.003:  # 0.3% threshold
+            # Rebalance if price moved more than 5% (reasonable for backtesting)
+            if price_change > 0.05:  # 5% threshold
                 logger.info(f"Price movement trigger: {price_change:.2%} change from {prev_price:.2f} to {current_price:.2f}")
                 return True
         
@@ -481,24 +482,28 @@ class BacktestEngine:
             
             # Create two single-sided positions using available balances
             # Position A: token0 above current price (encourages selling token0)
+            # Use 50% of available token0 balance for position A
+            position_0_amount = self.balance_0 * 0.5
             position_0 = BacktestPosition(
                 token_id=f"pos_a_{timestamp.timestamp()}",
-                token0_amount=self.balance_0,  # Use available token0 balance
+                token0_amount=position_0_amount,
                 token1_amount=0.0,
                 tick_lower=int(position_a_lower),  # Simplified tick calculation
                 tick_upper=int(position_a_upper),
-                liquidity=self.balance_0 * current_price,  # Liquidity in USD
+                liquidity=position_0_amount * current_price,  # Liquidity in USD
                 created_at=timestamp
             )
             
             # Position B: token1 below current price (encourages buying token1)
+            # Use 50% of available token1 balance for position B
+            position_1_amount = self.balance_1 * 0.5
             position_1 = BacktestPosition(
                 token_id=f"pos_b_{timestamp.timestamp()}",
                 token0_amount=0.0,
-                token1_amount=self.balance_1,  # Use available token1 balance
+                token1_amount=position_1_amount,
                 tick_lower=int(position_b_lower),
                 tick_upper=int(position_b_upper),
-                liquidity=self.balance_1 * current_price,  # Liquidity in USD
+                liquidity=position_1_amount,  # USDC liquidity in USD
                 created_at=timestamp
             )
             

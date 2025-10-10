@@ -310,8 +310,8 @@ def run_historical_mode(args):
     initial_price = df['close'].iloc[0]
     final_price = df['close'].iloc[-1]
     
-    initial_value = result.initial_balance_0 + (result.initial_balance_1 * initial_price)
-    final_value = result.final_balance_0 + (result.final_balance_1 * final_price)
+    initial_value = (result.initial_balance_0 * initial_price) + result.initial_balance_1
+    final_value = (result.final_balance_0 * final_price) + result.final_balance_1
     total_return = (final_value - initial_value) / initial_value
     
     print(f"   Initial Value: ${initial_value:,.2f}")
