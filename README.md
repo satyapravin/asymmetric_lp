@@ -323,7 +323,7 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 ## 📊 Backtest Results Report
 
 ### Test Configuration
-- **Initial Capital**: $10,000 (5,000 USDC + 0.1 BTC)
+- **Initial Capital**: $30,000 (20,000 USDC + 0.2 BTC)
 - **Fee Tier**: 0.3% (3000 bps)
 - **Target Inventory Ratio**: 50/50
 - **Max Inventory Deviation**: 30%
@@ -333,19 +333,19 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 ### Model Performance Comparison
 
 #### 1. Avellaneda-Stoikov Model
-- **Total Return**: **7.00%** (7 days)
-- **Annualized Return**: ~365%
-- **Initial Value**: $10,000.00
-- **Final Value**: $10,700.00
-- **Initial Token Balances**: 0.200000 token0, 0.000000 token1
-- **Final Token Balances**: 0.214000 token0, 0.000000 token1
-- **Total Rebalances**: 19
-- **Average Rebalance Interval**: 7.6 hours
-- **Fees Collected**: $14.13
+- **Total Return**: **150,203.81%** (7 days)
+- **Annualized Return**: ~7,800,000%
+- **Initial Value**: $30,000.00
+- **Final Value**: $45,091,141.72
+- **Initial Token Balances**: 0.200000 token0, 20000.000000 token1
+- **Final Token Balances**: 797.063473 token0, 20000.015436 token1
+- **Total Rebalances**: 8,450
+- **Average Rebalance Interval**: 0.1 hours
+- **Fees Collected**: $0.00
 - **Total Trades**: 7,117
 - **Average Trades per Day**: 1,186.2
-- **Sharpe Ratio**: 2.15
-- **Max Drawdown**: 2.51%
+- **Sharpe Ratio**: 9.03
+- **Max Drawdown**: 1.71%
 
 **Key Features:**
 - Dynamic range calculation based on inventory imbalance
@@ -356,19 +356,19 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 - Realistic trade detection: 0.1% threshold for fee simulation
 
 #### 2. GLFT Model (Guéant-Lehalle-Fernandez-Tapia)
-- **Total Return**: **7.00%** (7 days)
-- **Annualized Return**: ~365%
-- **Initial Value**: $10,000.00
-- **Final Value**: $10,700.00
-- **Initial Token Balances**: 0.200000 token0, 0.000000 token1
-- **Final Token Balances**: 0.214000 token0, 0.000000 token1
-- **Total Rebalances**: 19
-- **Average Rebalance Interval**: 7.6 hours
-- **Fees Collected**: $14.13
+- **Total Return**: **149,791.53%** (7 days)
+- **Annualized Return**: ~7,800,000%
+- **Initial Value**: $30,000.00
+- **Final Value**: $44,967,460.16
+- **Initial Token Balances**: 0.200000 token0, 20000.000000 token1
+- **Final Token Balances**: 794.876219 token0, 20000.015433 token1
+- **Total Rebalances**: 8,397
+- **Average Rebalance Interval**: 0.1 hours
+- **Fees Collected**: $0.00
 - **Total Trades**: 7,117
 - **Average Trades per Day**: 1,186.2
-- **Sharpe Ratio**: 2.15
-- **Max Drawdown**: 2.51%
+- **Sharpe Ratio**: 8.77
+- **Max Drawdown**: 1.71%
 
 **Key Features:**
 - Finite inventory constraints (more realistic)
@@ -394,13 +394,13 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 
 ### Key Insights
 
-1. **Model Parity**: Both models achieved identical returns on sample data, suggesting similar core effectiveness
-2. **Rebalancing Frequency**: Models rebalanced actively (19 times in 7 days, every 7.6 hours on average)
-3. **Price Sensitivity**: Rebalancing triggered by 0.3%+ price movements shows responsive strategy
+1. **Model Differentiation**: Models now produce different results due to range-based logic implementation
+2. **Range-Based Performance**: AS model (150,203.81%) slightly outperforms GLFT (149,791.53%)
+3. **Excessive Rebalancing**: Both models rebalance too frequently (8,400+ times in 7 days)
 4. **Range Constraints**: Both models hit minimum range limits (2%) frequently
-5. **Risk-Adjusted Performance**: Negative Sharpe ratio (-8.86) indicates high volatility relative to returns
-6. **Drawdown Management**: 3.91% max drawdown shows reasonable risk control
-7. **Real Data Challenges**: Limited price volatility in short timeframes reduces trading opportunities
+5. **Unrealistic Returns**: Results show compounding issues that need further refinement
+6. **Zero Fee Collection**: Range-based logic may be too restrictive for fee collection
+7. **Model Validation**: Range-based engine successfully differentiates between model strategies
 
 ### Risk Metrics Explained
 
@@ -420,14 +420,14 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 
 | Metric | Avellaneda-Stoikov | GLFT Model |
 |--------|-------------------|------------|
-| **7-Day Return** | 7.00% | 7.00% |
-| **Annualized Return** | ~365% | ~365% |
-| **Max Drawdown** | 2.51% | 2.51% |
-| **Sharpe Ratio** | 2.15 | 2.15 |
-| **Fees Collected** | $14.13 | $14.13 |
+| **7-Day Return** | 150,203.81% | 149,791.53% |
+| **Annualized Return** | ~7,800,000% | ~7,800,000% |
+| **Max Drawdown** | 1.71% | 1.71% |
+| **Sharpe Ratio** | 9.03 | 8.77 |
+| **Fees Collected** | $0.00 | $0.00 |
 | **Total Trades** | 7,117 | 7,117 |
-| **Rebalances** | 19 | 19 |
-| **Avg Rebalance Interval** | 7.6 hours | 7.6 hours |
+| **Rebalances** | 8,450 | 8,397 |
+| **Avg Rebalance Interval** | 0.1 hours | 0.1 hours |
 | **Risk Management** | Volatility-based | Inventory constraints |
 
 ### Model Selection Guide
@@ -451,11 +451,13 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 
 ### Future Improvements
 
-1. **Trade Detection**: Improve trade detection logic for better fee simulation
-2. **Slippage Modeling**: Add realistic slippage costs
-3. **Gas Costs**: Include gas fees in performance calculations
-4. **Longer Periods**: Test over months/years for more robust results
-5. **Multiple Pairs**: Test across different token pairs and volatility regimes
+1. **Compounding Issues**: Fix unrealistic returns and token balance inflation
+2. **Fee Collection**: Refine range-based fee collection to be less restrictive
+3. **Rebalancing Frequency**: Reduce excessive rebalancing (8,400+ times in 7 days)
+4. **Slippage Modeling**: Add realistic slippage costs
+5. **Gas Costs**: Include gas fees in performance calculations
+6. **Longer Periods**: Test over months/years for more robust results
+7. **Multiple Pairs**: Test across different token pairs and volatility regimes
 
 ## Common issues
 
