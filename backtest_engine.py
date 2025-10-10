@@ -725,7 +725,7 @@ class BacktestEngine:
         final_value = final_balance_0 + (final_balance_1 * final_price)
         total_return = (final_value - initial_value) / initial_value
         
-        # Calculate total fees collected
+        # Calculate total fees collected (already included in final balances)
         total_fees = sum(pos.fees_collected_0 + (pos.fees_collected_1 * final_price) for pos in self.positions)
         
         # Calculate performance metrics
