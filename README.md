@@ -336,13 +336,13 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 #### 1. Avellaneda-Stoikov Model
 - **Total Return**: **2.08%** (20 days)
 - **Initial Value**: $20,469.73
-- **Final Value**: $20,895.30
+- **Final Value**: $20,506.64
 - **Total Rebalances**: 3
-- **Average Rebalance Interval**: 7.0 days
+- **Average Rebalance Interval**: 6.8 days
 - **Fees Collected**: $389.37
 - **Total Trades**: 775
 - **Average Trades per Day**: 38.8
-- **Sharpe Ratio**: 0.26
+- **Sharpe Ratio**: 448.51
 - **Max Drawdown**: 8.66%
 
 **Key Features:**
@@ -355,13 +355,13 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 #### 2. GLFT Model (Guéant-Lehalle-Fernandez-Tapia)
 - **Total Return**: **0.51%** (20 days)
 - **Initial Value**: $20,469.73
-- **Final Value**: $20,574.17
+- **Final Value**: $20,506.64
 - **Total Rebalances**: 3
-- **Average Rebalance Interval**: 7.0 days
+- **Average Rebalance Interval**: 6.8 days
 - **Fees Collected**: $67.39
 - **Total Trades**: 775
 - **Average Trades per Day**: 38.8
-- **Sharpe Ratio**: 0.26
+- **Sharpe Ratio**: 448.51
 - **Max Drawdown**: 8.66%
 
 **Key Features:**
@@ -438,11 +438,11 @@ python ohlc_downloader.py \
 |--------|-------------------|------------|
 | **20-Day Return** | 2.08% | 0.51% |
 | **Max Drawdown** | 8.66% | 8.66% |
-| **Sharpe Ratio** | 0.26 | 0.26 |
+| **Sharpe Ratio** | 448.51 | 448.51 |
 | **Fees Collected** | $389.37 | $67.39 |
 | **Total Trades** | 775 | 775 |
 | **Rebalances** | 3 | 3 |
-| **Avg Rebalance Interval** | 7.0 days | 7.0 days |
+| **Avg Rebalance Interval** | 6.8 days | 6.8 days |
 | **Avg Trades per Day** | 38.8 | 38.8 |
 | **Risk Management** | Volatility-based | Inventory constraints |
 

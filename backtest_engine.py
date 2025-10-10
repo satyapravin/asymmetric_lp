@@ -394,11 +394,19 @@ class BacktestEngine:
         total_value = balance_value_0 + balance_value_1 + position_value_0 + position_value_1 + fees_value_0 + fees_value_1
         return total_value
     
-    def calculate_sharpe_ratio(self, risk_free_rate: float = 0.02) -> float:
+    def calculate_sharpe_ratio(self, initial_balance_0: float, initial_balance_1: float, 
+                             final_balance_0: float, final_balance_1: float, 
+                             initial_price: float, final_price: float, risk_free_rate: float = 0.02) -> float:
         """
-        Calculate Sharpe ratio from portfolio values
+        Calculate Sharpe ratio based on actual token balance changes
         
         Args:
+            initial_balance_0: Initial token0 balance
+            initial_balance_1: Initial token1 balance  
+            final_balance_0: Final token0 balance
+            final_balance_1: Final token1 balance
+            initial_price: Initial price (token1/token0)
+            final_price: Final price (token1/token0)
             risk_free_rate: Annual risk-free rate (default 2%)
             
         Returns:
@@ -407,14 +415,24 @@ class BacktestEngine:
         if len(self.portfolio_values) < 2:
             return 0.0
         
-        # Convert to numpy array
-        values = np.array(self.portfolio_values)
+        # Calculate P/L based on token balance changes + fees collected
+        # Token0 (BTC) P/L: (final - initial) * final_price + fees collected
+        token0_pl_usd = (final_balance_0 - initial_balance_0) * final_price + (self.total_fees_collected_0 * final_price)
         
-        # Calculate total return over the period
-        total_return = (values[-1] - values[0]) / values[0]
+        # Token1 (USDC) P/L: (final - initial) * 1.0 + fees collected (already in USD)
+        token1_pl_usd = (final_balance_1 - initial_balance_1) * 1.0 + self.total_fees_collected_1
+        
+        # Total P/L in USD
+        total_pl_usd = token0_pl_usd + token1_pl_usd
+        
+        # Calculate initial portfolio value in USD
+        initial_value_usd = (initial_balance_0 * initial_price) + initial_balance_1
+        
+        # Calculate total return
+        total_return = total_pl_usd / initial_value_usd if initial_value_usd > 0 else 0.0
         
         # Calculate period length in days
-        period_days = len(values) / (24 * 60)  # Convert minutes to days
+        period_days = len(self.portfolio_values) / (24 * 60)  # Convert minutes to days
         
         # For short periods, use a more conservative approach
         if period_days < 30:
@@ -428,13 +446,13 @@ class BacktestEngine:
             # Calculate Sharpe ratio (don't annualize for short periods)
             sharpe_ratio = estimated_daily_return / estimated_daily_volatility
         else:
-            # For longer periods, use daily returns
+            # For longer periods, use daily returns from portfolio values
             minutes_per_day = 1440
             daily_returns = []
             
-            for i in range(0, len(values) - 1, minutes_per_day):
-                if i + minutes_per_day < len(values):
-                    daily_return = (values[i + minutes_per_day] - values[i]) / values[i]
+            for i in range(0, len(self.portfolio_values) - 1, minutes_per_day):
+                if i + minutes_per_day < len(self.portfolio_values):
+                    daily_return = (self.portfolio_values[i + minutes_per_day] - self.portfolio_values[i]) / self.portfolio_values[i]
                     daily_returns.append(daily_return)
             
             if len(daily_returns) < 2:
@@ -447,7 +465,12 @@ class BacktestEngine:
             if daily_volatility == 0:
                 return 0.0
             
-            sharpe_ratio = (avg_daily_return / daily_volatility) * np.sqrt(365)
+            # Annualize returns and volatility
+            annual_return = avg_daily_return * 365
+            annual_volatility = daily_volatility * np.sqrt(365)
+            
+            # Calculate Sharpe ratio
+            sharpe_ratio = (annual_return - risk_free_rate) / annual_volatility
         
         return sharpe_ratio
     
@@ -809,6 +832,7 @@ class BacktestEngine:
             self.portfolio_values.append(current_portfolio_value)
         
         # Calculate final results
+        initial_price = df['close'].iloc[0]
         final_price = df['close'].iloc[-1]
         final_balance_0 = self.balance_0
         final_balance_1 = self.balance_1
@@ -827,7 +851,14 @@ class BacktestEngine:
         total_fees = sum(pos.fees_collected_0 + (pos.fees_collected_1 * final_price) for pos in self.positions)
         
         # Calculate performance metrics
-        sharpe_ratio = self.calculate_sharpe_ratio()
+        sharpe_ratio = self.calculate_sharpe_ratio(
+            initial_balance_0=initial_balance_0,
+            initial_balance_1=initial_balance_1,
+            final_balance_0=final_balance_0,
+            final_balance_1=final_balance_1,
+            initial_price=initial_price,
+            final_price=final_price
+        )
         max_drawdown = self.calculate_max_drawdown()
         
         result = BacktestResult(
