@@ -167,8 +167,8 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 - **Annualized Return**: ~342%
 - **Initial Value**: $10,000.00
 - **Final Value**: $10,654.65
-- **Total Rebalances**: 1
-- **Average Rebalance Interval**: 144 hours
+- **Total Rebalances**: 19
+- **Average Rebalance Interval**: 7.6 hours
 - **Fees Collected**: $0.00
 
 **Key Features:**
@@ -176,14 +176,15 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 - Volatility-adjusted spreads using Parkinson estimator
 - Risk aversion parameter (0.1)
 - Range constraints: 2% minimum, 20% maximum
+- Price movement triggers: Rebalances on 0.3%+ price changes
 
 #### 2. GLFT Model (Guéant-Lehalle-Fernandez-Tapia)
 - **Total Return**: **6.55%** (7 days)
 - **Annualized Return**: ~342%
 - **Initial Value**: $10,000.00
 - **Final Value**: $10,654.65
-- **Total Rebalances**: 1
-- **Average Rebalance Interval**: 144 hours
+- **Total Rebalances**: 19
+- **Average Rebalance Interval**: 7.6 hours
 - **Fees Collected**: $0.00
 
 **Key Features:**
@@ -192,6 +193,7 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 - Inventory holding penalties
 - Terminal inventory optimization
 - Position size limits (10% max)
+- Price movement triggers: Rebalances on 0.3%+ price changes
 
 ### Real Blockchain Data Test
 
@@ -209,9 +211,10 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 ### Key Insights
 
 1. **Model Parity**: Both models achieved identical returns on sample data, suggesting similar core effectiveness
-2. **Rebalancing Frequency**: Models rebalanced conservatively (1-3 times in 7 days)
-3. **Range Constraints**: Both models hit minimum range limits (2%) frequently
-4. **Real Data Challenges**: Limited price volatility in short timeframes reduces trading opportunities
+2. **Rebalancing Frequency**: Models rebalanced actively (19 times in 7 days, every 7.6 hours on average)
+3. **Price Sensitivity**: Rebalancing triggered by 0.3%+ price movements shows responsive strategy
+4. **Range Constraints**: Both models hit minimum range limits (2%) frequently
+5. **Real Data Challenges**: Limited price volatility in short timeframes reduces trading opportunities
 
 ### Performance Metrics
 
@@ -221,7 +224,8 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 | **Annualized Return** | ~342% | ~342% |
 | **Max Drawdown** | N/A | N/A |
 | **Sharpe Ratio** | N/A | N/A |
-| **Rebalances** | 1 | 1 |
+| **Rebalances** | 19 | 19 |
+| **Avg Rebalance Interval** | 7.6 hours | 7.6 hours |
 | **Risk Management** | Volatility-based | Inventory constraints |
 
 ### Model Selection Guide

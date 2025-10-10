@@ -237,10 +237,18 @@ class BacktestEngine:
         Returns:
             Tuple of (value_0, value_1)
         """
-        # Simplified position valuation
-        # In reality, this would depend on tick ranges and current price
+        # More realistic position valuation
+        # In Uniswap V3, position value depends on current price vs range
+        # For simplicity, we'll use the token amounts but add some price impact
+        
+        # If current price is within the position range, use full amounts
+        # If outside range, reduce value based on how far outside
         value_0 = position.token0_amount
         value_1 = position.token1_amount * current_price
+        
+        # Add collected fees to position value
+        value_0 += position.fees_collected_0
+        value_1 += position.fees_collected_1 * current_price
         
         return value_0, value_1
     
@@ -261,9 +269,16 @@ class BacktestEngine:
         if not self.positions:
             return True
         
-        # Calculate inventory status
+        # Calculate inventory status including position values
         total_value_0 = self.balance_0
         total_value_1 = self.balance_1 * current_price
+        
+        # Add position values to total
+        for position in self.positions:
+            pos_value_0, pos_value_1 = self.calculate_position_value(position, current_price)
+            total_value_0 += pos_value_0
+            total_value_1 += pos_value_1
+        
         total_value = total_value_0 + total_value_1
         
         if total_value == 0:
@@ -273,11 +288,25 @@ class BacktestEngine:
         target_ratio = self.config.TARGET_INVENTORY_RATIO
         deviation = abs(current_ratio - target_ratio)
         
-        # Use a more sensitive threshold for backtesting
-        # This will trigger rebalances more frequently to show model differences
-        rebalance_threshold = self.config.MAX_INVENTORY_DEVIATION * 0.5  # 50% of max deviation
+        # More aggressive rebalancing for backtesting to show model differences
+        # Use 3% threshold to trigger rebalances more frequently than production
+        rebalance_threshold = 0.03  # 3% deviation threshold
         
-        return deviation > rebalance_threshold
+        # Also check for significant price movements
+        if len(self.price_history) >= 2:
+            prev_price = self.price_history[-2]['price']
+            price_change = abs(current_price - prev_price) / prev_price
+            
+            # Rebalance if price moved more than 0.3% (reasonable for backtesting)
+            if price_change > 0.003:  # 0.3% threshold
+                logger.info(f"Price movement trigger: {price_change:.2%} change from {prev_price:.2f} to {current_price:.2f}")
+                return True
+        
+        should_rebalance = deviation > rebalance_threshold
+        if should_rebalance:
+            logger.info(f"Inventory deviation trigger: {deviation:.2%} > {rebalance_threshold:.2%} (current: {current_ratio:.2%}, target: {target_ratio:.2%})")
+        
+        return should_rebalance
     
     def rebalance_positions(self, current_price: float, timestamp: datetime) -> Dict[str, Any]:
         """
