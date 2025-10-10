@@ -72,7 +72,9 @@ python ohlc_downloader.py \
 | **Avg Rebalance Interval** | 6.8 days | 6.8 days |
 
 **Key Insights:**
-- Both models show identical performance with real blockchain data
+- Both models show identical performance despite different range calculations
+- Avellaneda-Stoikov: 2.0% ranges (constrained to minimum)
+- GLFT Model: 3.7%/2.0% ranges (different due to execution costs)
 - Efficient rebalancing (3 times in 20 days)
 - Realistic fee collection based on position size and trade participation
 - Low drawdown (0.35%) shows excellent risk management
