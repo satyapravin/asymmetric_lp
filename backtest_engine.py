@@ -205,7 +205,7 @@ class BacktestEngine:
     
     def simulate_lp_fees(self, trades: List[BacktestTrade], current_price: float) -> Tuple[float, float]:
         """
-        Simulate LP fee collection from trades
+        Simulate LP fee collection from trades based on position ranges
         
         Args:
             trades: List of trades in current period
@@ -218,20 +218,56 @@ class BacktestEngine:
         total_fees_1 = 0.0
         
         for trade in trades:
-            # Calculate fees based on trade volume and current price
-            if trade.trade_type == 'buy':
-                # Buying token1 with token0 - fees in token0
-                fees_0 = trade.fees_paid
-                fees_1 = 0.0
-            else:
-                # Selling token1 for token0 - fees in token1
-                fees_0 = 0.0
-                fees_1 = trade.fees_paid / current_price
-            
-            total_fees_0 += fees_0
-            total_fees_1 += fees_1
+            # Check which positions are active for this trade
+            for position in self.positions:
+                # Check if trade price is within position range
+                if position.tick_lower <= trade.price <= position.tick_upper:
+                    # Position is active for this trade
+                    # Calculate fees based on position's share of total liquidity
+                    position_liquidity_share = self._calculate_position_liquidity_share(position, current_price)
+                    
+                    if trade.trade_type == 'buy':
+                        # Buying token1 with token0 - fees in token0
+                        fees_0 = trade.fees_paid * position_liquidity_share
+                        fees_1 = 0.0
+                    else:
+                        # Selling token1 for token0 - fees in token1
+                        fees_0 = 0.0
+                        fees_1 = (trade.fees_paid / current_price) * position_liquidity_share
+                    
+                    # Add fees to position
+                    position.fees_collected_0 += fees_0
+                    position.fees_collected_1 += fees_1
+                    
+                    total_fees_0 += fees_0
+                    total_fees_1 += fees_1
         
         return total_fees_0, total_fees_1
+    
+    def _calculate_position_liquidity_share(self, position: BacktestPosition, current_price: float) -> float:
+        """
+        Calculate this position's share of total liquidity for fee distribution
+        
+        Args:
+            position: LP position
+            current_price: Current price
+            
+        Returns:
+            Position's liquidity share (0.0 to 1.0)
+        """
+        if not self.positions:
+            return 0.0
+        
+        # Calculate total liquidity across all positions
+        total_liquidity = 0.0
+        for pos in self.positions:
+            total_liquidity += pos.liquidity
+        
+        if total_liquidity == 0:
+            return 0.0
+        
+        # Return this position's share
+        return position.liquidity / total_liquidity
     
     def calculate_position_value(self, position: BacktestPosition, current_price: float) -> Tuple[float, float]:
         """
@@ -244,14 +280,27 @@ class BacktestEngine:
         Returns:
             Tuple of (value_0, value_1)
         """
-        # More realistic position valuation
+        # Range-based position valuation
         # In Uniswap V3, position value depends on current price vs range
-        # For simplicity, we'll use the token amounts but add some price impact
+        # Positions earn fees only when price is within their range
         
-        # If current price is within the position range, use full amounts
-        # If outside range, reduce value based on how far outside
-        value_0 = position.token0_amount * current_price  # Convert BTC to USD
-        value_1 = position.token1_amount                  # USDC is already in USD
+        # Check if current price is within position range
+        if position.tick_lower <= current_price <= position.tick_upper:
+            # Price is within range - position is fully active
+            # Use full token amounts
+            value_0 = position.token0_amount * current_price  # Convert BTC to USD
+            value_1 = position.token1_amount                  # USDC is already in USD
+        else:
+            # Price is outside range - position is inactive
+            # Reduce value based on how far outside the range
+            if current_price < position.tick_lower:
+                # Price below range - only token0 has value
+                value_0 = position.token0_amount * current_price
+                value_1 = 0.0
+            else:
+                # Price above range - only token1 has value
+                value_0 = 0.0
+                value_1 = position.token1_amount
         
         # Don't add fees to position value - fees are collected separately
         # This prevents unrealistic compounding effects in backtesting
@@ -610,13 +659,8 @@ class BacktestEngine:
             minute_trades = trade_groups.get(minute_key, [])
             
             if minute_trades:
-                # Simulate LP fee collection
+                # Simulate LP fee collection (fees are already added to positions in simulate_lp_fees)
                 fees_0, fees_1 = self.simulate_lp_fees(minute_trades, current_price)
-                
-                # Add fees to positions
-                for position in self.positions:
-                    position.fees_collected_0 += fees_0 / len(self.positions)
-                    position.fees_collected_1 += fees_1 / len(self.positions)
                 
                 self.trades.extend(minute_trades)
             
