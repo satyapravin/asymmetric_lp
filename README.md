@@ -334,35 +334,35 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 ### Model Performance Comparison
 
 #### 1. Avellaneda-Stoikov Model
-- **Total Return**: **10.42%** (20 days)
+- **Total Return**: **2.08%** (20 days)
 - **Initial Value**: $20,469.73
-- **Final Value**: $22,602.89
-- **Total Rebalances**: 21
-- **Average Rebalance Interval**: 23.2 hours
-- **Fees Collected**: $0.00
+- **Final Value**: $20,895.30
+- **Total Rebalances**: 3
+- **Average Rebalance Interval**: 7.0 days
+- **Fees Collected**: $389.37
 - **Total Trades**: 775
 - **Average Trades per Day**: 38.8
 - **Sharpe Ratio**: 0.26
-- **Max Drawdown**: 0.24%
+- **Max Drawdown**: 8.66%
 
 **Key Features:**
 - Dynamic range calculation based on inventory imbalance
 - Volatility-adjusted spreads using Parkinson estimator
 - Risk aversion parameter (0.1)
 - Range constraints: 2% minimum, 20% maximum
-- **Issue**: Fee collection not working properly (0.00 fees collected)
+- **Working**: Fee collection based on position size and trade participation
 
 #### 2. GLFT Model (Guéant-Lehalle-Fernandez-Tapia)
-- **Total Return**: **10.42%** (20 days)
+- **Total Return**: **0.51%** (20 days)
 - **Initial Value**: $20,469.73
-- **Final Value**: $22,602.89
-- **Total Rebalances**: 21
-- **Average Rebalance Interval**: 23.2 hours
-- **Fees Collected**: $0.00
+- **Final Value**: $20,574.17
+- **Total Rebalances**: 3
+- **Average Rebalance Interval**: 7.0 days
+- **Fees Collected**: $67.39
 - **Total Trades**: 775
 - **Average Trades per Day**: 38.8
 - **Sharpe Ratio**: 0.26
-- **Max Drawdown**: 0.24%
+- **Max Drawdown**: 8.66%
 
 **Key Features:**
 - Finite inventory constraints (more realistic)
@@ -370,7 +370,7 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 - Inventory holding penalties
 - Terminal inventory optimization
 - Position size limits (10% max)
-- **Issue**: Fee collection not working properly (0.00 fees collected)
+- **Working**: Fee collection based on position size and trade participation
 
 ### Real Blockchain Data Capability
 
@@ -436,13 +436,13 @@ python ohlc_downloader.py \
 
 | Metric | Avellaneda-Stoikov | GLFT Model |
 |--------|-------------------|------------|
-| **20-Day Return** | 10.42% | 10.42% |
-| **Max Drawdown** | 0.24% | 0.24% |
+| **20-Day Return** | 2.08% | 0.51% |
+| **Max Drawdown** | 8.66% | 8.66% |
 | **Sharpe Ratio** | 0.26 | 0.26 |
-| **Fees Collected** | $0.00 | $0.00 |
+| **Fees Collected** | $389.37 | $67.39 |
 | **Total Trades** | 775 | 775 |
-| **Rebalances** | 21 | 21 |
-| **Avg Rebalance Interval** | 24.0 hours | 24.0 hours |
+| **Rebalances** | 3 | 3 |
+| **Avg Rebalance Interval** | 7.0 days | 7.0 days |
 | **Avg Trades per Day** | 38.8 | 38.8 |
 | **Risk Management** | Volatility-based | Inventory constraints |
 

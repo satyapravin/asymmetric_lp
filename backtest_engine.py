@@ -196,13 +196,16 @@ class BacktestEngine:
                     trade_volume = volume * 0.3  # Assume 30% of volume at close
                 
                 # Calculate fee based on price movement, not volume
-                # Fee will be calculated in simulate_lp_fees based on position size and price movement
+                # Use a realistic trade size for fee calculation
+                realistic_trade_size = 1000.0  # $1000 per trade
+                fees_paid = realistic_trade_size * fee_threshold  # 0.3% fee
+                
                 trades.append(BacktestTrade(
                     timestamp=timestamp,
                     price=trade_price,
-                    volume=0.0,  # Ignore volume - we'll calculate based on position size
+                    volume=realistic_trade_size,  # Use realistic volume
                     trade_type=trade_type,
-                    fees_paid=0.0  # Will be calculated in simulate_lp_fees
+                    fees_paid=fees_paid  # Calculate actual fees
                 ))
         
         logger.info(f"Detected {len(trades)} trades from OHLC data")
@@ -228,8 +231,8 @@ class BacktestEngine:
             active_positions = []
             total_active_liquidity = 0.0
             
-            logger.info(f"Processing trade: price={trade.price:.2f}, volume={trade.volume:.2f}, type={trade.trade_type}, fees_paid={trade.fees_paid:.6f}")
-            logger.info(f"Current positions: {len(self.positions)}")
+            logger.debug(f"Processing trade: price={trade.price:.2f}, volume={trade.volume:.2f}, type={trade.trade_type}, fees_paid={trade.fees_paid:.6f}")
+            logger.debug(f"Current positions: {len(self.positions)}")
             
             # Find positions that are active for this trade price
             for position in self.positions:
@@ -241,53 +244,30 @@ class BacktestEngine:
                         total_active_liquidity += position_liquidity
                         logger.debug(f"Active position: price={trade.price:.2f}, range=[{position.tick_lower:.2f}, {position.tick_upper:.2f}], liquidity={position_liquidity:.2f}")
             
-            # Calculate fees based on actual LP mechanics: price movement relative to position range
+            # Simple LP fee collection: distribute trade fees proportionally among active positions
             if active_positions and total_active_liquidity > 0:
                 for position, position_liquidity in active_positions:
-                    # Calculate position range width
-                    range_width = position.tick_upper - position.tick_lower
+                    # Calculate this position's share of the trade
+                    position_share = position_liquidity / total_active_liquidity
                     
-                    if range_width > 0:
-                        # Calculate how much of the position gets filled by this price movement
-                        # For simplicity, assume each trade moves price by a small amount within the range
-                        # This simulates the cumulative effect of many small trades
-                        price_movement_ratio = 0.001  # 0.1% of range per trade (realistic for minute data)
-                        
-                        # Calculate position value in USD
-                        position_value_usd = (position.token0_amount * current_price) + position.token1_amount
-                        
-                        # Calculate filled amount based on price movement relative to range
-                        fill_ratio = price_movement_ratio
-                        filled_amount_usd = position_value_usd * fill_ratio
-                        
-                        # Calculate fee based on filled amount
-                        fee_amount_usd = filled_amount_usd * self.fee_tier_bps / 10000  # Apply fee rate
-                        
-                        # Distribute fee between token0 and token1 based on position composition
-                        if position.token0_amount > 0 and position.token1_amount > 0:
-                            # Mixed position - split fee proportionally
-                            token0_ratio = (position.token0_amount * current_price) / position_value_usd
-                            token1_ratio = position.token1_amount / position_value_usd
-                            
-                            fees_0 = (fee_amount_usd / current_price) * token0_ratio  # Convert to token0
-                            fees_1 = fee_amount_usd * token1_ratio  # Keep in USD (token1)
-                        elif position.token0_amount > 0:
-                            # Token0 only position
-                            fees_0 = fee_amount_usd / current_price  # Convert to token0
-                            fees_1 = 0.0
-                        else:
-                            # Token1 only position
-                            fees_0 = 0.0
-                            fees_1 = fee_amount_usd  # Keep in USD (token1)
-                        
-                        # Add fees to position
-                        position.fees_collected_0 += fees_0
-                        position.fees_collected_1 += fees_1
-                        
-                        total_fees_0 += fees_0
-                        total_fees_1 += fees_1
-                        
-                        logger.debug(f"LP Fee: range_width={range_width:.4f}, fill_ratio={fill_ratio:.4f}, position_value=${position_value_usd:.2f}, filled=${filled_amount_usd:.2f}, fee=${fee_amount_usd:.2f}")
+                    # Calculate fees based on position's share of the trade
+                    if trade.trade_type == 'buy':
+                        # Buying token1 with token0 - fees in token0
+                        fees_0 = trade.fees_paid * position_share
+                        fees_1 = 0.0
+                    else:
+                        # Selling token1 for token0 - fees in token1
+                        fees_0 = 0.0
+                        fees_1 = (trade.fees_paid / current_price) * position_share
+                    
+                    # Add fees to position
+                    position.fees_collected_0 += fees_0
+                    position.fees_collected_1 += fees_1
+                    
+                    total_fees_0 += fees_0
+                    total_fees_1 += fees_1
+                    
+                    logger.debug(f"LP Fee: position_share={position_share:.4f}, fees_0={fees_0:.4f}, fees_1={fees_1:.4f}")
         
         return total_fees_0, total_fees_1
     
@@ -820,7 +800,7 @@ class BacktestEngine:
             # Check if rebalancing is needed (with cooldown period)
             if self.should_rebalance(current_price):
                 # Add cooldown period to prevent excessive rebalancing
-                if self.last_rebalance_time is None or (timestamp - self.last_rebalance_time).total_seconds() > 86400:  # 24 hour cooldown
+                if self.last_rebalance_time is None or (timestamp - self.last_rebalance_time).total_seconds() > 604800:  # 7 day cooldown
                     self.rebalance_positions(current_price, timestamp)
                     self.last_rebalance_time = timestamp
             
