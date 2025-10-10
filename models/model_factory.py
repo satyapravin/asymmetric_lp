@@ -7,6 +7,7 @@ from config import Config
 from .base_model import BaseInventoryModel
 from .avellaneda_stoikov import AvellanedaStoikovModel
 from .simple_model import SimpleModel
+from .glft_model import GLFTModel
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ class ModelFactory:
     _models: Dict[str, Type[BaseInventoryModel]] = {
         'AvellanedaStoikovModel': AvellanedaStoikovModel,
         'SimpleModel': SimpleModel,
+        'GLFTModel': GLFTModel,
         # Add more models here as they are implemented
         # 'MLModel': MLModel,
         # 'HybridModel': HybridModel,

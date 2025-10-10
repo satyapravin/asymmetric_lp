@@ -34,6 +34,15 @@ A basic example model for demonstration:
 - No volatility consideration
 - Easy to understand and modify
 
+### 3. GLFTModel (`glft_model.py`)
+Advanced market making model with inventory constraints:
+- Finite inventory constraints (more realistic than AS)
+- Execution cost consideration
+- Inventory holding penalties
+- Terminal inventory optimization
+- Better risk management with position size limits
+- More sophisticated than basic AS model
+
 ## Adding a New Model
 
 ### Step 1: Create the Model Class

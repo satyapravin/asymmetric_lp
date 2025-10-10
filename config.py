@@ -77,6 +77,13 @@ class Config:
     MAX_VOLATILITY = float(os.getenv('MAX_VOLATILITY', '2.0'))
     MIN_VOLATILITY = float(os.getenv('MIN_VOLATILITY', '0.01'))
     
+    # GLFT model specific parameters
+    EXECUTION_COST = float(os.getenv('EXECUTION_COST', '0.001'))  # 0.1% execution cost
+    INVENTORY_PENALTY = float(os.getenv('INVENTORY_PENALTY', '0.05'))  # Inventory holding penalty
+    MAX_POSITION_SIZE = float(os.getenv('MAX_POSITION_SIZE', '0.1'))  # 10% max position size
+    TERMINAL_INVENTORY_PENALTY = float(os.getenv('TERMINAL_INVENTORY_PENALTY', '0.2'))  # Terminal penalty
+    INVENTORY_CONSTRAINT_ACTIVE = os.getenv('INVENTORY_CONSTRAINT_ACTIVE', 'true').lower() == 'true'
+    
     # Telegram alerting
     TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
     TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
