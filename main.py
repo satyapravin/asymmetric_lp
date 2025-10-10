@@ -312,8 +312,9 @@ def run_historical_mode(args):
     
     initial_value = (result.initial_balance_0 * initial_price) + result.initial_balance_1
     final_value = (result.final_balance_0 * final_price) + result.final_balance_1
-    # Include fees collected in the total return calculation
-    total_return = (final_value + result.total_fees_collected - initial_value) / initial_value
+    # Calculate total return based on actual token balance changes + fees
+    # Don't double-count fees - they're already included in the portfolio value calculation
+    total_return = (final_value - initial_value) / initial_value
     
     print(f"   Initial Value: ${initial_value:,.2f}")
     print(f"   Final Value: ${final_value:,.2f}")
