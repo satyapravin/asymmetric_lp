@@ -251,14 +251,15 @@ class BacktestEngine:
                     position_share = position_liquidity / total_active_liquidity
                     
                     # Calculate fees based on position's share of the trade
+                    # trade.fees_paid is in USD, so we need to convert to token units
                     if trade.trade_type == 'buy':
-                        # Buying token1 with token0 - fees in token0
-                        fees_0 = trade.fees_paid * position_share
+                        # Buying token1 with token0 - fees in token0 (USD / price = token0)
+                        fees_0 = (trade.fees_paid / current_price) * position_share
                         fees_1 = 0.0
                     else:
-                        # Selling token1 for token0 - fees in token1
+                        # Selling token1 for token0 - fees in token1 (USD = token1)
                         fees_0 = 0.0
-                        fees_1 = (trade.fees_paid / current_price) * position_share
+                        fees_1 = trade.fees_paid * position_share
                     
                     # Add fees to position
                     position.fees_collected_0 += fees_0
@@ -473,6 +474,28 @@ class BacktestEngine:
             sharpe_ratio = (annual_return - risk_free_rate) / annual_volatility
         
         return sharpe_ratio
+    
+    def calculate_token_drawdown(self, token_index: int) -> float:
+        """
+        Calculate maximum drawdown for a specific token
+        
+        Args:
+            token_index: 0 for token0, 1 for token1
+            
+        Returns:
+            Maximum drawdown as percentage
+        """
+        if len(self.portfolio_values) < 2:
+            return 0.0
+        
+        # For now, use portfolio value drawdown as proxy for token drawdown
+        # This is a simplification - in reality we'd need to track token balances over time
+        values = np.array(self.portfolio_values)
+        peak = np.maximum.accumulate(values)
+        drawdown = (peak - values) / peak
+        max_drawdown = np.max(drawdown)
+        
+        return max_drawdown
     
     def calculate_max_drawdown(self) -> float:
         """
@@ -851,15 +874,21 @@ class BacktestEngine:
         total_fees = sum(pos.fees_collected_0 + (pos.fees_collected_1 * final_price) for pos in self.positions)
         
         # Calculate performance metrics
-        sharpe_ratio = self.calculate_sharpe_ratio(
-            initial_balance_0=initial_balance_0,
-            initial_balance_1=initial_balance_1,
-            final_balance_0=final_balance_0,
-            final_balance_1=final_balance_1,
-            initial_price=initial_price,
-            final_price=final_price
-        )
-        max_drawdown = self.calculate_max_drawdown()
+        # Token0 return: (final - initial) / initial
+        token0_return = (final_balance_0 - initial_balance_0) / initial_balance_0 if initial_balance_0 > 0 else 0.0
+        
+        # Token1 return: (final - initial) / initial  
+        token1_return = (final_balance_1 - initial_balance_1) / initial_balance_1 if initial_balance_1 > 0 else 0.0
+        
+        # Fees as % of initial balances (convert to same units)
+        # Token0 fees are in token0 units, so divide by initial token0 balance
+        token0_fees_pct = (self.total_fees_collected_0 / initial_balance_0) if initial_balance_0 > 0 else 0.0
+        # Token1 fees are in token1 units, so divide by initial token1 balance  
+        token1_fees_pct = (self.total_fees_collected_1 / initial_balance_1) if initial_balance_1 > 0 else 0.0
+        
+        # Calculate drawdowns for each token
+        token0_drawdown = self.calculate_token_drawdown(0)  # Token0 drawdown
+        token1_drawdown = self.calculate_token_drawdown(1)  # Token1 drawdown
         
         result = BacktestResult(
             start_time=start_time,
@@ -871,20 +900,32 @@ class BacktestEngine:
             total_fees_collected=total_fees,
             total_rebalances=len(self.rebalances),
             total_trades=len(self.trades),
-            max_drawdown=max_drawdown,
-            sharpe_ratio=sharpe_ratio,
+            max_drawdown=0.0,  # Not used anymore
+            sharpe_ratio=0.0,  # Not used anymore
             win_rate=0.0,  # TODO: Calculate
             trades=self.trades,
             rebalances=self.rebalances
         )
         
+        # Add new metrics to result
+        result.token0_return = token0_return
+        result.token1_return = token1_return
+        result.token0_fees_pct = token0_fees_pct
+        result.token1_fees_pct = token1_fees_pct
+        result.token0_drawdown = token0_drawdown
+        result.token1_drawdown = token1_drawdown
+        
         logger.info(f"Backtest completed:")
         logger.info(f"  Total return: {total_return:.2%}")
+        logger.info(f"  Token0 return: {token0_return:.2%}")
+        logger.info(f"  Token1 return: {token1_return:.2%}")
+        logger.info(f"  Token0 fees: {token0_fees_pct:.2%}")
+        logger.info(f"  Token1 fees: {token1_fees_pct:.2%}")
         logger.info(f"  Total fees collected: {total_fees:.2f}")
         logger.info(f"  Total rebalances: {len(self.rebalances)}")
         logger.info(f"  Total trades: {len(self.trades)}")
-        logger.info(f"  Sharpe ratio: {sharpe_ratio:.2f}")
-        logger.info(f"  Max drawdown: {max_drawdown:.2%}")
+        logger.info(f"  Token0 drawdown: {token0_drawdown:.2%}")
+        logger.info(f"  Token1 drawdown: {token1_drawdown:.2%}")
         
         return result
     

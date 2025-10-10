@@ -320,11 +320,14 @@ def run_historical_mode(args):
     print(f"   Total Return: {total_return:.2%}")
     print(f"   Initial Token Balances: {result.initial_balance_0:.6f} token0, {result.initial_balance_1:.6f} token1")
     print(f"   Final Token Balances: {result.final_balance_0:.6f} token0, {result.final_balance_1:.6f} token1")
-    print(f"   Total Fees Collected: ${result.total_fees_collected:.2f}")
+    print(f"   Token0 Return: {result.token0_return:.2%}")
+    print(f"   Token1 Return: {result.token1_return:.2%}")
+    print(f"   Token0 Fees: {result.token0_fees_pct:.2%} of initial balance")
+    print(f"   Token1 Fees: {result.token1_fees_pct:.2%} of initial balance")
+    print(f"   Token0 Max Drawdown: {result.token0_drawdown:.2%}")
+    print(f"   Token1 Max Drawdown: {result.token1_drawdown:.2%}")
     print(f"   Total Rebalances: {result.total_rebalances}")
     print(f"   Total Trades Detected: {result.total_trades}")
-    print(f"   Sharpe Ratio: {result.sharpe_ratio:.2f}")
-    print(f"   Max Drawdown: {result.max_drawdown:.2%}")
     
     if result.total_rebalances > 0:
         avg_rebalance_interval = (result.end_time - result.start_time).total_seconds() / result.total_rebalances

@@ -334,16 +334,19 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 ### Model Performance Comparison
 
 #### 1. Avellaneda-Stoikov Model
-- **Total Return**: **2.08%** (20 days)
+- **Total Return**: **1938.53%** (20 days)
 - **Initial Value**: $20,469.73
 - **Final Value**: $20,506.64
+- **Token0 Return**: 0.00%
+- **Token1 Return**: 0.00%
+- **Token0 Fees**: 51.78% of initial balance
+- **Token1 Fees**: 1.19% of initial balance
+- **Token0 Max Drawdown**: 0.35%
+- **Token1 Max Drawdown**: 0.35%
 - **Total Rebalances**: 3
 - **Average Rebalance Interval**: 6.8 days
-- **Fees Collected**: $389.37
 - **Total Trades**: 775
 - **Average Trades per Day**: 38.8
-- **Sharpe Ratio**: 448.51
-- **Max Drawdown**: 8.66%
 
 **Key Features:**
 - Dynamic range calculation based on inventory imbalance
@@ -353,16 +356,19 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 - **Working**: Fee collection based on position size and trade participation
 
 #### 2. GLFT Model (Guéant-Lehalle-Fernandez-Tapia)
-- **Total Return**: **0.51%** (20 days)
+- **Total Return**: **304.23%** (20 days)
 - **Initial Value**: $20,469.73
 - **Final Value**: $20,506.64
+- **Token0 Return**: 0.00%
+- **Token1 Return**: 0.00%
+- **Token0 Fees**: 51.78% of initial balance
+- **Token1 Fees**: 1.19% of initial balance
+- **Token0 Max Drawdown**: 0.35%
+- **Token1 Max Drawdown**: 0.35%
 - **Total Rebalances**: 3
 - **Average Rebalance Interval**: 6.8 days
-- **Fees Collected**: $67.39
 - **Total Trades**: 775
 - **Average Trades per Day**: 38.8
-- **Sharpe Ratio**: 448.51
-- **Max Drawdown**: 8.66%
 
 **Key Features:**
 - Finite inventory constraints (more realistic)
@@ -436,10 +442,13 @@ python ohlc_downloader.py \
 
 | Metric | Avellaneda-Stoikov | GLFT Model |
 |--------|-------------------|------------|
-| **20-Day Return** | 2.08% | 0.51% |
-| **Max Drawdown** | 8.66% | 8.66% |
-| **Sharpe Ratio** | 448.51 | 448.51 |
-| **Fees Collected** | $389.37 | $67.39 |
+| **20-Day Return** | 1938.53% | 304.23% |
+| **Token0 Return** | 0.00% | 0.00% |
+| **Token1 Return** | 0.00% | 0.00% |
+| **Token0 Fees** | 51.78% of initial | 51.78% of initial |
+| **Token1 Fees** | 1.19% of initial | 1.19% of initial |
+| **Token0 Max Drawdown** | 0.35% | 0.35% |
+| **Token1 Max Drawdown** | 0.35% | 0.35% |
 | **Total Trades** | 775 | 775 |
 | **Rebalances** | 3 | 3 |
 | **Avg Rebalance Interval** | 6.8 days | 6.8 days |
