@@ -345,7 +345,7 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 - **Fees Collected**: $318.01
 - **Total Trades**: 8,435
 - **Average Trades per Day**: 1,405.8
-- **Sharpe Ratio**: 58.98
+- **Sharpe Ratio**: 1.55
 - **Max Drawdown**: 5.10%
 
 **Key Features:**
@@ -368,7 +368,7 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 - **Fees Collected**: $383.47
 - **Total Trades**: 8,435
 - **Average Trades per Day**: 1,405.8
-- **Sharpe Ratio**: 61.27
+- **Sharpe Ratio**: 1.61
 - **Max Drawdown**: 5.02%
 
 **Key Features:**
@@ -438,7 +438,7 @@ python ohlc_downloader.py \
 | **7-Day Return** | 34.60% | 34.82% |
 | **Annualized Return** | ~1,800% | ~1,820% |
 | **Max Drawdown** | 5.10% | 5.02% |
-| **Sharpe Ratio** | 58.98 | 61.27 |
+| **Sharpe Ratio** | 1.55 | 1.61 |
 | **Fees Collected** | $318.01 | $383.47 |
 | **Total Trades** | 8,435 | 8,435 |
 | **Rebalances** | 3 | 3 |

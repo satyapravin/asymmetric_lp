@@ -400,27 +400,31 @@ class BacktestEngine:
         # Convert to numpy array
         values = np.array(self.portfolio_values)
         
-        # Calculate returns from portfolio values
+        # Calculate minute returns from portfolio values
         returns = np.diff(values) / values[:-1]
         
         if len(returns) < 2:
             return 0.0
         
-        # Since we have minute-by-minute data, use minute risk-free rate
-        # Annual risk-free rate / (365 * 24 * 60) = minute risk-free rate
-        minute_risk_free = risk_free_rate / (365 * 24 * 60)
-        excess_returns = returns - minute_risk_free
+        # Calculate Sharpe ratio correctly:
+        # 1. Average minute return
+        # 2. Divide by minute return volatility
+        # 3. Multiply by sqrt(365 * 1440)
+        
+        # Average minute return
+        avg_minute_return = np.mean(returns)
+        
+        # Minute return volatility
+        minute_volatility = np.std(returns)
         
         # Calculate Sharpe ratio
-        if np.std(excess_returns) == 0:
+        if minute_volatility == 0:
             return 0.0
         
-        sharpe = np.mean(excess_returns) / np.std(excess_returns)
+        # Sharpe ratio = (avg return / volatility) * sqrt(minutes per year)
+        sharpe_ratio = (avg_minute_return / minute_volatility) * np.sqrt(365 * 1440)
         
-        # Annualize (assuming minute returns)
-        sharpe_annualized = sharpe * np.sqrt(365 * 24 * 60)
-        
-        return sharpe_annualized
+        return sharpe_ratio
     
     def calculate_max_drawdown(self) -> float:
         """
