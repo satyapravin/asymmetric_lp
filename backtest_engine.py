@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 import json
 from dataclasses import dataclass
 from config import Config
-from inventory_model import InventoryModel
+from models.model_factory import ModelFactory
 from alert_manager import TelegramAlertManager
 from inventory_publisher import InventoryPublisher
 
@@ -68,7 +68,9 @@ class BacktestEngine:
             config: Configuration object
         """
         self.config = config
-        self.inventory_model = InventoryModel(config)
+        # Initialize inventory model using factory
+        model_name = getattr(config, 'INVENTORY_MODEL', 'AvellanedaStoikovModel')
+        self.inventory_model = ModelFactory.create_model(model_name, config)
         
         # Disable external services for backtesting
         self.alert_manager = None
