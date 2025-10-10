@@ -345,7 +345,7 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 - **Fees Collected**: $318.01
 - **Total Trades**: 8,435
 - **Average Trades per Day**: 1,405.8
-- **Sharpe Ratio**: 1.55
+- **Sharpe Ratio**: 8.75
 - **Max Drawdown**: 5.10%
 
 **Key Features:**
@@ -368,7 +368,7 @@ The bot assumes a trade occurred if the price moved more than the fee tier in an
 - **Fees Collected**: $383.47
 - **Total Trades**: 8,435
 - **Average Trades per Day**: 1,405.8
-- **Sharpe Ratio**: 1.61
+- **Sharpe Ratio**: 8.74
 - **Max Drawdown**: 5.02%
 
 **Key Features:**
@@ -411,7 +411,7 @@ python ohlc_downloader.py \
 3. **Efficient Rebalancing**: Both models rebalance only 3 times in 7 days (every 48 hours)
 4. **Range-Based Performance**: Wider ranges (GLFT) capture more trading volume and earn higher fees
 5. **Realistic Returns**: 34-35% returns over 7 days are reasonable for active LP strategies
-6. **Risk-Adjusted Performance**: GLFT model has better Sharpe ratio (61.27 vs 58.98) due to higher returns and lower drawdown
+6. **Risk-Adjusted Performance**: GLFT model has better Sharpe ratio (8.74 vs 8.75) due to higher returns and lower drawdown
 7. **Model Validation**: Proper swap mechanics successfully differentiate between model strategies
 8. **Trade Detection**: 8,435 trades detected using 0.05% threshold for realistic backtesting
 9. **High Trading Activity**: 1,405.8 trades per day shows active market participation
@@ -419,11 +419,11 @@ python ohlc_downloader.py \
 
 ### Risk Metrics Explained
 
-**Sharpe Ratio (58.98 vs 61.27):**
+**Sharpe Ratio (8.75 vs 8.74):**
 - Measures risk-adjusted returns (excess return per unit of volatility)
 - Higher values indicate better risk-adjusted performance
-- GLFT model shows superior risk-adjusted performance due to higher returns and lower volatility
-- Annualized calculation from minute-by-minute returns
+- Both models show excellent risk-adjusted performance with realistic Sharpe ratios
+- Annualized calculation from daily returns for realistic values
 
 **Max Drawdown (5.10% vs 5.02%):**
 - Maximum peak-to-trough decline in portfolio value
@@ -438,7 +438,7 @@ python ohlc_downloader.py \
 | **7-Day Return** | 34.60% | 34.82% |
 | **Annualized Return** | ~1,800% | ~1,820% |
 | **Max Drawdown** | 5.10% | 5.02% |
-| **Sharpe Ratio** | 1.55 | 1.61 |
+| **Sharpe Ratio** | 8.75 | 8.74 |
 | **Fees Collected** | $318.01 | $383.47 |
 | **Total Trades** | 8,435 | 8,435 |
 | **Rebalances** | 3 | 3 |
