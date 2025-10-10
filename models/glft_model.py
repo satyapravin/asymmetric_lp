@@ -47,7 +47,7 @@ class GLFTModel(BaseInventoryModel):
         self.risk_aversion = float(self.config.INVENTORY_RISK_AVERSION) if hasattr(self.config, 'INVENTORY_RISK_AVERSION') else 0.1
         self.target_inventory_ratio = float(self.config.TARGET_INVENTORY_RATIO) if hasattr(self.config, 'TARGET_INVENTORY_RATIO') else 0.5
         self.max_inventory_deviation = float(self.config.MAX_INVENTORY_DEVIATION) if hasattr(self.config, 'MAX_INVENTORY_DEVIATION') else 0.3
-        self.base_spread = float(self.config.BASE_SPREAD) if hasattr(self.config, 'BASE_SPREAD') else 0.01
+        self.base_spread = float(self.config.BASE_SPREAD) if hasattr(self.config, 'BASE_SPREAD') else 0.0001
         
         # GLFT-specific parameters
         self.execution_cost = float(getattr(self.config, 'EXECUTION_COST', 0.001))  # 0.1% execution cost
