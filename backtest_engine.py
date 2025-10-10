@@ -438,10 +438,6 @@ class BacktestEngine:
         
         # For short periods, use a more conservative approach
         if period_days < 30:
-            # If total return is very small, return 0 (not meaningful)
-            if abs(total_return) < 0.005:  # Less than 0.5% total return
-                return 0.0
-            
             # Use total return divided by period length as daily return estimate
             estimated_daily_return = total_return / period_days
             
