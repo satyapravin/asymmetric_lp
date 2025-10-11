@@ -252,7 +252,7 @@ class BacktestEngine:
                     
                     # Assume price movement fills a portion of the position
                     # Price movement ratio: how much of the range gets filled per trade
-                    price_movement_ratio = 0.01  # 1% of range per trade (increased from 0.1%)
+                    price_movement_ratio = 0.1  # 10% of range per trade (increased from 1%)
                     
                     # Calculate how much of this position gets filled
                     fill_ratio = min(price_movement_ratio, 1.0)
@@ -842,6 +842,10 @@ class BacktestEngine:
                 # Simulate LP fee collection (fees are already added to positions in simulate_lp_fees)
                 fees_0, fees_1 = self.simulate_lp_fees(minute_trades, current_price)
                 
+                # Add fees to total collected fees
+                self.total_fees_collected_0 += fees_0
+                self.total_fees_collected_1 += fees_1
+                
                 self.trades.extend(minute_trades)
             
             # Check if rebalancing is needed
@@ -873,11 +877,11 @@ class BacktestEngine:
         total_fees = sum(pos.fees_collected_0 + (pos.fees_collected_1 * final_price) for pos in self.positions)
         
         # Calculate performance metrics
-        # Token0 return: (final - initial) / initial
-        token0_return = (final_balance_0 - initial_balance_0) / initial_balance_0 if initial_balance_0 > 0 else 0.0
+        # Token0 return: (final + fees - initial) / initial
+        token0_return = ((final_balance_0 + self.total_fees_collected_0) - initial_balance_0) / initial_balance_0 if initial_balance_0 > 0 else 0.0
         
-        # Token1 return: (final - initial) / initial  
-        token1_return = (final_balance_1 - initial_balance_1) / initial_balance_1 if initial_balance_1 > 0 else 0.0
+        # Token1 return: (final + fees - initial) / initial  
+        token1_return = ((final_balance_1 + self.total_fees_collected_1) - initial_balance_1) / initial_balance_1 if initial_balance_1 > 0 else 0.0
         
         # Fees as % of initial balances (convert to same units)
         # Token0 fees are in token0 units, so divide by initial token0 balance
