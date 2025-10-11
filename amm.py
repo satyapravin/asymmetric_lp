@@ -65,8 +65,9 @@ class UniswapV3SingleSidedRange(ABC):
     def settle(self, record):
         """Settle position state into a record"""
         # First update internal balances based on swaps
-        self.balance_token0 += -self.sold_token0 + self.bought_token0
-        self.balance_token1 += -self.sold_token1 + self.bought_token1
+        # Fees are retained by the LP (us), so we add them back to balance
+        self.balance_token0 += -self.sold_token0 + self.bought_token0 + self.fees_token0
+        self.balance_token1 += -self.sold_token1 + self.bought_token1 + self.fees_token1
         
         # Then copy the UPDATED balances to the record
         record.balance_token1 = self.balance_token1
