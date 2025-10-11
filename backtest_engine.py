@@ -696,58 +696,51 @@ class BacktestEngine:
             current_value_0 = self.balance_0 * current_price
             current_value_1 = self.balance_1
             
-            # Determine rebalancing action
-            if current_value_0 > target_value_0:
-                # Too much token0, need to sell some
-                excess_value_0 = current_value_0 - target_value_0
-                excess_token0 = excess_value_0 / current_price
-                
-                # Create position to sell excess token0 (above current price)
-                # Liquidity should be inversely proportional to range width
-                range_width_a = position_a_upper - position_a_lower
-                liquidity_a = (excess_token0 * current_price) / range_width_a if range_width_a > 0 else excess_token0 * current_price
-                
-                position_0 = BacktestPosition(
-                    token_id=f"pos_sell_{timestamp.timestamp()}",
-                    token0_amount=excess_token0,
-                    token1_amount=0.0,
-                    tick_lower=position_a_lower,
-                    tick_upper=position_a_upper,
-                    liquidity=liquidity_a,
-                    created_at=timestamp
-                )
-                
-                # Keep remaining token1 in balance (no position needed)
-                self.positions = [position_0]
-                self.balance_0 -= excess_token0
-                
-            elif current_value_1 > target_value_1:
-                # Too much token1, need to buy some token0
-                excess_value_1 = current_value_1 - target_value_1
-                excess_token1 = excess_value_1
-                
-                # Create position to buy token0 (below current price)
-                # Liquidity should be inversely proportional to range width
-                range_width_b = position_b_upper - position_b_lower
-                liquidity_b = excess_token1 / range_width_b if range_width_b > 0 else excess_token1
-                
-                position_1 = BacktestPosition(
-                    token_id=f"pos_buy_{timestamp.timestamp()}",
-                    token0_amount=0.0,
-                    token1_amount=excess_token1,
-                    tick_lower=position_b_lower,
-                    tick_upper=position_b_upper,
-                    liquidity=liquidity_b,
-                    created_at=timestamp
-                )
-                
-                # Keep remaining token0 in balance (no position needed)
-                self.positions = [position_1]
-                self.balance_1 -= excess_token1
-                
-            else:
-                # Already balanced, no positions needed
-                self.positions = []
+            # Always deploy 100% of capital in LP positions
+            # Create two positions: one above current price (to sell token0) and one below (to buy token0)
+            
+            # Position A: Above current price (sell token0 for token1)
+            # Deploy 50% of total value in this position
+            position_a_value_usd = total_value_usd * 0.5
+            position_a_token0 = position_a_value_usd / current_price
+            position_a_token1 = 0.0
+            
+            range_width_a = position_a_upper - position_a_lower
+            liquidity_a = (position_a_token0 * current_price) / range_width_a if range_width_a > 0 else position_a_token0 * current_price
+            
+            position_0 = BacktestPosition(
+                token_id=f"pos_sell_{timestamp.timestamp()}",
+                token0_amount=position_a_token0,
+                token1_amount=position_a_token1,
+                tick_lower=position_a_lower,
+                tick_upper=position_a_upper,
+                liquidity=liquidity_a,
+                created_at=timestamp
+            )
+            
+            # Position B: Below current price (buy token0 with token1)
+            # Deploy 50% of total value in this position
+            position_b_value_usd = total_value_usd * 0.5
+            position_b_token0 = 0.0
+            position_b_token1 = position_b_value_usd
+            
+            range_width_b = position_b_upper - position_b_lower
+            liquidity_b = position_b_token1 / range_width_b if range_width_b > 0 else position_b_token1
+            
+            position_1 = BacktestPosition(
+                token_id=f"pos_buy_{timestamp.timestamp()}",
+                token0_amount=position_b_token0,
+                token1_amount=position_b_token1,
+                tick_lower=position_b_lower,
+                tick_upper=position_b_upper,
+                liquidity=liquidity_b,
+                created_at=timestamp
+            )
+            
+            # Deploy all capital in positions
+            self.positions = [position_0, position_1]
+            self.balance_0 -= position_a_token0
+            self.balance_1 -= position_b_token1
             
             logger.info(f"Created positions with ranges: A={range_a_pct:.3f}, B={range_b_pct:.3f}")
         
