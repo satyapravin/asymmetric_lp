@@ -589,19 +589,9 @@ class BacktestEngine:
             target_ratio = self.config.TARGET_INVENTORY_RATIO
             deviation = abs(current_ratio - target_ratio)
         
-        # Reasonable rebalancing threshold for backtesting
+        # Rebalance only on inventory deviation
         # Use 10% threshold to avoid excessive rebalancing
         rebalance_threshold = 0.10  # 10% deviation threshold
-        
-        # Also check for significant price movements
-        if len(self.price_history) >= 2:
-            prev_price = self.price_history[-2]['price']
-            price_change = abs(current_price - prev_price) / prev_price
-            
-            # Rebalance if price moved more than 5% (reasonable for backtesting)
-            if price_change > 0.05:  # 5% threshold
-                logger.info(f"Price movement trigger: {price_change:.2%} change from {prev_price:.2f} to {current_price:.2f}")
-                return True
         
         should_rebalance = deviation > rebalance_threshold
         if should_rebalance:
@@ -853,12 +843,10 @@ class BacktestEngine:
                 
                 self.trades.extend(minute_trades)
             
-            # Check if rebalancing is needed (with cooldown period)
+            # Check if rebalancing is needed
             if self.should_rebalance(current_price):
-                # Add cooldown period to prevent excessive rebalancing
-                if self.last_rebalance_time is None or (timestamp - self.last_rebalance_time).total_seconds() > 604800:  # 7 day cooldown
-                    self.rebalance_positions(current_price, timestamp)
-                    self.last_rebalance_time = timestamp
+                self.rebalance_positions(current_price, timestamp)
+                self.last_rebalance_time = timestamp
             
             # Track portfolio value
             current_portfolio_value = self.calculate_portfolio_value(current_price)
