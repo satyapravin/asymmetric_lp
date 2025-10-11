@@ -10,7 +10,10 @@ import time
 import argparse
 from datetime import datetime
 from config import Config
-from automated_rebalancer import AutomatedRebalancer
+try:
+    from automated_rebalancer import AutomatedRebalancer
+except ImportError:
+    AutomatedRebalancer = None  # Not needed for backtesting
 from backtest_engine import BacktestEngine
 from utils import Logger
 
@@ -301,52 +304,23 @@ def run_historical_mode(args):
     print(f"   Period: {result.start_time.strftime('%Y-%m-%d')} to {result.end_time.strftime('%Y-%m-%d')}")
     print(f"   Duration: {(result.end_time - result.start_time).days} days")
     
-    # Calculate performance metrics using actual prices from OHLC data
-    # Load OHLC data to get actual prices
-    import pandas as pd
-    df = pd.read_csv(args.ohlc_file)
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    print(f"\n   Initial Balances:")
+    print(f"      Token0: {result.initial_balance_0:.6f}")
+    print(f"      Token1: {result.initial_balance_1:.2f}")
     
-    initial_price = df['close'].iloc[0]
-    final_price = df['close'].iloc[-1]
+    print(f"\n   Final Balances:")
+    print(f"      Token0: {result.final_balance_0:.6f}")
+    print(f"      Token1: {result.final_balance_1:.2f}")
     
-    print(f"   Initial Token Balances: {result.initial_balance_0:.6f} token0, {result.initial_balance_1:.6f} token1")
-    print(f"   Final Token Balances: {result.final_balance_0:.6f} token0, {result.final_balance_1:.6f} token1")
-    print(f"   Final Inventory Deviation: {result.final_inventory_deviation:.2%}")
-    print(f"   Token0 Return: {result.token0_return:.2%}")
-    print(f"   Token1 Return: {result.token1_return:.2%}")
-    print(f"   Token0 Fees: {result.token0_fees_pct:.2%} of initial balance")
-    print(f"   Token1 Fees: {result.token1_fees_pct:.2%} of initial balance")
-    print(f"   Token0 Max Drawdown: {result.token0_drawdown:.2%}")
-    print(f"   Token1 Max Drawdown: {result.token1_drawdown:.2%}")
-    print(f"   Total Rebalances: {result.total_rebalances}")
-    print(f"   Total Trades Detected: {result.total_trades}")
-    
-    if result.total_rebalances > 0:
-        avg_rebalance_interval = (result.end_time - result.start_time).total_seconds() / result.total_rebalances
-        print(f"   Average Rebalance Interval: {avg_rebalance_interval/3600:.1f} hours")
-    
-    if result.total_trades > 0:
-        avg_trades_per_day = result.total_trades / (result.end_time - result.start_time).days
-        print(f"   Average Trades per Day: {avg_trades_per_day:.1f}")
+    print(f"\n   Rebalancing:")
+    print(f"      Total Rebalances: {result.total_rebalances}")
+    print(f"      Total Trades: {result.total_trades}")
     
     # Save results
     if args.output:
         print(f"\n💾 Saving results to {args.output}...")
         engine.save_results(result, args.output)
         print("✅ Results saved")
-    
-    # Display sample data
-    if result.trades:
-        print(f"\n📋 Sample Trades (first 5 of {len(result.trades)}):")
-        for i, trade in enumerate(result.trades[:5]):
-            print(f"   {trade.timestamp.strftime('%Y-%m-%d %H:%M')}: {trade.trade_type.upper()} at ${trade.price:,.2f}, volume: {trade.volume:.2f}")
-    
-    if result.rebalances:
-        print(f"\n📋 Sample Rebalances (first 3 of {len(result.rebalances)}):")
-        for i, rebalance in enumerate(result.rebalances[:3]):
-            print(f"   {rebalance['timestamp'].strftime('%Y-%m-%d %H:%M')}: Price ${rebalance['price']:,.2f}, "
-                  f"burned {rebalance['positions_burned']} positions, collected ${rebalance['fees_collected_0']:.2f} fees")
     
     return 0
 
