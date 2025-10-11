@@ -72,9 +72,10 @@ python ohlc_downloader.py \
 | **Avg Rebalance Interval** | 6.8 days | 6.8 days |
 
 **Key Insights:**
-- Both models show identical performance despite different range calculations
-- Avellaneda-Stoikov: 2.0% ranges (constrained to minimum)
-- GLFT Model: 3.7%/2.0% ranges (different due to execution costs)
+- Both models now calculate significantly different ranges with 5% base spread
+- Avellaneda-Stoikov: 2.5%/10.0% ranges (narrow/wide)
+- GLFT Model: 6.3%/25.2% ranges (much wider due to execution costs)
+- Despite different ranges, performance remains identical with this dataset
 - Efficient rebalancing (3 times in 20 days)
 - Realistic fee collection based on position size and trade participation
 - Low drawdown (0.35%) shows excellent risk management

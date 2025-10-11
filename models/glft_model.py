@@ -47,14 +47,14 @@ class GLFTModel(BaseInventoryModel):
         self.risk_aversion = float(self.config.INVENTORY_RISK_AVERSION) if hasattr(self.config, 'INVENTORY_RISK_AVERSION') else 0.1
         self.target_inventory_ratio = float(self.config.TARGET_INVENTORY_RATIO) if hasattr(self.config, 'TARGET_INVENTORY_RATIO') else 0.5
         self.max_inventory_deviation = float(self.config.MAX_INVENTORY_DEVIATION) if hasattr(self.config, 'MAX_INVENTORY_DEVIATION') else 0.3
-        self.base_spread = float(self.config.BASE_SPREAD) if hasattr(self.config, 'BASE_SPREAD') else 0.0001
+        self.base_spread = float(self.config.BASE_SPREAD) if hasattr(self.config, 'BASE_SPREAD') else 0.05
         
         # GLFT-specific parameters
         self.execution_cost = float(getattr(self.config, 'EXECUTION_COST', 0.001))  # 0.1% execution cost
         self.inventory_penalty = float(getattr(self.config, 'INVENTORY_PENALTY', 0.05))  # Inventory holding penalty
         self.max_position_size = float(getattr(self.config, 'MAX_POSITION_SIZE', 0.1))  # 10% max position
         self.terminal_inventory_penalty = float(getattr(self.config, 'TERMINAL_INVENTORY_PENALTY', 0.2))  # Terminal penalty
-        self.inventory_constraint_active = bool(getattr(self.config, 'INVENTORY_CONSTRAINT_ACTIVE', True))
+        self.inventory_constraint_active = bool(getattr(self.config, 'INVENTORY_CONSTRAINT_ACTIVE', False))
         
         # Volatility calculation parameters
         self.volatility_window_size = int(self.config.VOLATILITY_WINDOW_SIZE) if hasattr(self.config, 'VOLATILITY_WINDOW_SIZE') else 20
@@ -237,8 +237,9 @@ class GLFTModel(BaseInventoryModel):
                 range_b = total_spread * 0.5 * (1 + self.execution_cost)
             
             # Apply finite inventory constraints
-            range_a = self._apply_finite_inventory_constraint(range_a, normalized_inventory_0)
-            range_b = self._apply_finite_inventory_constraint(range_b, normalized_inventory_1)
+            if self.inventory_constraint_active:
+                range_a = self._apply_finite_inventory_constraint(range_a, normalized_inventory_0)
+                range_b = self._apply_finite_inventory_constraint(range_b, normalized_inventory_1)
             
             logger.debug(f"GLFT ranges calculated: A={range_a:.4f}, B={range_b:.4f}, "
                         f"skew={inventory_skew:.4f}, volatility={volatility:.4f}, "
