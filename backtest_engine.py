@@ -565,37 +565,9 @@ class BacktestEngine:
         
         current_ratio = total_value_0 / total_value
         
-        # Use the inventory model to get the dynamic target ratio
-        try:
-            # Convert balances to wei for model (assuming 18 decimals for both tokens)
-            token0_balance_wei = int(self.balance_0 * 1e18)
-            token1_balance_wei = int(self.balance_1 * 1e18)
-            
-            # Mock client for token decimals
-            class MockClient:
-                def get_token_decimals(self, address):
-                    return 18
-            
-            mock_client = MockClient()
-            
-            # Get model calculation
-            model_result = self.inventory_model.calculate_lp_ranges(
-                token0_balance=token0_balance_wei,
-                token1_balance=token1_balance_wei,
-                spot_price=current_price,
-                price_history=self.price_history,
-                token_a_address=self.config.TOKEN_A_ADDRESS,
-                token_b_address=self.config.TOKEN_B_ADDRESS,
-                client=mock_client
-            )
-            
-            target_ratio = model_result.get('target_ratio', self.config.TARGET_INVENTORY_RATIO)
-            deviation = abs(current_ratio - target_ratio)
-            
-        except Exception as e:
-            logger.warning(f"Error getting model target ratio: {e}, using config default")
-            target_ratio = self.config.TARGET_INVENTORY_RATIO
-            deviation = abs(current_ratio - target_ratio)
+        # Use the initial target ratio instead of model's target ratio
+        target_ratio = self.initial_target_ratio
+        deviation = abs(current_ratio - target_ratio)
         
         # Rebalance only on inventory deviation
         # Use configurable threshold to avoid excessive rebalancing
@@ -696,10 +668,10 @@ class BacktestEngine:
             current_value_0 = self.balance_0 * current_price
             current_value_1 = self.balance_1
             
-            # Rebalance the portfolio to achieve target ratio
-            # Calculate how much of each token we need for 50/50 ratio
-            target_token0_value = total_value_usd * 0.5  # Use 50/50 target
-            target_token1_value = total_value_usd * 0.5
+            # Rebalance the portfolio to achieve initial target ratio
+            # Calculate how much of each token we need for initial ratio
+            target_token0_value = total_value_usd * self.initial_target_ratio
+            target_token1_value = total_value_usd * (1 - self.initial_target_ratio)
             
             # Calculate current token values
             current_token0_value = self.balance_0 * current_price
@@ -820,6 +792,13 @@ class BacktestEngine:
         self.price_history = []
         self.trades = []
         self.rebalances = []
+        
+        # Calculate initial target ratio based on initial balances
+        initial_price = df['close'].iloc[0]
+        initial_value_0 = initial_balance_0 * initial_price
+        initial_value_1 = initial_balance_1
+        initial_total_value = initial_value_0 + initial_value_1
+        self.initial_target_ratio = initial_value_0 / initial_total_value if initial_total_value > 0 else 0.5
         
         start_time = df['timestamp'].iloc[0]
         end_time = df['timestamp'].iloc[-1]
