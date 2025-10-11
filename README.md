@@ -74,11 +74,13 @@ python ohlc_downloader.py \
 **Key Insights:**
 - Both models now calculate significantly different ranges with 5% base spread
 - Avellaneda-Stoikov: 2.5%/10.0% ranges (narrow/wide)
-- GLFT Model: 6.3%/25.2% ranges (much wider due to execution costs)
-- Despite different ranges, performance remains identical with this dataset
+- GLFT Model: 6.3%/20.0% ranges (much wider due to execution costs)
+- Models now show different performance metrics:
+  - AS Model: 64.91% Token0 fees, 1.60% Token1 fees
+  - GLFT Model: 107.49% Token0 fees, 2.66% Token1 fees
 - Efficient rebalancing (3 times in 20 days)
 - Realistic fee collection based on position size and trade participation
-- Low drawdown (0.35%) shows excellent risk management
+- Low drawdown (0.38-0.46%) shows excellent risk management
 
 ## License
 

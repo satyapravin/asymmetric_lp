@@ -293,8 +293,15 @@ class BacktestEngine:
         # Check if price is within position range
         if position.tick_lower <= trade_price <= position.tick_upper:
             # Position is active at this price
-            # Use the position's liquidity as a proxy for active liquidity
-            return position.liquidity
+            # Calculate liquidity density based on range width
+            range_width = position.tick_upper - position.tick_lower
+            if range_width > 0:
+                # Liquidity density = total liquidity / range width
+                # Wider ranges have lower density, narrower ranges have higher density
+                liquidity_density = position.liquidity / range_width
+                return liquidity_density
+            else:
+                return position.liquidity
         else:
             # Position is not active at this price
             return 0.0
@@ -703,13 +710,17 @@ class BacktestEngine:
                 excess_token0 = excess_value_0 / current_price
                 
                 # Create position to sell excess token0 (above current price)
+                # Liquidity should be inversely proportional to range width
+                range_width_a = position_a_upper - position_a_lower
+                liquidity_a = (excess_token0 * current_price) / range_width_a if range_width_a > 0 else excess_token0 * current_price
+                
                 position_0 = BacktestPosition(
                     token_id=f"pos_sell_{timestamp.timestamp()}",
                     token0_amount=excess_token0,
                     token1_amount=0.0,
                     tick_lower=position_a_lower,
                     tick_upper=position_a_upper,
-                    liquidity=excess_token0 * current_price,
+                    liquidity=liquidity_a,
                     created_at=timestamp
                 )
                 
@@ -723,13 +734,17 @@ class BacktestEngine:
                 excess_token1 = excess_value_1
                 
                 # Create position to buy token0 (below current price)
+                # Liquidity should be inversely proportional to range width
+                range_width_b = position_b_upper - position_b_lower
+                liquidity_b = excess_token1 / range_width_b if range_width_b > 0 else excess_token1
+                
                 position_1 = BacktestPosition(
                     token_id=f"pos_buy_{timestamp.timestamp()}",
                     token0_amount=0.0,
                     token1_amount=excess_token1,
                     tick_lower=position_b_lower,
                     tick_upper=position_b_upper,
-                    liquidity=excess_token1,
+                    liquidity=liquidity_b,
                     created_at=timestamp
                 )
                 

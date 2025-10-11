@@ -69,7 +69,7 @@ class Config:
     INVENTORY_RISK_AVERSION = float(os.getenv('INVENTORY_RISK_AVERSION', '0.1'))
     TARGET_INVENTORY_RATIO = float(os.getenv('TARGET_INVENTORY_RATIO', '0.5'))
     MAX_INVENTORY_DEVIATION = float(os.getenv('MAX_INVENTORY_DEVIATION', '0.3'))
-    BASE_SPREAD = float(os.getenv('BASE_SPREAD', '0.01'))
+    BASE_SPREAD = float(os.getenv('BASE_SPREAD', '0.05'))
     
     # Volatility calculation parameters
     VOLATILITY_WINDOW_SIZE = int(os.getenv('VOLATILITY_WINDOW_SIZE', '20'))
@@ -82,7 +82,7 @@ class Config:
     INVENTORY_PENALTY = float(os.getenv('INVENTORY_PENALTY', '0.05'))  # Inventory holding penalty
     MAX_POSITION_SIZE = float(os.getenv('MAX_POSITION_SIZE', '0.1'))  # 10% max position size
     TERMINAL_INVENTORY_PENALTY = float(os.getenv('TERMINAL_INVENTORY_PENALTY', '0.2'))  # Terminal penalty
-    INVENTORY_CONSTRAINT_ACTIVE = os.getenv('INVENTORY_CONSTRAINT_ACTIVE', 'true').lower() == 'true'
+    INVENTORY_CONSTRAINT_ACTIVE = os.getenv('INVENTORY_CONSTRAINT_ACTIVE', 'false').lower() == 'true'
     
     # Telegram alerting
     TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
