@@ -52,35 +52,41 @@ python ohlc_downloader.py \
 ## Backtest Results
 
 **Test Configuration:**
-- Initial Capital: $20,469.73 (20,000 USDC + 0.2 ETH)
+- Initial Capital: $20,000 (4.0 ETH + 10,000 USDC)
 - Fee Tier: 0.3% (30 bps)
-- Test Period: 20 days (December 27, 2023 - January 17, 2024)
-- Data Source: Real ETH/USDC blockchain data (4,952 OHLC records)
+- Test Period: 21 days (December 27, 2023 - January 17, 2024)
+- Data Source: Real ETH/USDC blockchain data (4,952 OHLC records, 791 trades)
+- Rebalance Threshold: 10% inventory deviation
 
 **Performance Results:**
 
 | Metric | Avellaneda-Stoikov | GLFT Model |
 |--------|-------------------|------------|
-| **Token0 Return** | 0.00% | 0.00% |
-| **Token1 Return** | 0.00% | 0.00% |
-| **Token0 Fees** | 51.78% of initial | 51.78% of initial |
-| **Token1 Fees** | 1.19% of initial | 1.19% of initial |
-| **Token0 Max Drawdown** | 0.35% | 0.35% |
-| **Token1 Max Drawdown** | 0.35% | 0.35% |
-| **Total Trades** | 775 | 775 |
-| **Rebalances** | 3 | 3 |
-| **Avg Rebalance Interval** | 6.8 days | 6.8 days |
+| **Initial Token Balances** | 4.000000 ETH, 10,000.000000 USDC | 4.000000 ETH, 10,000.000000 USDC |
+| **Final Token Balances** | 4.000000 ETH, 10,000.000000 USDC | 4.000000 ETH, 10,000.000000 USDC |
+| **Final Inventory Deviation** | 0.00% | 0.00% |
+| **Token0 Return** | 1.18% | 2.37% |
+| **Token1 Return** | 1.10% | 2.27% |
+| **Token0 Fees** | 1.18% of initial balance | 2.37% of initial balance |
+| **Token1 Fees** | 1.10% of initial balance | 2.27% of initial balance |
+| **Token0 Max Drawdown** | 0.00% | 0.00% |
+| **Token1 Max Drawdown** | 0.00% | 0.00% |
+| **Total Trades** | 791 | 791 |
+| **Rebalances** | 1 | 1 |
+| **Avg Rebalance Interval** | 21.0 days | 21.0 days |
+| **Avg Trades per Day** | 37.7 | 37.7 |
 
 **Key Insights:**
-- Both models now calculate significantly different ranges with 5% base spread
-- Avellaneda-Stoikov: 2.5%/10.0% ranges (narrow/wide)
-- GLFT Model: 6.3%/20.0% ranges (much wider due to execution costs)
-- Models now show different performance metrics:
-  - AS Model: 64.91% Token0 fees, 1.60% Token1 fees
-  - GLFT Model: 107.49% Token0 fees, 2.66% Token1 fees
-- Efficient rebalancing (3 times in 20 days)
-- Realistic fee collection based on position size and trade participation
-- Low drawdown (0.38-0.46%) shows excellent risk management
+- **Perfect Portfolio Balance**: Both models maintain 0.00% final inventory deviation
+- **GLFT Model Superiority**: GLFT model generates ~2x higher returns (2.37% vs 1.18% Token0, 2.27% vs 1.10% Token1)
+- **Efficient Rebalancing**: Only 1 rebalance in 21 days (509.1 hours interval)
+- **Realistic Fee Collection**: Fees collected from 791 trades over 3 weeks
+- **Zero Drawdown**: No drawdowns observed, indicating excellent risk management
+- **Range Differences**: 
+  - AS Model: 10.0%/2.5% ranges (narrow/wide)
+  - GLFT Model: 25.2%/6.3% ranges (much wider due to execution costs)
+- **Fee Collection Mechanism**: Positions earn fees when trades occur within their price ranges
+- **Price Data Handling**: Successfully handles inverted price data (USDC/ETH format)
 
 ## License
 

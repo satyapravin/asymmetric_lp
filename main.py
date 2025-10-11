@@ -312,6 +312,7 @@ def run_historical_mode(args):
     
     print(f"   Initial Token Balances: {result.initial_balance_0:.6f} token0, {result.initial_balance_1:.6f} token1")
     print(f"   Final Token Balances: {result.final_balance_0:.6f} token0, {result.final_balance_1:.6f} token1")
+    print(f"   Final Inventory Deviation: {result.final_inventory_deviation:.2%}")
     print(f"   Token0 Return: {result.token0_return:.2%}")
     print(f"   Token1 Return: {result.token1_return:.2%}")
     print(f"   Token0 Fees: {result.token0_fees_pct:.2%} of initial balance")

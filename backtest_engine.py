@@ -56,6 +56,14 @@ class BacktestResult:
     win_rate: float
     trades: List[BacktestTrade]
     rebalances: List[Dict[str, Any]]
+    # New metrics
+    token0_return: float = 0.0
+    token1_return: float = 0.0
+    token0_fees_pct: float = 0.0
+    token1_fees_pct: float = 0.0
+    token0_drawdown: float = 0.0
+    token1_drawdown: float = 0.0
+    final_inventory_deviation: float = 0.0
 
 class BacktestEngine:
     """Engine for backtesting LP rebalancing strategies"""
@@ -895,6 +903,13 @@ class BacktestEngine:
         # Token1 fees are in token1 units, so divide by initial token1 balance  
         token1_fees_pct = (self.total_fees_collected_1 / initial_balance_1) if initial_balance_1 > 0 else 0.0
         
+        # Calculate final inventory deviation
+        final_value_0 = final_balance_0 * final_price
+        final_value_1 = final_balance_1
+        final_total_value = final_value_0 + final_value_1
+        final_current_ratio = final_value_0 / final_total_value if final_total_value > 0 else 0.0
+        final_inventory_deviation = abs(final_current_ratio - self.initial_target_ratio)
+        
         # Calculate drawdowns for each token
         token0_drawdown = self.calculate_token_drawdown(0)  # Token0 drawdown
         token1_drawdown = self.calculate_token_drawdown(1)  # Token1 drawdown
@@ -923,6 +938,7 @@ class BacktestEngine:
         result.token1_fees_pct = token1_fees_pct
         result.token0_drawdown = token0_drawdown
         result.token1_drawdown = token1_drawdown
+        result.final_inventory_deviation = final_inventory_deviation
         
         logger.info(f"Backtest completed:")
         logger.info(f"  Total return: {total_return:.2%}")
