@@ -170,8 +170,8 @@ class BacktestEngine:
             
             # Use a realistic trade detection threshold for backtesting
             # In reality, many small trades happen that don't exceed the fee tier
-            # Use 0.05% threshold for realistic trade detection (vs 0.3% fee tier)
-            trade_threshold = 0.0005  # 0.05% threshold for backtesting
+            # Use configurable threshold for realistic trade detection (vs fee tier)
+            trade_threshold = self.config.TRADE_DETECTION_THRESHOLD
             
             # Detect trades based on significant price movements
             # Only one trade per minute if price movement exceeds fee tier
@@ -183,21 +183,21 @@ class BacktestEngine:
                     # Price went up significantly - likely buy pressure
                     trade_price = high_price
                     trade_type = 'buy'
-                    trade_volume = volume * 0.5  # Assume 50% of volume at high
+                    trade_volume = volume * self.config.TRADE_VOLUME_HIGH_PCT
                 elif low_move == max_move:
                     # Price went down significantly - likely sell pressure
                     trade_price = low_price
                     trade_type = 'sell'
-                    trade_volume = volume * 0.5  # Assume 50% of volume at low
+                    trade_volume = volume * self.config.TRADE_VOLUME_LOW_PCT
                 else:
                     # Close movement was largest
                     trade_price = close_price
                     trade_type = 'buy' if close_price > open_price else 'sell'
-                    trade_volume = volume * 0.3  # Assume 30% of volume at close
+                    trade_volume = volume * self.config.TRADE_VOLUME_CLOSE_PCT
                 
                 # Calculate fee based on price movement, not volume
                 # Use a realistic trade size for fee calculation
-                realistic_trade_size = 1000.0  # $1000 per trade
+                realistic_trade_size = self.config.REALISTIC_TRADE_SIZE
                 fees_paid = realistic_trade_size * fee_threshold  # 0.3% fee
                 
                 trades.append(BacktestTrade(
@@ -349,7 +349,7 @@ class BacktestEngine:
             # Calculate distance from range center as fraction of range width
             distance_from_center = abs(current_price - range_center) / (range_width / 2)
             # Apply gradual falloff (positions lose value gradually as price moves away)
-            falloff_factor = max(0.1, 1.0 - distance_from_center * 0.5)  # Minimum 10% value
+            falloff_factor = max(self.config.POSITION_FALLOFF_FACTOR, 1.0 - distance_from_center * 0.5)
         else:
             falloff_factor = 1.0
         
@@ -399,7 +399,7 @@ class BacktestEngine:
     
     def calculate_sharpe_ratio(self, initial_balance_0: float, initial_balance_1: float, 
                              final_balance_0: float, final_balance_1: float, 
-                             initial_price: float, final_price: float, risk_free_rate: float = 0.02) -> float:
+                             initial_price: float, final_price: float, risk_free_rate: float = None) -> float:
         """
         Calculate Sharpe ratio based on actual token balance changes
         
@@ -444,7 +444,7 @@ class BacktestEngine:
             
             # Use a fixed minimum daily volatility for short periods
             # This prevents artificially high Sharpe ratios from near-zero volatility
-            estimated_daily_volatility = 0.02  # 2% daily volatility (conservative)
+            estimated_daily_volatility = self.config.DEFAULT_DAILY_VOLATILITY
             
             # Calculate Sharpe ratio (don't annualize for short periods)
             sharpe_ratio = estimated_daily_return / estimated_daily_volatility
@@ -590,8 +590,8 @@ class BacktestEngine:
             deviation = abs(current_ratio - target_ratio)
         
         # Rebalance only on inventory deviation
-        # Use 10% threshold to avoid excessive rebalancing
-        rebalance_threshold = 0.10  # 10% deviation threshold
+        # Use configurable threshold to avoid excessive rebalancing
+        rebalance_threshold = self.config.REBALANCE_THRESHOLD
         
         should_rebalance = deviation > rebalance_threshold
         if should_rebalance:

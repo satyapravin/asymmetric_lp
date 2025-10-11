@@ -440,10 +440,10 @@ Examples:
                        help='Start date for backtest (YYYY-MM-DD)')
     parser.add_argument('--end-date',
                        help='End date for backtest (YYYY-MM-DD)')
-    parser.add_argument('--initial-balance-0', type=float, default=5000.0,
-                       help='Initial token A balance (default: 5000.0)')
-    parser.add_argument('--initial-balance-1', type=float, default=0.1,
-                       help='Initial token B balance (default: 0.1)')
+    parser.add_argument('--initial-balance-0', type=float, default=Config().DEFAULT_INITIAL_BALANCE_0,
+                       help=f'Initial token A balance (default: {Config().DEFAULT_INITIAL_BALANCE_0})')
+    parser.add_argument('--initial-balance-1', type=float, default=Config().DEFAULT_INITIAL_BALANCE_1,
+                       help=f'Initial token B balance (default: {Config().DEFAULT_INITIAL_BALANCE_1})')
     parser.add_argument('--output', default='backtest_results.json',
                        help='Output file for backtest results (default: backtest_results.json)')
     

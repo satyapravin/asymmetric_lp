@@ -64,6 +64,21 @@ class Config:
     MIN_RANGE_PERCENTAGE = float(os.getenv('MIN_RANGE_PERCENTAGE', '2.0'))
     MAX_RANGE_PERCENTAGE = float(os.getenv('MAX_RANGE_PERCENTAGE', '50.0'))
     MONITORING_INTERVAL_SECONDS = int(os.getenv('MONITORING_INTERVAL_SECONDS', '60'))
+    REBALANCE_THRESHOLD = float(os.getenv('REBALANCE_THRESHOLD', '0.10'))  # 10% deviation threshold
+    TRADE_DETECTION_THRESHOLD = float(os.getenv('TRADE_DETECTION_THRESHOLD', '0.0005'))  # 0.05% threshold for trade detection
+    POSITION_FALLOFF_FACTOR = float(os.getenv('POSITION_FALLOFF_FACTOR', '0.1'))  # Minimum 10% value for position falloff
+    
+    # Backtesting parameters
+    TRADE_VOLUME_HIGH_PCT = float(os.getenv('TRADE_VOLUME_HIGH_PCT', '0.5'))  # 50% of volume at high
+    TRADE_VOLUME_LOW_PCT = float(os.getenv('TRADE_VOLUME_LOW_PCT', '0.5'))   # 50% of volume at low
+    TRADE_VOLUME_CLOSE_PCT = float(os.getenv('TRADE_VOLUME_CLOSE_PCT', '0.3'))  # 30% of volume at close
+    REALISTIC_TRADE_SIZE = float(os.getenv('REALISTIC_TRADE_SIZE', '1000.0'))  # $1000 per trade
+    RISK_FREE_RATE = float(os.getenv('RISK_FREE_RATE', '0.02'))  # 2% annual risk-free rate
+    DEFAULT_DAILY_VOLATILITY = float(os.getenv('DEFAULT_DAILY_VOLATILITY', '0.02'))  # 2% daily volatility
+    
+    # Default initial balances for backtesting
+    DEFAULT_INITIAL_BALANCE_0 = float(os.getenv('DEFAULT_INITIAL_BALANCE_0', '5000.0'))
+    DEFAULT_INITIAL_BALANCE_1 = float(os.getenv('DEFAULT_INITIAL_BALANCE_1', '0.1'))
     
     # Inventory management model parameters
     INVENTORY_RISK_AVERSION = float(os.getenv('INVENTORY_RISK_AVERSION', '0.1'))
