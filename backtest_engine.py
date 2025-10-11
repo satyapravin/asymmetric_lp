@@ -696,13 +696,36 @@ class BacktestEngine:
             current_value_0 = self.balance_0 * current_price
             current_value_1 = self.balance_1
             
-            # Always deploy 100% of capital in LP positions
-            # Create two positions: one above current price (to sell token0) and one below (to buy token0)
+            # Rebalance the portfolio to achieve target ratio
+            # Calculate how much of each token we need for 50/50 ratio
+            target_token0_value = total_value_usd * 0.5  # Use 50/50 target
+            target_token1_value = total_value_usd * 0.5
             
+            # Calculate current token values
+            current_token0_value = self.balance_0 * current_price
+            current_token1_value = self.balance_1
+            
+            # Calculate rebalancing amounts
+            token0_excess = current_token0_value - target_token0_value
+            token1_excess = current_token1_value - target_token1_value
+            
+            # Rebalance by adjusting token amounts
+            if token0_excess > 0:
+                # Too much token0, convert excess to token1
+                token0_to_sell = token0_excess / current_price
+                token1_to_buy = token0_excess
+                self.balance_0 -= token0_to_sell
+                self.balance_1 += token1_to_buy
+            elif token1_excess > 0:
+                # Too much token1, convert excess to token0
+                token1_to_sell = token1_excess
+                token0_to_buy = token1_excess / current_price
+                self.balance_0 += token0_to_buy
+                self.balance_1 -= token1_to_sell
+            
+            # Now create positions with the rebalanced amounts
             # Position A: Above current price (sell token0 for token1)
-            # Deploy 50% of total value in this position
-            position_a_value_usd = total_value_usd * 0.5
-            position_a_token0 = position_a_value_usd / current_price
+            position_a_token0 = self.balance_0 * 0.5  # Use half of rebalanced token0
             position_a_token1 = 0.0
             
             range_width_a = position_a_upper - position_a_lower
@@ -719,10 +742,8 @@ class BacktestEngine:
             )
             
             # Position B: Below current price (buy token0 with token1)
-            # Deploy 50% of total value in this position
-            position_b_value_usd = total_value_usd * 0.5
             position_b_token0 = 0.0
-            position_b_token1 = position_b_value_usd
+            position_b_token1 = self.balance_1 * 0.5  # Use half of rebalanced token1
             
             range_width_b = position_b_upper - position_b_lower
             liquidity_b = position_b_token1 / range_width_b if range_width_b > 0 else position_b_token1
@@ -737,7 +758,7 @@ class BacktestEngine:
                 created_at=timestamp
             )
             
-            # Deploy all capital in positions
+            # Deploy positions and update balances
             self.positions = [position_0, position_1]
             self.balance_0 -= position_a_token0
             self.balance_1 -= position_b_token1
