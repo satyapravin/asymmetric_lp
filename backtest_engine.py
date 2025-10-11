@@ -258,9 +258,18 @@ class BacktestEngine:
                     # Calculate position value in USD
                     position_value_usd = (position.token0_amount * current_price) + position.token1_amount
                     
-                    # Assume price movement fills a portion of the position
-                    # Price movement ratio: how much of the range gets filled per trade
-                    price_movement_ratio = 0.1  # 10% of range per trade (increased from 1%)
+                    # Calculate price movement ratio inversely proportional to range width
+                    # Narrower ranges get filled more per trade (higher liquidity density)
+                    range_width = position.tick_upper - position.tick_lower
+                    if range_width > 0:
+                        # Base movement scaled inversely by range width
+                        # Smaller range width = larger movement ratio
+                        base_movement = 0.00001  # 0.001% base movement (reduced from 0.1%)
+                        price_movement_ratio = base_movement / range_width
+                        # Cap at 100% to prevent over-filling
+                        price_movement_ratio = min(price_movement_ratio, 1.0)
+                    else:
+                        price_movement_ratio = 0.0
                     
                     # Calculate how much of this position gets filled
                     fill_ratio = min(price_movement_ratio, 1.0)
@@ -715,7 +724,13 @@ class BacktestEngine:
             position_a_token1 = 0.0
             
             range_width_a = position_a_upper - position_a_lower
-            liquidity_a = (position_a_token0 * current_price) / range_width_a if range_width_a > 0 else position_a_token0 * current_price
+            # Fix liquidity calculation for inverted prices
+            if current_price < 1.0:
+                # Price is inverted (USDC/ETH), so use inverse for liquidity calculation
+                liquidity_a = position_a_token0 / range_width_a if range_width_a > 0 else position_a_token0
+            else:
+                # Price is normal (ETH/USDC)
+                liquidity_a = (position_a_token0 * current_price) / range_width_a if range_width_a > 0 else position_a_token0 * current_price
             
             position_0 = BacktestPosition(
                 token_id=f"pos_sell_{timestamp.timestamp()}",
@@ -732,7 +747,13 @@ class BacktestEngine:
             position_b_token1 = self.balance_1 * 0.5  # Use half of rebalanced token1
             
             range_width_b = position_b_upper - position_b_lower
-            liquidity_b = position_b_token1 / range_width_b if range_width_b > 0 else position_b_token1
+            # Fix liquidity calculation for inverted prices
+            if current_price < 1.0:
+                # Price is inverted (USDC/ETH), so use current_price multiplier
+                liquidity_b = (position_b_token1 * current_price) / range_width_b if range_width_b > 0 else position_b_token1 * current_price
+            else:
+                # Price is normal (ETH/USDC)
+                liquidity_b = position_b_token1 / range_width_b if range_width_b > 0 else position_b_token1
             
             position_1 = BacktestPosition(
                 token_id=f"pos_buy_{timestamp.timestamp()}",
