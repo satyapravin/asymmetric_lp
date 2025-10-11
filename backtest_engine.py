@@ -252,7 +252,7 @@ class BacktestEngine:
                     
                     # Assume price movement fills a portion of the position
                     # Price movement ratio: how much of the range gets filled per trade
-                    price_movement_ratio = 0.001  # 0.1% of range per trade
+                    price_movement_ratio = 0.01  # 1% of range per trade (increased from 0.1%)
                     
                     # Calculate how much of this position gets filled
                     fill_ratio = min(price_movement_ratio, 1.0)
@@ -280,6 +280,7 @@ class BacktestEngine:
                     total_fees_1 += fees_1
                     
                     logger.debug(f"LP Fee: liquidity_share={liquidity_share:.4f}, fees_0={fees_0:.4f}, fees_1={fees_1:.4f}")
+            # No active positions for this trade
         
         return total_fees_0, total_fees_1
     
@@ -601,10 +602,6 @@ class BacktestEngine:
         rebalance_threshold = self.config.REBALANCE_THRESHOLD
         
         should_rebalance = deviation > rebalance_threshold
-        
-        # Debug logging
-        logger.debug(f"Rebalance check: current_ratio={current_ratio:.3f}, target_ratio={target_ratio:.3f}, deviation={deviation:.3f}, threshold={rebalance_threshold:.3f}, should_rebalance={should_rebalance}")
-        
         if should_rebalance:
             logger.info(f"Inventory deviation trigger: {deviation:.2%} > {rebalance_threshold:.2%} (current: {current_ratio:.2%}, target: {target_ratio:.2%})")
         
