@@ -244,22 +244,26 @@ class BacktestEngine:
                         total_active_liquidity += position_liquidity
                         logger.debug(f"Active position: price={trade.price:.2f}, range=[{position.tick_lower:.2f}, {position.tick_upper:.2f}], liquidity={position_liquidity:.2f}")
             
-            # Simple LP fee collection: distribute trade fees proportionally among active positions
+            # Correct Uniswap V3 LP fee collection using proper math
             if active_positions and total_active_liquidity > 0:
                 for position, position_liquidity in active_positions:
-                    # Calculate this position's share of the trade
-                    position_share = position_liquidity / total_active_liquidity
+                    # In Uniswap V3, fees are distributed proportionally to liquidity
+                    # But the key insight: liquidity is already calculated as inversely proportional to range width
+                    # So positions with wider ranges have lower liquidity values
                     
-                    # Calculate fees based on position's share of the trade
+                    # Calculate this position's share of total liquidity
+                    liquidity_share = position_liquidity / total_active_liquidity
+                    
+                    # Calculate fees based on liquidity share
                     # trade.fees_paid is in USD, so we need to convert to token units
                     if trade.trade_type == 'buy':
                         # Buying token1 with token0 - fees in token0 (USD / price = token0)
-                        fees_0 = (trade.fees_paid / current_price) * position_share
+                        fees_0 = (trade.fees_paid / current_price) * liquidity_share
                         fees_1 = 0.0
                     else:
                         # Selling token1 for token0 - fees in token1 (USD = token1)
                         fees_0 = 0.0
-                        fees_1 = trade.fees_paid * position_share
+                        fees_1 = trade.fees_paid * liquidity_share
                     
                     # Add fees to position
                     position.fees_collected_0 += fees_0
@@ -268,16 +272,16 @@ class BacktestEngine:
                     total_fees_0 += fees_0
                     total_fees_1 += fees_1
                     
-                    logger.debug(f"LP Fee: position_share={position_share:.4f}, fees_0={fees_0:.4f}, fees_1={fees_1:.4f}")
+                    logger.debug(f"LP Fee: liquidity_share={liquidity_share:.4f}, fees_0={fees_0:.4f}, fees_1={fees_1:.4f}")
         
         return total_fees_0, total_fees_1
     
     def _calculate_position_liquidity_at_price(self, position: BacktestPosition, trade_price: float) -> float:
         """
-        Calculate how much liquidity a position has at a specific price
+        Calculate how much liquidity a position has at a specific price using Uniswap V3 math
         
-        In Uniswap V3, a position's liquidity is distributed across its price range.
-        At any given price, only a portion of the position's total liquidity is active.
+        In Uniswap V3, liquidity is constant within a range, but the amount of tokens
+        that can be traded depends on the price position within the range.
         
         Args:
             position: LP position
@@ -286,22 +290,13 @@ class BacktestEngine:
         Returns:
             Active liquidity at the given price
         """
-        # For simplicity, we'll use the position's total liquidity
-        # In a more sophisticated implementation, we'd calculate the actual
-        # liquidity distribution across the price range
-        
         # Check if price is within position range
         if position.tick_lower <= trade_price <= position.tick_upper:
             # Position is active at this price
-            # Calculate liquidity density based on range width
-            range_width = position.tick_upper - position.tick_lower
-            if range_width > 0:
-                # Liquidity density = total liquidity / range width
-                # Wider ranges have lower density, narrower ranges have higher density
-                liquidity_density = position.liquidity / range_width
-                return liquidity_density
-            else:
-                return position.liquidity
+            # In Uniswap V3, liquidity is constant within the range
+            # The key insight: volume traded is inversely proportional to range width
+            # This is already captured in the position.liquidity calculation
+            return position.liquidity
         else:
             # Position is not active at this price
             return 0.0
