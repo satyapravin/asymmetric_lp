@@ -183,29 +183,26 @@ class BacktestEngine:
                     # Price went up significantly - likely buy pressure
                     trade_price = high_price
                     trade_type = 'buy'
-                    trade_volume = volume * self.config.TRADE_VOLUME_HIGH_PCT
+                    # Don't use volume from data - we calculate fees based on price movement
                 elif low_move == max_move:
                     # Price went down significantly - likely sell pressure
                     trade_price = low_price
                     trade_type = 'sell'
-                    trade_volume = volume * self.config.TRADE_VOLUME_LOW_PCT
+                    # Don't use volume from data - we calculate fees based on price movement
                 else:
                     # Close movement was largest
                     trade_price = close_price
                     trade_type = 'buy' if close_price > open_price else 'sell'
-                    trade_volume = volume * self.config.TRADE_VOLUME_CLOSE_PCT
+                    # Don't use volume from data - we calculate fees based on price movement
                 
-                # Calculate fee based on price movement, not volume
-                # Use a realistic trade size for fee calculation
-                realistic_trade_size = self.config.REALISTIC_TRADE_SIZE
-                fees_paid = realistic_trade_size * fee_threshold  # 0.3% fee
-                
+                # Don't calculate fees here - will be calculated in simulate_lp_fees
+                # based on price movement and proportional liquidity
                 trades.append(BacktestTrade(
                     timestamp=timestamp,
                     price=trade_price,
-                    volume=realistic_trade_size,  # Use realistic volume
+                    volume=0.0,  # Not used - we calculate fees based on price movement
                     trade_type=trade_type,
-                    fees_paid=fees_paid  # Calculate actual fees
+                    fees_paid=0.0  # Will be calculated in simulate_lp_fees
                 ))
         
         logger.info(f"Detected {len(trades)} trades from OHLC data")
@@ -244,26 +241,36 @@ class BacktestEngine:
                         total_active_liquidity += position_liquidity
                         logger.debug(f"Active position: price={trade.price:.2f}, range=[{position.tick_lower:.2f}, {position.tick_upper:.2f}], liquidity={position_liquidity:.2f}")
             
-            # Correct Uniswap V3 LP fee collection using proper math
+            # Calculate fees based on price movement and proportional liquidity
             if active_positions and total_active_liquidity > 0:
                 for position, position_liquidity in active_positions:
-                    # In Uniswap V3, fees are distributed proportionally to liquidity
-                    # But the key insight: liquidity is already calculated as inversely proportional to range width
-                    # So positions with wider ranges have lower liquidity values
-                    
                     # Calculate this position's share of total liquidity
                     liquidity_share = position_liquidity / total_active_liquidity
                     
-                    # Calculate fees based on liquidity share
-                    # trade.fees_paid is in USD, so we need to convert to token units
+                    # Calculate position value in USD
+                    position_value_usd = (position.token0_amount * current_price) + position.token1_amount
+                    
+                    # Assume price movement fills a portion of the position
+                    # Price movement ratio: how much of the range gets filled per trade
+                    price_movement_ratio = 0.001  # 0.1% of range per trade
+                    
+                    # Calculate how much of this position gets filled
+                    fill_ratio = min(price_movement_ratio, 1.0)
+                    filled_amount_usd = position_value_usd * fill_ratio
+                    
+                    # Calculate fees based on filled amount and fee tier
+                    fee_amount_usd = filled_amount_usd * self.fee_tier_bps / 10000
+                    
+                    # Distribute fees between token0 and token1 based on position composition
+                    # Convert fees to token units
                     if trade.trade_type == 'buy':
-                        # Buying token1 with token0 - fees in token0 (USD / price = token0)
-                        fees_0 = (trade.fees_paid / current_price) * liquidity_share
+                        # Buying token1 with token0 - fees in token0
+                        fees_0 = fee_amount_usd / current_price
                         fees_1 = 0.0
                     else:
-                        # Selling token1 for token0 - fees in token1 (USD = token1)
+                        # Selling token1 for token0 - fees in token1
                         fees_0 = 0.0
-                        fees_1 = trade.fees_paid * liquidity_share
+                        fees_1 = fee_amount_usd
                     
                     # Add fees to position
                     position.fees_collected_0 += fees_0

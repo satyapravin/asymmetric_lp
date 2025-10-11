@@ -69,10 +69,6 @@ class Config:
     POSITION_FALLOFF_FACTOR = float(os.getenv('POSITION_FALLOFF_FACTOR', '0.1'))  # Minimum 10% value for position falloff
     
     # Backtesting parameters
-    TRADE_VOLUME_HIGH_PCT = float(os.getenv('TRADE_VOLUME_HIGH_PCT', '0.5'))  # 50% of volume at high
-    TRADE_VOLUME_LOW_PCT = float(os.getenv('TRADE_VOLUME_LOW_PCT', '0.5'))   # 50% of volume at low
-    TRADE_VOLUME_CLOSE_PCT = float(os.getenv('TRADE_VOLUME_CLOSE_PCT', '0.3'))  # 30% of volume at close
-    REALISTIC_TRADE_SIZE = float(os.getenv('REALISTIC_TRADE_SIZE', '1000.0'))  # $1000 per trade
     RISK_FREE_RATE = float(os.getenv('RISK_FREE_RATE', '0.02'))  # 2% annual risk-free rate
     DEFAULT_DAILY_VOLATILITY = float(os.getenv('DEFAULT_DAILY_VOLATILITY', '0.02'))  # 2% daily volatility
     
