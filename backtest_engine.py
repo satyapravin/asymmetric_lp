@@ -38,7 +38,7 @@ class BacktestTrade:
     price: float
     volume: float
     trade_type: str  # 'buy' or 'sell'
-    fees_paid: float
+    fees_earned: float  # Fees earned by LP (us), not paid by LP
     
     @classmethod
     def from_swap_event(cls, swap_event: SwapEvent) -> 'BacktestTrade':
@@ -48,7 +48,7 @@ class BacktestTrade:
             price=swap_event.price,
             volume=swap_event.volume_usd,  # Use volume_usd from swap event
             trade_type=swap_event.trade_type,
-            fees_paid=swap_event.fees_token0 + swap_event.fees_token1  # Total fees
+            fees_earned=swap_event.fees_token0 + swap_event.fees_token1  # Fees earned by LP
         )
 
 @dataclass
@@ -658,7 +658,7 @@ class BacktestEngine:
                     'price': trade.price,
                     'volume': trade.volume,
                     'trade_type': trade.trade_type,
-                    'fees_paid': trade.fees_paid
+                    'fees_earned': trade.fees_earned
                 }
                 for trade in result.trades
             ],
