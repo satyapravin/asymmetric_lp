@@ -601,6 +601,10 @@ class BacktestEngine:
         rebalance_threshold = self.config.REBALANCE_THRESHOLD
         
         should_rebalance = deviation > rebalance_threshold
+        
+        # Debug logging
+        logger.debug(f"Rebalance check: current_ratio={current_ratio:.3f}, target_ratio={target_ratio:.3f}, deviation={deviation:.3f}, threshold={rebalance_threshold:.3f}, should_rebalance={should_rebalance}")
+        
         if should_rebalance:
             logger.info(f"Inventory deviation trigger: {deviation:.2%} > {rebalance_threshold:.2%} (current: {current_ratio:.2%}, target: {target_ratio:.2%})")
         
