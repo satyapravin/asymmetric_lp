@@ -571,13 +571,13 @@ class BacktestEngine:
         # Calculate final results
         initial_price = df['close'].iloc[0]
         final_price = df['close'].iloc[-1]
-        final_balance_0 = self.balance_0
-        final_balance_1 = self.balance_1
         
-        # Add position values to final balances
-        for position in self.positions:
-            final_balance_0 += position.token0_amount
-            final_balance_1 += position.token1_amount
+        # Get final balances from AMM (includes all position values)
+        if amm_simulator.has_active_positions():
+            final_balance_0, final_balance_1 = amm_simulator.get_active_positions_balances()
+        else:
+            final_balance_0 = self.balance_0
+            final_balance_1 = self.balance_1
         
         # Calculate performance metrics
         initial_value = initial_balance_0 + (initial_balance_1 * df['close'].iloc[0])
