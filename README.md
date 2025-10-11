@@ -79,14 +79,14 @@ python ohlc_downloader.py \
 | Metric | Value |
 |--------|-------|
 | **Initial USDC** | 5,000.00 |
-| **Final USDC** | 5,522.68 |
-| **USDC Return** | **+10.45%** |
+| **Final USDC** | 5,056.44 |
+| **USDC Return** | **+1.13%** |
 | **Initial ETH** | 0.100 |
-| **Final ETH** | 0.190 |
-| **ETH Return** | **+90.0%** |
+| **Final ETH** | 0.083 |
+| **ETH Return** | **-17.0%** |
 | **Initial Value** | ~$5,235 |
-| **Final Value** | ~$6,000 |
-| **Total Return** | **+14.6%** |
+| **Final Value** | ~$5,230 |
+| **Total Return** | **-0.1%** |
 | **Total Trades** | 2,148 |
 | **Rebalances** | 12 |
 
@@ -95,33 +95,33 @@ python ohlc_downloader.py \
 | Metric | Value |
 |--------|-------|
 | **Initial USDC** | 5,000.00 |
-| **Final USDC** | 5,260.05 |
-| **USDC Return** | **+5.20%** |
+| **Final USDC** | 5,033.78 |
+| **USDC Return** | **+0.68%** |
 | **Initial ETH** | 0.100 |
 | **Final ETH** | 0.092 |
 | **ETH Return** | **-8.0%** |
 | **Initial Value** | ~$5,235 |
-| **Final Value** | ~$5,476 |
-| **Total Return** | **+4.6%** |
+| **Final Value** | ~$5,250 |
+| **Total Return** | **+0.3%** |
 | **Total Trades** | 333 |
 | **Rebalances** | 9 |
 
 ### Key Insights
 
-✅ **Strong Fee Generation**: 10.5% USDC gains from 2,148 trades over 3 weeks  
-✅ **Profitable Despite Price Decline**: 14.6% total return even as ETH dropped 7.3%  
-✅ **Fee Compounding**: Longer test period (3 weeks) shows significantly better returns  
+✅ **Fee Generation**: 1.13% USDC gains from LP fees on 2,148 trades over 3 weeks  
+✅ **Impermanent Loss**: 17% ETH loss from price decline (-7.3%) and rebalancing  
+✅ **Capital Preservation**: Near-zero total return (-0.1%) in declining market  
 ✅ **Active Liquidity Provision**: Average of ~100 trades per day earning 0.3% fees  
-✅ **Rebalancing Effect**: ETH balance increased 90% due to accumulation during decline  
-✅ **Uniswap V3 Implementation**: Full concentrated liquidity math with proper fee accrual  
+✅ **LP Dynamics**: LPs accumulate more of declining asset, less of appreciating asset  
+✅ **Uniswap V3 Implementation**: Full concentrated liquidity math with accurate fee accounting  
 
 **Understanding the Results:**
 - LP earns 0.3% fee on every trade through their liquidity
-- 2,148 trades × 0.3% = substantial fee accumulation in stable asset (USDC)
-- Rebalancing naturally accumulates more of declining asset (ETH)
-- ETH accumulation (90% gain) + fees (10.5%) = strong overall return
+- Fee income (+1.13% USDC) partially offsets impermanent loss
+- ETH balance decreases as LP rebalancing sells appreciating assets  
+- Result: Small net loss (-0.1%) but preserves capital during 7% price decline
 - Real-world test on actual Ethereum mainnet price data
-- Demonstrates profitability of active market making strategy
+- Demonstrates realistic LP behavior: fees offset some losses but don't eliminate IL
 
 ## License
 

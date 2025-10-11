@@ -65,7 +65,8 @@ class UniswapV3SingleSidedRange(ABC):
     def settle(self, record):
         """Settle position state into a record"""
         # First update internal balances based on swaps
-        # Fees are retained by the LP (us), so we add them back to balance
+        # Fees: trader pays extra on the token they're giving us
+        # We keep that extra as our fee
         self.balance_token0 += -self.sold_token0 + self.bought_token0 + self.fees_token0
         self.balance_token1 += -self.sold_token1 + self.bought_token1 + self.fees_token1
         
@@ -86,6 +87,8 @@ class UniswapV3SingleSidedRange(ABC):
         self.bought_token0 = 0.0
         self.sold_token1 = 0.0
         self.bought_token1 = 0.0
+        self.fees_token0 = 0.0
+        self.fees_token1 = 0.0
 
     def compute(self):
         """Compute liquidity from token balances"""
