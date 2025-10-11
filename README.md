@@ -65,10 +65,10 @@ python ohlc_downloader.py \
 | **Initial Token Balances** | 4.000000 ETH, 10,000.000000 USDC | 4.000000 ETH, 10,000.000000 USDC |
 | **Final Token Balances** | 4.000000 ETH, 10,000.000000 USDC | 4.000000 ETH, 10,000.000000 USDC |
 | **Final Inventory Deviation** | 0.00% | 0.00% |
-| **Token0 Return** | 1.18% | 2.37% |
-| **Token1 Return** | 1.10% | 2.27% |
-| **Token0 Fees** | 1.18% of initial balance | 2.37% of initial balance |
-| **Token1 Fees** | 1.10% of initial balance | 2.27% of initial balance |
+| **Token0 Return** | 11.07% | 8.81% |
+| **Token1 Return** | 10.28% | 8.43% |
+| **Token0 Fees** | 11.07% of initial balance | 8.81% of initial balance |
+| **Token1 Fees** | 10.28% of initial balance | 8.43% of initial balance |
 | **Token0 Max Drawdown** | 0.00% | 0.00% |
 | **Token1 Max Drawdown** | 0.00% | 0.00% |
 | **Total Trades** | 791 | 791 |
@@ -78,13 +78,14 @@ python ohlc_downloader.py \
 
 **Key Insights:**
 - **Perfect Portfolio Balance**: Both models maintain 0.00% final inventory deviation
-- **GLFT Model Superiority**: GLFT model generates ~2x higher returns (2.37% vs 1.18% Token0, 2.27% vs 1.10% Token1)
+- **AS Model Superiority**: AS model generates ~25% higher returns (11.07% vs 8.81% Token0, 10.28% vs 8.43% Token1)
 - **Efficient Rebalancing**: Only 1 rebalance in 21 days (509.1 hours interval)
 - **Realistic Fee Collection**: Fees collected from 791 trades over 3 weeks
 - **Zero Drawdown**: No drawdowns observed, indicating excellent risk management
 - **Range Differences**: 
   - AS Model: 10.0%/2.5% ranges (narrow/wide)
   - GLFT Model: 25.2%/6.3% ranges (much wider due to execution costs)
+- **Uniswap V3 Mechanics**: Correctly implements volume traded inversely proportional to range width
 - **Fee Collection Mechanism**: Positions earn fees when trades occur within their price ranges
 - **Price Data Handling**: Successfully handles inverted price data (USDC/ETH format)
 
