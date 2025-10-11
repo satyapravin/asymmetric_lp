@@ -62,7 +62,7 @@ class Config:
     
     # Rebalancing configuration
     MIN_RANGE_PERCENTAGE = float(os.getenv('MIN_RANGE_PERCENTAGE', '2.0'))
-    MAX_RANGE_PERCENTAGE = float(os.getenv('MAX_RANGE_PERCENTAGE', '20.0'))
+    MAX_RANGE_PERCENTAGE = float(os.getenv('MAX_RANGE_PERCENTAGE', '50.0'))
     MONITORING_INTERVAL_SECONDS = int(os.getenv('MONITORING_INTERVAL_SECONDS', '60'))
     
     # Inventory management model parameters
