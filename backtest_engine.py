@@ -265,7 +265,13 @@ class BacktestEngine:
                     # Convert fees to token units
                     if trade.trade_type == 'buy':
                         # Buying token1 with token0 - fees in token0
-                        fees_0 = fee_amount_usd / current_price
+                        # If current_price is very small (< 1), it's likely inverted (USDC/ETH instead of ETH/USDC)
+                        if current_price < 1.0:
+                            # Price is inverted, so fees_0 should be fee_amount_usd * current_price
+                            fees_0 = fee_amount_usd * current_price
+                        else:
+                            # Price is normal, so fees_0 should be fee_amount_usd / current_price
+                            fees_0 = fee_amount_usd / current_price
                         fees_1 = 0.0
                     else:
                         # Selling token1 for token0 - fees in token1
