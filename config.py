@@ -43,7 +43,7 @@ class Config:
     TOKEN_B_ADDRESS = os.getenv('TOKEN_B_ADDRESS')
     
     # Fee tier configuration
-    FEE_TIER = int(os.getenv('FEE_TIER', '30'))  # 0.3% fee tier (30 bps)
+    FEE_TIER = int(os.getenv('FEE_TIER', '5'))  # 0.05% fee tier (5 bps)
     
     # Model configuration
     INVENTORY_MODEL = os.getenv('INVENTORY_MODEL', 'AvellanedaStoikovModel')  # Model to use for range calculation
@@ -65,7 +65,7 @@ class Config:
     MAX_RANGE_PERCENTAGE = float(os.getenv('MAX_RANGE_PERCENTAGE', '50.0'))
     MONITORING_INTERVAL_SECONDS = int(os.getenv('MONITORING_INTERVAL_SECONDS', '60'))
     REBALANCE_THRESHOLD = float(os.getenv('REBALANCE_THRESHOLD', '0.10'))  # 10% deviation threshold
-    TRADE_DETECTION_THRESHOLD = float(os.getenv('TRADE_DETECTION_THRESHOLD', '0.0005'))  # 0.05% threshold for trade detection
+    TRADE_DETECTION_THRESHOLD = float(os.getenv('TRADE_DETECTION_THRESHOLD', '0.0005'))  # 0.05% threshold for trade detection (5 bps)
     POSITION_FALLOFF_FACTOR = float(os.getenv('POSITION_FALLOFF_FACTOR', '0.1'))  # Minimum 10% value for position falloff
     
     # Backtesting parameters
@@ -80,7 +80,7 @@ class Config:
     INVENTORY_RISK_AVERSION = float(os.getenv('INVENTORY_RISK_AVERSION', '0.1'))
     TARGET_INVENTORY_RATIO = float(os.getenv('TARGET_INVENTORY_RATIO', '0.5'))
     MAX_INVENTORY_DEVIATION = float(os.getenv('MAX_INVENTORY_DEVIATION', '0.3'))
-    BASE_SPREAD = float(os.getenv('BASE_SPREAD', '0.05'))
+    BASE_SPREAD = float(os.getenv('BASE_SPREAD', '0.20'))
     
     # Volatility calculation parameters
     VOLATILITY_WINDOW_SIZE = int(os.getenv('VOLATILITY_WINDOW_SIZE', '20'))
@@ -141,8 +141,8 @@ class Config:
             errors.append("WETH_ADDRESS is required")
         
         # Validate fee tier
-        if cls.FEE_TIER not in [500, 3000, 10000]:
-            errors.append(f"FEE_TIER must be one of [500, 3000, 10000], got {cls.FEE_TIER}")
+        if cls.FEE_TIER not in [5, 500, 3000, 10000]:
+            errors.append(f"FEE_TIER must be one of [5, 500, 3000, 10000], got {cls.FEE_TIER}")
         
         # Validate addresses format
         if cls.TOKEN_A_ADDRESS and not cls._is_valid_address(cls.TOKEN_A_ADDRESS):

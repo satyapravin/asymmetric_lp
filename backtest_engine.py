@@ -4,6 +4,7 @@ AsymmetricLP - Backtesting Module
 Simulates asymmetric LP rebalancing using historical OHLC data
 """
 import logging
+import math
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Tuple, Any, Optional
@@ -12,6 +13,7 @@ import json
 from dataclasses import dataclass
 from config import Config
 from models.model_factory import ModelFactory
+from strategy import AsymmetricLPStrategy
 from alert_manager import TelegramAlertManager
 from amm import AMMSimulator, SwapEvent
 from inventory_publisher import InventoryPublisher
@@ -70,6 +72,7 @@ class BacktestResult:
     final_inventory_deviation: float = 0.0
     token0_drawdown: float = 0.0
     token1_drawdown: float = 0.0
+    initial_target_ratio: float = 0.5
 
 class BacktestEngine:
     """Engine for backtesting LP rebalancing strategies"""
@@ -85,6 +88,7 @@ class BacktestEngine:
         # Initialize inventory model using factory
         model_name = getattr(config, 'INVENTORY_MODEL', 'AvellanedaStoikovModel')
         self.inventory_model = ModelFactory.create_model(model_name, config)
+        self.strategy = AsymmetricLPStrategy(config, self.inventory_model)
         
         # Disable external services for backtesting
         self.alert_manager = None
@@ -98,6 +102,10 @@ class BacktestEngine:
         self.trades = []
         self.rebalances = []
         self.last_rebalance_time = None
+        # Baselines set at each rebalance (for edge-triggered rebalances)
+        self.last_rebalance_token0: float = 0.0
+        self.last_rebalance_token1: float = 0.0
+        self.last_rebalance_price: Optional[float] = None
         
         # Performance tracking
         self.portfolio_values = []  # Track portfolio value over time
@@ -106,6 +114,11 @@ class BacktestEngine:
         self.fee_tier_bps = config.FEE_TIER
         
         logger.info("Backtest engine initialized")
+        # Track whether we've created the very first positions
+        self.initial_positions_created: bool = False
+        # Track initial token inventories (in token units)
+        self.initial_token0: float = 0.0
+        self.initial_token1: float = 0.0
     
     def load_ohlc_data(self, file_path: str) -> pd.DataFrame:
         """
@@ -237,7 +250,7 @@ class BacktestEngine:
     
     def should_rebalance(self, current_price: float) -> bool:
         """
-        Determine if rebalancing is needed based on inventory model
+        Determine if rebalancing is needed based on per-token inventory depletion
         
         Args:
             current_price: Current price
@@ -245,43 +258,24 @@ class BacktestEngine:
         Returns:
             True if rebalancing is needed
         """
-        if not self.price_history:
-            return False
-        
-        # If no positions exist, we need to create initial positions
+        # Always allow first mint
         if not self.positions:
             return True
-        
-        # Calculate inventory status including position values (in USD)
-        total_value_0 = self.balance_0 * current_price  # BTC to USD
-        total_value_1 = self.balance_1                  # USDC already in USD
-        
-        # Add position values to total
-        for position in self.positions:
-            pos_value_0, pos_value_1 = self.calculate_position_value(position, current_price)
-            total_value_0 += pos_value_0
-            total_value_1 += pos_value_1
-        
-        total_value = total_value_0 + total_value_1
-        
-        if total_value == 0:
+        # If no history yet or baselines not set, skip
+        if not self.price_history or self.last_rebalance_price is None or self.last_rebalance_token0 <= 0.0 or self.last_rebalance_token1 <= 0.0:
             return False
-        
-        current_ratio = total_value_0 / total_value
-        
-        # Use the initial target ratio instead of model's target ratio
-        target_ratio = self.initial_target_ratio
-        deviation = abs(current_ratio - target_ratio)
-        
-        # Rebalance only on inventory deviation
-        # Use configurable threshold to avoid excessive rebalancing
-        rebalance_threshold = self.config.REBALANCE_THRESHOLD
-        
-        should_rebalance = deviation > rebalance_threshold
-        if should_rebalance:
-            logger.info(f"Inventory deviation trigger: {deviation:.2%} > {rebalance_threshold:.2%} (current: {current_ratio:.2%}, target: {target_ratio:.2%})")
-        
-        return should_rebalance
+
+        # Edge-triggered per-token depletion from last rebalance baselines
+        cur0 = max(self.balance_0, 0.0)
+        cur1 = max(self.balance_1, 0.0)
+        base0 = max(self.last_rebalance_token0, 1e-18)
+        base1 = max(self.last_rebalance_token1, 1e-18)
+        dev0 = (base0 - cur0) / base0 if cur0 < base0 else 0.0
+        dev1 = (base1 - cur1) / base1 if cur1 < base1 else 0.0
+        # Price deviation from last rebalance price
+        price_dev = abs(current_price - self.last_rebalance_price) / self.last_rebalance_price if self.last_rebalance_price else 0.0
+        thresh = self.config.REBALANCE_THRESHOLD
+        return (dev0 > thresh) or (dev1 > thresh) or (price_dev > thresh)
     
     def rebalance_positions(self, current_price: float, timestamp: datetime, amm_simulator: AMMSimulator) -> Dict[str, Any]:
         """
@@ -316,150 +310,111 @@ class BacktestEngine:
         # Clear AMM pool positions to prepare for new ones
         amm_simulator.clear_all_positions()
         
-        # Calculate new ranges using inventory model with the appropriate balances
-        # Convert balances to wei for model calculation
-        token0_balance_wei = int(rebalance_token0_balance * 10**18)
-        token1_balance_wei = int(rebalance_token1_balance * 10**18)
-        
-        # Mock client for token decimals
+        # Compute ranges and adjusted balances via shared strategy API
         class MockClient:
             def get_token_decimals(self, address):
                 return 18
-        
         mock_client = MockClient()
-        
-        ranges = self.inventory_model.calculate_lp_ranges(
-            token0_balance=token0_balance_wei,
-            token1_balance=token1_balance_wei,
-            spot_price=current_price,
-            price_history=self.price_history,
-            token_a_address="0x0000000000000000000000000000000000000000",  # Dummy address
-            token_b_address="0x0000000000000000000000000000000000000001",  # Dummy address
-            client=mock_client
+        startup_allocation = not self.initial_positions_created and not self.positions
+        range_a_pct, range_b_pct, rebalance_token0_balance, rebalance_token1_balance, ranges = (
+            self.strategy.plan_rebalance(
+                current_price=current_price,
+                price_history=self.price_history,
+                token0_balance=rebalance_token0_balance,
+                token1_balance=rebalance_token1_balance,
+                initial_target_ratio=self.initial_target_ratio,
+                startup_allocation=startup_allocation,
+                client=mock_client,
+                initial_token0_units=self.initial_token0,
+                initial_token1_units=self.initial_token1,
+                do_conversion=startup_allocation,
+            )
         )
+
+        # On first mint with untouched starting balances, show zero deviation to the model/outputs
+        if startup_allocation and abs(rebalance_token0_balance - self.initial_token0) < 1e-9 and abs(rebalance_token1_balance - self.initial_token1) < 1e-12:
+            if isinstance(ranges, dict):
+                ranges = ranges.copy()
+                # Align reported inventory ratio with target and set deviation to 0
+                if 'target_ratio' in ranges:
+                    ranges['inventory_ratio'] = ranges.get('target_ratio')
+                ranges['deviation'] = 0.0
         
         # Create new positions using calculated ranges
-        # Only use available balances from AMM positions
         if rebalance_token0_balance > 0 or rebalance_token1_balance > 0:
-            # Use ranges from inventory model
-            range_a_pct = ranges['range_a_percentage'] / 100.0
-            range_b_pct = ranges['range_b_percentage'] / 100.0
+            # Tick-align model percentages already computed (fractions)
             
-            # Calculate position sizes based on available balances
-            # Position A: Token0 range - ABOVE current price (for selling token0 as price rises)
-            # Position B: Token1 range - BELOW current price (for buying token0 as price falls)
-            
-            # Position A (token0 range - ABOVE current price)
-            # This position is active when price is above current_price
-            position_a_lower = current_price  # Start at current price
-            position_a_upper = current_price * (1 + range_a_pct)  # Extend upward
-            
-            # Position B (token1 range - BELOW current price)  
-            # This position is active when price is below current_price
-            position_b_lower = current_price * (1 - range_b_pct)  # Extend downward
-            position_b_upper = current_price  # End at current price
-            
-            # Calculate total portfolio value to determine rebalancing needs
-            total_value_usd = (rebalance_token0_balance * current_price) + rebalance_token1_balance
-            target_value_0 = total_value_usd * 0.5  # 50% target
-            target_value_1 = total_value_usd * 0.5  # 50% target
-            
-            # Calculate how much of each token we need to achieve target ratio
-            current_value_0 = rebalance_token0_balance * current_price
-            current_value_1 = rebalance_token1_balance
-            
-            # Rebalance the portfolio to achieve initial target ratio
-            # Calculate how much of each token we need for initial ratio
-            target_token0_value = total_value_usd * self.initial_target_ratio
-            target_token1_value = total_value_usd * (1 - self.initial_target_ratio)
-            
-            # Calculate current token values
-            current_token0_value = rebalance_token0_balance * current_price
-            current_token1_value = rebalance_token1_balance
-            
-            # Calculate rebalancing amounts
-            token0_excess = current_token0_value - target_token0_value
-            token1_excess = current_token1_value - target_token1_value
-            
-            # Rebalance by adjusting token amounts
-            if token0_excess > 0:
-                # Too much token0, convert excess to token1
-                token0_to_sell = token0_excess / current_price
-                token1_to_buy = token0_excess
-                rebalance_token0_balance -= token0_to_sell
-                rebalance_token1_balance += token1_to_buy
-            elif token1_excess > 0:
-                # Too much token1, convert excess to token0
-                token1_to_sell = token1_excess
-                token0_to_buy = token1_excess / current_price
-                rebalance_token0_balance += token0_to_buy
-                rebalance_token1_balance -= token1_to_sell
-            
-            # Now create positions with the rebalanced amounts using AMM mint_position
-            # Position A: Above current price (sell token0 for token1) - use ALL token0
-            position_a_token0 = rebalance_token0_balance  # Use ALL rebalanced token0
-            position_a_token1 = 0.0
-            
-            # Use AMM Simulator to mint position with proper Uniswap V3 liquidity calculation
-            liquidity_a, adjusted_token0_a, adjusted_token1_a = amm_simulator.mint_position(
-                token0_amount=position_a_token0,
-                token1_amount=position_a_token1,
-                tick_lower=position_a_lower,
-                tick_upper=position_a_upper,
-                current_price=current_price
+            # Raw percentage bands around current price
+            upper_lower_raw = current_price
+            upper_upper_raw = current_price * (1 + range_a_pct)
+            lower_lower_raw = current_price * (1 - range_b_pct)
+            lower_upper_raw = current_price
+
+            # Helpers
+            def price_to_tick(p: float) -> int:
+                return math.floor(math.log(p) / math.log(1.0001))
+
+            def tick_to_price(t: int) -> float:
+                return math.pow(1.0001, t)
+
+            # Delegate band computation + mint to AMM (single math source of truth)
+            total_L, L0, L1, (position_a_lower, position_a_upper), (position_b_lower, position_b_upper) = (
+                amm_simulator.mint_bands_percent(
+                    current_price=current_price,
+                    range_a_pct=range_a_pct,
+                    range_b_pct=range_b_pct,
+                    token0_amount=rebalance_token0_balance,
+                    token1_amount=rebalance_token1_balance,
+                )
             )
             
+            # Reflect minted positions for backtester bookkeeping
+            adjusted_token0_a = rebalance_token0_balance if rebalance_token0_balance > 0 else 0.0
+            adjusted_token1_a = 0.0
             position_0 = BacktestPosition(
                 token_id=f"pos_sell_{timestamp.timestamp()}",
                 token0_amount=adjusted_token0_a,
                 token1_amount=adjusted_token1_a,
                 tick_lower=position_a_lower,
                 tick_upper=position_a_upper,
-                liquidity=liquidity_a,
+                liquidity=L0,
                 created_at=timestamp
             )
             
-            # Position B: Below current price (buy token0 with token1) - use ALL token1
-            position_b_token0 = 0.0
-            position_b_token1 = rebalance_token1_balance  # Use ALL rebalanced token1
-            
-            # Use AMM Simulator to mint position with proper Uniswap V3 liquidity calculation
-            liquidity_b, adjusted_token0_b, adjusted_token1_b = amm_simulator.mint_position(
-                token0_amount=position_b_token0,
-                token1_amount=position_b_token1,
-                tick_lower=position_b_lower,
-                tick_upper=position_b_upper,
-                current_price=current_price
-            )
-            
+            adjusted_token0_b = 0.0
+            adjusted_token1_b = rebalance_token1_balance if rebalance_token1_balance > 0 else 0.0
             position_1 = BacktestPosition(
                 token_id=f"pos_buy_{timestamp.timestamp()}",
                 token0_amount=adjusted_token0_b,
                 token1_amount=adjusted_token1_b,
                 tick_lower=position_b_lower,
                 tick_upper=position_b_upper,
-                liquidity=liquidity_b,
+                liquidity=L1,
                 created_at=timestamp
             )
             
             # Deploy positions and update balances
             self.positions = [position_0, position_1]
-            # Don't update engine balances - AMM simulator already tracks them
-            # self.balance_0 -= adjusted_token0_a + adjusted_token0_b
-            # self.balance_1 -= adjusted_token1_a + adjusted_token1_b
+            if startup_allocation:
+                self.initial_positions_created = True
+
+            # Update engine-side balances to reflect AMM state post-mint
+            self.balance_0, self.balance_1 = amm_simulator.get_active_positions_balances()
+            # Update rebalance baselines (edge-triggered logic)
+            self.last_rebalance_token0 = self.balance_0
+            self.last_rebalance_token1 = self.balance_1
+            self.last_rebalance_price = current_price
             
-            # Don't manually update AMM balances - they're already correct
-            # amm_simulator.current_token0_balance = rebalance_token0_balance - adjusted_token0_a - adjusted_token0_b
-            # amm_simulator.current_token1_balance = rebalance_token1_balance - adjusted_token1_a - adjusted_token1_b
-            
-            logger.info(f"Created positions with ranges: A={range_a_pct:.3f}, B={range_b_pct:.3f}")
+            logger.info(f"Created tick-aligned positions: A=[{position_a_lower:.8f},{position_a_upper:.8f}] B=[{position_b_lower:.8f},{position_b_upper:.8f}] (ranges A={ranges['range_a_percentage']}%, B={ranges['range_b_percentage']}%)")
         
         rebalance_result = {
             'timestamp': timestamp,
             'price': current_price,
             'positions_burned': positions_burned,
             'new_positions': len(self.positions),
-            'ranges': ranges
+            'ranges': {k: (None if k == 'target_ratio' else v) for k, v in ranges.items()},
+            'target_units': {'token0': self.initial_token0, 'token1': self.initial_token1},
+            'is_initial_mint': startup_allocation
         }
         
         self.rebalances.append(rebalance_result)
@@ -503,17 +458,28 @@ class BacktestEngine:
         # Initialize balances
         self.balance_0 = initial_balance_0
         self.balance_1 = initial_balance_1
+        self.initial_token0 = initial_balance_0
+        self.initial_token1 = initial_balance_1
         self.positions = []
         self.price_history = []
         self.trades = []
         self.rebalances = []
         
-        # Calculate initial target ratio based on initial balances
+        # Calculate initial target ratio based on initial balances (USD units)
+        # token0 is already in token0 units (USD); token1 valued via 1/price
         initial_price = df['close'].iloc[0]
-        initial_value_0 = initial_balance_0 * initial_price
-        initial_value_1 = initial_balance_1
+        initial_value_0 = initial_balance_0
+        initial_value_1 = initial_balance_1 * (1 / initial_price)
         initial_total_value = initial_value_0 + initial_value_1
         self.initial_target_ratio = initial_value_0 / initial_total_value if initial_total_value > 0 else 0.5
+        # Align model target to starting balances (not hardcoded 50/50)
+        try:
+            setattr(self.config, 'TARGET_INVENTORY_RATIO', self.initial_target_ratio)
+        except Exception:
+            pass
+        # Also propagate to the instantiated model so its cached value updates
+        if hasattr(self.inventory_model, 'target_inventory_ratio'):
+            self.inventory_model.target_inventory_ratio = float(self.initial_target_ratio)
         
         start_time = df['timestamp'].iloc[0]
         end_time = df['timestamp'].iloc[-1]
@@ -579,9 +545,9 @@ class BacktestEngine:
             final_balance_0 = self.balance_0
             final_balance_1 = self.balance_1
         
-        # Calculate performance metrics
-        initial_value = initial_balance_0 + (initial_balance_1 * df['close'].iloc[0])
-        final_value = final_balance_0 + (final_balance_1 * final_price)
+        # Calculate performance metrics in USD (token0 is USD; token1 valued via 1/price)
+        initial_value = initial_balance_0 + (initial_balance_1 * (1.0 / initial_price))
+        final_value = final_balance_0 + (final_balance_1 * (1.0 / final_price))
         total_return = (final_value - initial_value) / initial_value
         
         # Calculate performance metrics
@@ -613,7 +579,8 @@ class BacktestEngine:
             total_rebalances=len(self.rebalances),
             total_trades=len(self.trades),
             trades=self.trades,
-            rebalances=self.rebalances
+            rebalances=self.rebalances,
+            initial_target_ratio=self.initial_target_ratio
         )
         
         # Add new metrics to result

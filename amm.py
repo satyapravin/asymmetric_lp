@@ -89,6 +89,7 @@ class UniswapV3SingleSidedRange(ABC):
         self.bought_token1 = 0.0
         self.fees_token0 = 0.0
         self.fees_token1 = 0.0
+        # Keep liquidity constant per mint; do not recompute L here
 
     def compute(self):
         """Compute liquidity from token balances"""
@@ -99,64 +100,119 @@ class UniswapV3SingleSidedRange(ABC):
         """Calculate liquidity from token0 balance"""
         if self.balance_token0 <= 0:
             return
-        numerator = self.balance_token0 * math.sqrt(self.range_lower) * math.sqrt(self.range_upper)
-        denominator = math.sqrt(self.range_upper) - math.sqrt(self.range_lower)
-        self.liquidity = numerator / denominator
+        sL = math.sqrt(self.range_lower)
+        sU = math.sqrt(self.range_upper)
+        if sU <= sL:
+            return
+        numerator = self.balance_token0 * sL * sU
+        denominator = sU - sL
+        L = numerator / denominator
+        # L-capping: ensure full-band token0 out does not exceed balance_token0
+        denom_cap = (1.0/sL - 1.0/sU)
+        if denom_cap > 0:
+            Lcap = self.balance_token0 / denom_cap
+            L = min(L, Lcap)
+        self.liquidity = L
 
     def compute_token1_liquidity(self):
         """Calculate liquidity from token1 balance"""
         if self.balance_token1 <= 0:
             return
-        sqrt_pc = math.sqrt(self.range_upper)
-        sqrt_pa = math.sqrt(self.range_lower)
-        delta_price = sqrt_pc - sqrt_pa
-        self.liquidity = self.balance_token1 / delta_price
+        sU = math.sqrt(self.range_upper)
+        sL = math.sqrt(self.range_lower)
+        if sU <= sL:
+            return
+        delta_price = sU - sL
+        L = self.balance_token1 / delta_price
+        # L-capping: ensure full-band token1 out does not exceed balance_token1
+        denom_cap = (sU - sL)
+        if denom_cap > 0:
+            Lcap = self.balance_token1 / denom_cap
+            L = min(L, Lcap)
+        self.liquidity = L
 
     def swap(self, price):
         """
-        Process a swap at the given price
-        Updates token balances based on Uniswap V3 math
+        Process a swap at the given price using Uniswap V3 deltas
+        Δtoken0 = L * (1/s1 - 1/s0)
+        Δtoken1 = L * (s1 - s0)
+        Prices are token1/token0; clip into [range_lower, range_upper].
         """
-        if price > self.range_lower and price < self.range_upper:  # Within range
-            if price >= self.last_spot_price:  # Price moving upwards - selling token0, buying token1
-                if self.balance_token0 > 0:
-                    ref_price = min(price, self.range_upper)
-                    self.sold_token0 = self.token0_sold(ref_price, self.last_spot_price, self.liquidity)
-                    self.bought_token1 = self.token1_bought(ref_price, self.last_spot_price, self.liquidity)
-                    self.fees_token0 = self.sold_token0 * self.fee_tier
-                else:
-                    pass  # No token0 to sell
-            else:  # Price moving downwards - buying token0, selling token1
-                if self.balance_token1 > 0:
-                    ref_price = max(price, self.range_lower)
-                    self.bought_token0 += self.token0_bought(ref_price, self.last_spot_price, self.liquidity)
-                    self.sold_token1 = self.token1_sold(ref_price, self.last_spot_price, self.liquidity)
-                    self.fees_token1 = self.sold_token1 * self.fee_tier
-                else:
-                    pass  # No token1 to sell
-
+        if self.range_lower <= 0 or self.range_upper <= 0:
             self.last_spot_price = price
+            return
+        if self.last_spot_price is None or self.last_spot_price == 0.0:
+            self.last_spot_price = price
+            return
+
+        # Clip prices into the active range
+        s0_price = min(max(self.last_spot_price, self.range_lower), self.range_upper)
+        s1_price = min(max(price, self.range_lower), self.range_upper)
+        if s0_price == s1_price:
+            self.last_spot_price = price
+            return
+
+        import math
+        s0 = math.sqrt(s0_price)
+        s1 = math.sqrt(s1_price)
+
+        # Deltas from pool/LP perspective
+        delta_token0 = self.liquidity * (1.0/s1 - 1.0/s0)
+        delta_token1 = self.liquidity * (s1 - s0)
+
+        # Reset per-swap counters
+        self.sold_token0 = 0.0
+        self.bought_token0 = 0.0
+        self.sold_token1 = 0.0
+        self.bought_token1 = 0.0
+        self.fees_token0 = 0.0
+        self.fees_token1 = 0.0
+
+        # Up move (s1 > s0): delta1>0, delta0<0 → LP buys token1, sells token0
+        if delta_token1 > 0 and delta_token0 < 0:
+            sell0 = min(-delta_token0, self.balance_token0)
+            ratio = 0.0 if -delta_token0 == 0 else sell0 / (-delta_token0)
+            buy1 = delta_token1 * ratio
+            self.sold_token0 = sell0
+            self.bought_token1 = buy1
+            self.fees_token0 = self.sold_token0 * self.fee_tier
+        # Down move (s1 < s0): delta1<0, delta0>0 → LP sells token1, buys token0
+        elif delta_token1 < 0 and delta_token0 > 0:
+            sell1 = min(-delta_token1, self.balance_token1)
+            ratio = 0.0 if -delta_token1 == 0 else sell1 / (-delta_token1)
+            buy0 = delta_token0 * ratio
+            self.sold_token1 = sell1
+            self.bought_token0 = buy0
+            self.fees_token1 = self.sold_token1 * self.fee_tier
+        # Otherwise no action (outside range or zero move after clipping)
+        else:
+            self.last_spot_price = price
+            return
+
+        # Settle into balances
+        # balance updates are applied in settle(record) which will be called by pool
+        self.last_spot_price = price
 
     def token0_sold(self, current_price, lower, liquidity):
-        """Calculate token0 sold when price moves up"""
+        """Calculate token0 sold when price moves DOWN (P decreases): sell token0 to buy token1"""
         numerator = math.sqrt(current_price) - math.sqrt(lower)
         denominator = math.sqrt(current_price) * math.sqrt(lower)
         sold_token0 = numerator * liquidity / denominator
         return sold_token0
 
     def token0_bought(self, current_price, upper, liquidity):
-        """Calculate token0 bought when price moves down"""
+        """Calculate token0 bought when price moves UP (P increases): buy token0 while selling token1"""
         numerator = math.sqrt(upper) - math.sqrt(current_price)
         denominator = math.sqrt(current_price) * math.sqrt(upper)
         bought_token0 = numerator * liquidity / denominator
         return bought_token0
 
     def token1_sold(self, current_price, upper, liquidity):
-        """Calculate token1 sold when price moves down"""
+        """Calculate token1 sold when price moves UP (P increases): sell token1"""
         return (math.sqrt(upper) - math.sqrt(current_price)) * liquidity
 
     def token1_bought(self, current_price, lower, liquidity):
-        """Calculate token1 bought when price moves up"""
+        """Calculate token1 bought when price moves DOWN (P decreases): buy token1"""
         return (math.sqrt(current_price) - math.sqrt(lower)) * liquidity
 
 
@@ -235,63 +291,8 @@ class UniswapV3Pool:
 
 
 class Quoter:
-    """
-    Quoter class for creating tick-aligned ATM positions
-    Based on the Skewed_LP_AMM notebook implementation
-    """
-    def __init__(self, pool, token1_balance, token0_balance, token0_range_pct, token1_range_pct):
-        self.pool = pool
-        self.balance_token1 = token1_balance  # Quote token (USDC)
-        self.balance_token0 = token0_balance  # Base token (ETH)
-        self.token0_range_pct = token0_range_pct  # Range percentage for token0 position
-        self.token1_range_pct = token1_range_pct  # Range percentage for token1 position
-        self.last_quote_price = None
-    
-    def quote_atm(self, current_price):
-        """
-        Create tick-aligned ATM positions
-        
-        Args:
-            current_price: Current market price
-        """
-        # Calculate exact tick for current price
-        exact_tick = math.log(current_price) / math.log(1.0001)
-        
-        # Find tick-aligned boundaries (aligned to 10-tick spacing)
-        greatest_lower = math.floor(exact_tick / 10) * 10
-        least_upper = math.ceil(exact_tick / 10) * 10
-        
-        # Convert ticks back to prices
-        greatest_lower_price = math.pow(1.0001, greatest_lower)
-        least_upper_price = math.pow(1.0001, least_upper)
-        
-        # Create token1 (USDC) range - BELOW current price
-        if self.balance_token1 > 0:
-            # Calculate lower bound based on range percentage
-            lower_bound_price = greatest_lower_price * (1.0 - self.token1_range_pct)
-            # Convert to tick and align
-            lower_bound_tick = math.log(lower_bound_price) / math.log(1.0001)
-            lower_bound_tick = math.floor(lower_bound_tick / 10) * 10
-            lower_bound_price = math.pow(1.0001, lower_bound_tick)
-            
-            # Create token1 range position
-            self.pool.quote_token1(self.balance_token1, greatest_lower_price, lower_bound_price)
-            logger.debug(f"Token1 range created: [{lower_bound_price:.2f}, {greatest_lower_price:.2f}]")
-        
-        # Create token0 (ETH) range - ABOVE current price
-        if self.balance_token0 > 0:
-            # Calculate upper bound based on range percentage
-            upper_bound_price = least_upper_price * (1.0 + self.token0_range_pct)
-            # Convert to tick and align
-            upper_bound_tick = math.log(upper_bound_price) / math.log(1.0001)
-            upper_bound_tick = math.ceil(upper_bound_tick / 10) * 10
-            upper_bound_price = math.pow(1.0001, upper_bound_tick)
-            
-            # Create token0 range position
-            self.pool.quote_token0(self.balance_token0, least_upper_price, upper_bound_price)
-            logger.debug(f"Token0 range created: [{least_upper_price:.2f}, {upper_bound_price:.2f}]")
-        
-        self.last_quote_price = current_price
+    """Deprecated: use engine-side helpers to compute tick-aligned bands."""
+    pass
 
 
 class AMMSimulator:
@@ -374,17 +375,17 @@ class AMMSimulator:
             # Calculate liquidity size based on what was actually traded
             sold_token0 = token0_record.sold_token0 + token1_record.sold_token0
             sold_token1 = token0_record.sold_token1 + token1_record.sold_token1
-            bought_token0 = token0_record.bought_token0 + token1_record.bought_token0
-            bought_token1 = token0_record.bought_token1 + token1_record.bought_token1
             
             if trade_type == 'buy':
                 # Price went up - selling token0 for token1
                 liquidity_size = sold_token0
-                volume_usd = sold_token0 * close_price
+                # token0 is in token0 units (e.g., USD); use as USD volume
+                volume_usd = sold_token0
             else:
                 # Price went down - selling token1 for token0
                 liquidity_size = sold_token1
-                volume_usd = sold_token1
+                # Convert token1 sold into token0 (USD) using 1/price
+                volume_usd = sold_token1 * (1.0 / close_price)
             
             liquidity_share = price_change_pct
 
@@ -405,13 +406,15 @@ class AMMSimulator:
                 new_token1_balance=new_token1_balance
             )
 
-            logger.debug(f"AMM Simulator: {trade_type} at {close_price:.6f} (move: {price_change_pct:.4%}, "
-                        f"sold_t0: {sold_token0:.6f}, bought_t1: {bought_token1:.2f}, "
-                        f"fees_t0: {fees_token0:.6f}, fees_t1: {fees_token1:.2f})")
+            logger.debug(
+                f"AMM Simulator: {trade_type} at {close_price:.6f} (move: {price_change_pct:.4%}, "
+                f"sold_t0: {sold_token0:.6f}, sold_t1: {sold_token1:.6f}, "
+                f"fees_t0: {fees_token0:.6f}, fees_t1: {fees_token1:.6f})"
+            )
             return swap_event
 
-        # Update last price even if no swap occurred
-        self.last_price = close_price
+        # DO NOT update last_price if no swap occurred - we need to track actual AMM spot rate
+        # If minute 1 had no trade, minute 2 should compare against minute 1's price
         return None
 
 
@@ -471,7 +474,7 @@ class AMMSimulator:
                      tick_lower: float, tick_upper: float,
                      current_price: float) -> Tuple[float, float, float]:
         """
-        Mint a new LP position using tick-aligned Quoter logic
+        Mint a new LP position directly using provided band bounds
 
         Args:
             token0_amount: Amount of token0 to deposit
@@ -483,22 +486,19 @@ class AMMSimulator:
         Returns:
             Tuple of (liquidity_L, adjusted_token0_amount, adjusted_token1_amount)
         """
-        # Calculate range percentages from tick bounds
-        token0_range_pct = (tick_upper / current_price - 1) if current_price > 0 else 0.025
-        token1_range_pct = (1 - tick_lower / current_price) if current_price > 0 else 0.10
-        
-        # Create Quoter instance
-        self.quoter = Quoter(
-            pool=self.pool,
-            token1_balance=token1_amount,
-            token0_balance=token0_amount,
-            token0_range_pct=token0_range_pct,
-            token1_range_pct=token1_range_pct
-        )
-        
-        # Create tick-aligned ATM positions
-        self.quoter.quote_atm(current_price)
-        
+        # Clear any existing positions for fresh mint
+        self.pool.clear_quote_token0()
+        self.pool.clear_quote_token1()
+
+        # Mint upper (token0) and lower (token1) bands using provided bounds
+        # token0 band active in [current_price, tick_upper]; token1 band active in [tick_lower, current_price]
+        if token0_amount and token0_amount > 0:
+            # For token0 band, lower bound should be at/near current_price
+            self.pool.quote_token0(token0_amount, current_price, tick_upper)
+        if token1_amount and token1_amount > 0:
+            # For token1 band, upper bound should be at/near current_price
+            self.pool.quote_token1(token1_amount, current_price, tick_lower)
+
         # Calculate total liquidity from both ranges
         liquidity_L = 0.0
         if self.pool.token0_range is not None:
@@ -510,6 +510,64 @@ class AMMSimulator:
         adjusted_token0_amount = token0_amount
         adjusted_token1_amount = token1_amount
         
-        logger.debug(f"AMM minted tick-aligned position: L={liquidity_L:.2f}, token0={adjusted_token0_amount:.6f}, token1={adjusted_token1_amount:.6f}")
+        logger.debug(f"AMM minted position: L={liquidity_L:.2f}, token0={adjusted_token0_amount:.6f}, token1={adjusted_token1_amount:.6f}, band0=[{current_price:.8f},{tick_upper:.8f}], band1=[{tick_lower:.8f},{current_price:.8f}]")
         
         return liquidity_L, adjusted_token0_amount, adjusted_token1_amount
+
+    def mint_bands_percent(self,
+                           current_price: float,
+                           range_a_pct: float,
+                           range_b_pct: float,
+                           token0_amount: float,
+                           token1_amount: float) -> Tuple[float, Tuple[float,float], Tuple[float,float]]:
+        """
+        Compute tick-aligned bands from percent widths and mint positions.
+        Args:
+            current_price: spot P (token1/token0)
+            range_a_pct: upper band percent (token0 side), as fraction (e.g., 0.025)
+            range_b_pct: lower band percent (token1 side), as fraction (e.g., 0.10)
+            token0_amount: amount to deposit in upper band
+            token1_amount: amount to deposit in lower band
+        Returns:
+            (total_L, (upper_lower, upper_upper), (lower_lower, lower_upper))
+        """
+        # Raw percentage bands around current price
+        upper_lower_raw = current_price
+        upper_upper_raw = current_price * (1 + range_a_pct)
+        lower_lower_raw = current_price * (1 - range_b_pct)
+        lower_upper_raw = current_price
+
+        def price_to_tick(p: float) -> int:
+            return math.floor(math.log(p) / math.log(1.0001))
+
+        def tick_to_price(t: int) -> float:
+            return math.pow(1.0001, t)
+
+        # Align upper band to ticks
+        ul_t = price_to_tick(upper_lower_raw)
+        uu_t = price_to_tick(upper_upper_raw)
+        if uu_t == ul_t:
+            uu_t += 1
+        upper_lower = tick_to_price(ul_t)
+        upper_upper = tick_to_price(uu_t)
+
+        # Align lower band to ticks
+        ll_t = price_to_tick(lower_lower_raw)
+        lu_t = price_to_tick(lower_upper_raw)
+        if lu_t == ll_t:
+            ll_t -= 1
+        lower_lower = tick_to_price(ll_t)
+        lower_upper = tick_to_price(lu_t)
+
+        # Mint using computed bands
+        total_L, _, _ = self.mint_position(
+            token0_amount=token0_amount,
+            token1_amount=token1_amount,
+            tick_lower=lower_lower,
+            tick_upper=upper_upper,
+            current_price=current_price,
+        )
+        # Report individual liquidities
+        L0 = self.pool.token0_range.liquidity if self.pool.token0_range is not None else 0.0
+        L1 = self.pool.token1_range.liquidity if self.pool.token1_range is not None else 0.0
+        return total_L, L0, L1, (upper_lower, upper_upper), (lower_lower, lower_upper)

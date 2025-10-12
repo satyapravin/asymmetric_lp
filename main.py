@@ -303,6 +303,7 @@ def run_historical_mode(args):
     print(f"\n🎯 Backtest Results:")
     print(f"   Period: {result.start_time.strftime('%Y-%m-%d')} to {result.end_time.strftime('%Y-%m-%d')}")
     print(f"   Duration: {(result.end_time - result.start_time).days} days")
+    print(f"   Target Inventory Ratio (derived from starting balances): {result.initial_target_ratio:.1%}")
     
     print(f"\n   Initial Balances:")
     print(f"      Token0: {result.initial_balance_0:.6f}")
