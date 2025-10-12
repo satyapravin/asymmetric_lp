@@ -73,6 +73,25 @@ python ohlc_downloader.py \
 
 ## Backtest Results
 
+### Latest Results (3-week, ETH/USDC, fee tier 5 bps)
+
+- **GLFT (BASE_SPREAD 15%, REBALANCE_THRESHOLD 40%)**
+  - Final balances: token0=3,181.76 USDC, token1=0.73
+  - Rebalances: 5; Trades: 2,380; Total return: +3.59%
+  - File: `backtest_results_bs15_th40.json`
+
+- **GLFT (BASE_SPREAD 20%, REBALANCE_THRESHOLD 50%)**
+  - Final balances: token0=2,479.15 USDC, token1=1.00
+  - Rebalances: 3; Trades: 2,380; Total return: +3.47%
+
+- **Avellaneda-Stoikov (BASE_SPREAD 25%, REBALANCE_THRESHOLD 40%)**
+  - Final balances: token0=2,329.64 USDC, token1=1.06
+  - Rebalances: 3; Trades: 2,380; Total return: +3.47%
+
+Notes:
+- Returns are portfolio USD: value = token0 + token1 / price (price = ETH/USDC). Fees are included in balances; gas excluded.
+- Wider bands and higher rebalance thresholds (1–2 rebalances/week) reduced churn and improved PnL.
+
 ### 3-Week Test (December 27, 2023 - January 17, 2024)
 
 **Configuration:**
