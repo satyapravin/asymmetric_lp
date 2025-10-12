@@ -92,57 +92,7 @@ Notes:
 - Returns are portfolio USD: value = token0 + token1 / price (price = ETH/USDC). Fees are included in balances; gas excluded.
 - Wider bands and higher rebalance thresholds (1–2 rebalances/week) reduced churn and improved PnL.
 
-### 3-Week Test (December 27, 2023 - January 17, 2024)
-
-**Configuration:**
-- Initial Capital: 5,000 USDC + 0.1 ETH (~$5,235 total value @ $2,348/ETH)
-- Fee Tier: 0.05% (5 bps)
-- Test Period: 21 days
-- Data: Real Uniswap V3 OHLC data (1-minute candles)
-- Trade Detection: 5 bps (0.05%) price movement threshold
-- Rebalance Threshold: 30% inventory deviation
-- Pricing Model: Avellaneda-Stoikov with 20% base spread
-- Target Inventory Ratio: 95.5% (derived from starting balances)
-
-**Results:**
-
-| Metric | Value |
-|--------|-------|
-| **Token0 (USDC) - Initial** | 5,000.00 |
-| **Token0 (USDC) - Final** | 4,212.64 |
-| **Token0 Return** | **-15.75%** |
-| **Token1 (ETH) - Initial** | 0.100 |
-| **Token1 (ETH) - Final** | 0.440 |
-| **Token1 Return** | **+338.45%** |
-| **Total Trades** | 2,380 |
-| **Total Rebalances** | 6 |
-| **Final Inventory Ratio** | 90.5% USDC (improved from 95.5%) |
-
-**USD Performance:**
-- **Initial Portfolio Value**: $5,234.86
-- **Final Portfolio Value**: $5,327.24
-- **Absolute P/L**: **+$92.38**
-- **Percentage P/L**: **+1.76%**
-- **Maximum Drawdown**: 14.98%
-
-### Key Insights
-
-✅ **Profitable Strategy**: Generated +$92.38 profit (+1.76% return) over 21 days  
-✅ **Effective Inventory Rebalancing**: Successfully moved from 95.5% to 90.5% USDC ratio  
-✅ **Asymmetric Range Effectiveness**: 40% wide ranges for excess tokens, 10% narrow for deficit tokens  
-✅ **Reduced Rebalancing**: Only 6 rebalances needed vs 29 with smaller ranges  
-✅ **Fee Generation**: Earned substantial fees from 2,380 trades at 5 bps fee tier  
-✅ **Price Movement Capture**: ETH appreciated 7.86% during test period  
-✅ **Uniswap V3 Implementation**: Full concentrated liquidity math with tick-aligned positioning  
-✅ **Real Market Data**: Tested on actual Ethereum mainnet 1-minute OHLC data
-
-**Understanding the Results:**
-- The asymmetric LP strategy successfully generated profit despite ETH price appreciation
-- Wide ranges (40%) for excess USDC encouraged selling as ETH price rose
-- Narrow ranges (10%) for deficit ETH encouraged accumulation
-- Inventory rebalancing worked effectively, moving portfolio closer to target ratio
-- Fee income from 2,380 trades provided steady revenue stream
-- Strategy demonstrated resilience with only 14.98% maximum drawdown
+<!-- Old backtest details removed; see Latest Results above for current configuration and outcomes. -->
 
 ## License
 
