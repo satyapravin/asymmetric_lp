@@ -14,13 +14,15 @@ A Python backtesting engine and trading bot for managing Uniswap V3 liquidity po
 
 ## How it Works
 
-The bot maintains a target inventory ratio derived from your starting balances and creates asymmetric ranges using the Avellaneda-Stoikov market making model:
-
-**Example**: If you start with 5,000 USDC and 0.1 ETH (95.5% USDC ratio):
-- Creates a **wide USDC range** (40%) above current price → encourages selling excess USDC
-- Creates a **narrow ETH range** (10%) below current price → encourages accumulating deficit ETH
-- Rebalances when portfolio deviates >30% from target ratio
-- Uses dynamic range sizing based on inventory deviation and market volatility
+- Supports two inventory models: **Avellaneda‑Stoikov** and **GLFT**.
+- The target inventory ratio is derived from starting balances and set in config and the model.
+- On the very first mint, when deviation ≈ 0, bands are enforced symmetric at `BASE_SPREAD` (tick‑aligned).
+- After that, band widths are model‑driven (inventory/volatility terms, execution cost for GLFT) and clamped by min/max range settings.
+- Rebalancing is **edge‑triggered** off the last rebalance baselines (price and per‑token balances). Thresholds come from config.
+- Rebalances refresh ranges only (`do_conversion=false`) — balances do not change at rebalance time; only swaps move inventory.
+- Between rebalances, ranges remain fixed; trades do not invoke the model.
+- Prices are handled as token1/token0 (e.g., ETH/USDC); USD valuation uses `value = token0 + token1 / price`.
+- Fee tier and trade detection thresholds are configurable (defaults recently tested at 5 bps).
 
 ## Installation
 
