@@ -11,6 +11,7 @@ struct DeltaMsg {
 class ZmqSubscriber {
  public:
   ZmqSubscriber(const std::string& endpoint, const std::string& topic);
+  ~ZmqSubscriber();
   std::optional<std::string> receive();
   static std::optional<DeltaMsg> parse_minimal_delta(const std::string& json);
  private:

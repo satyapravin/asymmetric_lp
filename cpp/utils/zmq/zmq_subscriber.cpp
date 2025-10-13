@@ -13,6 +13,17 @@ ZmqSubscriber::ZmqSubscriber(const std::string& endpoint, const std::string& top
   }
 }
 
+ZmqSubscriber::~ZmqSubscriber() {
+  if (sub_ != nullptr) {
+    zmq_close(sub_);
+    sub_ = nullptr;
+  }
+  if (ctx_ != nullptr) {
+    zmq_ctx_term(ctx_);
+    ctx_ = nullptr;
+  }
+}
+
 std::optional<std::string> ZmqSubscriber::receive() {
   zmq_msg_t topic;
   zmq_msg_init(&topic);
@@ -30,10 +41,8 @@ std::optional<std::string> ZmqSubscriber::receive() {
   std::string payload(static_cast<char*>(zmq_msg_data(&msg)), zmq_msg_size(&msg));
   zmq_msg_close(&topic);
   zmq_msg_close(&msg);
-  // payload is "topic {json}", split on first space
-  auto pos = payload.find(' ');
-  if (pos == std::string::npos) return std::nullopt;
-  return payload.substr(pos + 1);
+  // Topic and payload are separate multipart messages already; return payload as-is.
+  return payload;
 }
 
 std::optional<DeltaMsg> ZmqSubscriber::parse_minimal_delta(const std::string& json) {
