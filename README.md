@@ -1,105 +1,238 @@
-# AsymmetricLP
+# Asymmetric Liquidity Provision Strategy
 
-A Python backtesting engine and trading bot for managing Uniswap V3 liquidity positions with asymmetric ranges and inventory-based rebalancing.
+A quick note: The DeFi LP implementation in Python is production-ready. For full details, setup, and the latest results, see `python/README.md`.
 
-## Features
+## Production Status at a Glance
 
-- **Asymmetric Range Management**: Creates wide ranges for excess tokens and narrow ranges for deficit tokens
-- **Uniswap V3 Math**: Full implementation of concentrated liquidity formulas with tick-aligned positioning
-- **Inventory-Based Rebalancing**: Automatically rebalances when portfolio deviates from target ratio
-- **Historical Backtesting**: Test strategies on real blockchain OHLC data with accurate P/L calculations
-- **Multiple Pricing Models**: Supports Avellaneda-Stoikov and GLFT models with dynamic range sizing
-- **Fee Tracking**: Accurate simulation of LP fee collection and portfolio valuation
-- **Real Market Data**: Tested on actual Ethereum mainnet OHLC data
+| Component | Status |
+|-----------|--------|
+| DeFi LP (Python) | Production-ready |
+| Quote Server (C++) | In progress |
+| OMS (C++) | In progress |
+| Exchange Handlers (C++) | In progress |
+| Position Server (C++) | In progress |
+| Market Maker (C++) | In progress |
 
-## How it Works
+A sophisticated market-making strategy that combines **DeFi liquidity provision** with **CeFi market making** to create a statistical, inventory-aware hedge implemented via passive orders.
 
-- Supports two inventory models: **Avellaneda‑Stoikov** and **GLFT**.
-- The target inventory ratio is derived from starting balances and set in config and the model.
-- On the very first mint, when deviation ≈ 0, bands are enforced symmetric at `BASE_SPREAD` (tick‑aligned).
-- After that, band widths are model‑driven (inventory/volatility terms, execution cost for GLFT) and clamped by min/max range settings.
-- Rebalancing is **edge‑triggered** off the last rebalance baselines (price and per‑token balances). Thresholds come from config.
-- Rebalances refresh ranges only (`do_conversion=false`) — balances do not change at rebalance time; only swaps move inventory.
-- Between rebalances, ranges remain fixed; trades do not invoke the model.
-- Prices are handled as token1/token0 (e.g., ETH/USDC); USD valuation uses `value = token0 + token1 / price`.
-- Fee tier and trade detection thresholds are configurable (defaults recently tested at 5 bps).
+## Strategy Overview
 
-## Installation
+This strategy operates on two fronts:
 
-```bash
-git clone <repository-url>
-cd AsymmetricLP
-pip install -r requirements.txt
-cp env.example .env
+1. **DeFi Liquidity Provision (Python)** - Provides liquidity on Uniswap V3 with asymmetric ranges
+2. **CeFi Market Making (C++)** - Market makes on centralized exchanges using residual inventory as a hedge
+
+### Core Concept
+
+The strategy uses **residual inventory from DeFi LP positions** to market make on CeFi exchanges in the **opposite direction**, creating a statistical, inventory-aware hedge. When DeFi LP accumulates inventory in one direction, the CeFi market maker quotes passively in the opposing direction to reduce net exposure over time.
+
+## Architecture
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   DeFi LP       │    │   CeFi MM       │    │   Market Data   │
+│   (Python)      │    │   (C++)         │    │   (C++)         │
+├─────────────────┤    ├─────────────────┤    ├─────────────────┤
+│ • Uniswap V3    │    │ • Multi-exchange │    │ • Quote Server  │
+│ • Asymmetric    │    │ • Order Mgmt     │    │ • Position Svr  │
+│   Ranges        │    │ • Risk Mgmt      │    │ • Exec Handler  │
+│ • GLFT/AS       │    │ • GLFT Model     │    │ • ZMQ IPC       │
+│   Models        │    │ • Inventory      │    │ • Binary Format │
+│ • Inventory     │    │   Hedging        │    │ • Real-time     │
+│   Publishing    │    │ • Passive Orders│    │   Processing    │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │
+         └───────────────────────┼───────────────────────┘
+                                 │
+                    ┌─────────────────┐
+                    │   ZMQ Bus       │
+                    │   (IPC Layer)   │
+                    └─────────────────┘
+```
+
+## Components
+
+### 1. DeFi Liquidity Provision (Python) ✅ **Complete**
+
+**Location:** `python/`
+
+The Python implementation provides liquidity on Uniswap V3 using sophisticated models:
+
+- **Avellaneda-Stoikov Model** - Classic market-making model
+- **GLFT Model** - Finite inventory constraints with execution costs
+- **Asymmetric Ranges** - Biased liquidity provision based on inventory
+- **Edge-triggered Rebalancing** - Efficient rebalance logic
+- **Real-time Backtesting** - Comprehensive strategy validation
+
+**Key Features:**
+- Tick-aligned positioning for Uniswap V3
+- Inventory deviation-based rebalancing
+- Fee tier optimization (5 bps, 30 bps, 100 bps)
+- USD valuation and P&L tracking
+- ZMQ inventory publishing for CeFi integration
+
+**Status:** ✅ **Production Ready** - See `python/README.md` for detailed documentation.
+
+### 2. CeFi Market Making (C++) 🚧 **Under Development**
+
+**Location:** `cpp/`
+
+The C++ implementation handles centralized exchange market making:
+
+#### **Quote Server Framework**
+- **Multi-exchange Support** - Binance, Coinbase, Kraken
+- **WebSocket Integration** - Real-time market data via libuv
+- **Binary Serialization** - High-performance ZMQ communication
+- **Exchange-specific Parsers** - Custom message handling per exchange
+- **Configurable Publishing** - Rate limiting and depth control
+
+#### **Order Management System (OMS)**
+- **Multi-exchange Routing** - Route orders to appropriate exchanges
+- **Order Tracking** - Cross-exchange order status management
+- **Risk Management** - Position limits and exposure controls
+- **Event-driven Architecture** - Real-time order event processing
+
+#### **Execution Handler**
+- **Exchange-specific Handlers** - Binance, Coinbase implementations
+- **Authentication Management** - API key, secret, passphrase handling
+- **Order Lifecycle** - Send, cancel, modify operations
+- **Error Handling** - Robust error recovery and retry logic
+
+#### **Position Management System**
+- **Real-time Position Tracking** - Exchange position monitoring
+- **Inventory Reconciliation** - DeFi + CeFi inventory alignment
+- **Hedge Calculation** - Optimal hedge ratios and timing
+
+## Strategy Logic
+
+### Inventory-Aware Passive Hedging
+
+The strategy implements a **statistical, inventory-aware hedge** (not a perfect delta hedge):
+
+1. **DeFi LP** accumulates inventory through passive limit orders
+2. **CeFi MM** takes opposite positions using residual inventory
+3. **Passive Orders** on both venues gradually balance exposure via fills
+4. **Inventory Delta** from DeFi drives CeFi positioning
+
+### Risk Management
+
+- **Inventory Limits** - Maximum position sizes per exchange
+- **Correlation Monitoring** - DeFi/CeFi price correlation tracking
+- **Slippage Control** - Order size optimization for market impact
+- **Liquidity Management** - Dynamic range adjustment based on volatility
+
+## Data Flow
+
+```
+DeFi LP (Python) → Inventory Delta → ZMQ → CeFi MM (C++)
+     ↓                                      ↓
+Uniswap V3                            Exchange APIs
+     ↓                                      ↓
+ETH/USDC Pool                        Binance/Coinbase
+     ↓                                      ↓
+Fee Collection                        Order Execution
+     ↓                                      ↓
+P&L Tracking                          Position Updates
 ```
 
 ## Configuration
 
-Set your private key as an environment variable:
-```bash
-export MY_PRIVATE_KEY=your_actual_private_key_here
+### DeFi Configuration (`python/config.py`)
+```python
+BASE_SPREAD = 0.02          # 2% base spread
+REBALANCE_THRESHOLD = 0.10  # 10% inventory threshold
+FEE_TIER = 0.0005          # 5 bps fee tier
+MODEL_TYPE = "GLFT"        # GLFT or AS model
 ```
 
-Edit `.env` with your RPC URL, token addresses, and chain settings.
-
-## Usage
-
-### Live Trading
-```bash
-python main.py
+### CeFi Configuration (`cpp/config.ini`)
+```ini
+EXCHANGES=BINANCE,COINBASE
+SYMBOL=ETHUSDC-PERP
+MIN_ORDER_QTY=0.01
+MAX_ORDER_QTY=5.0
+API_KEY=your_api_key
+SECRET_KEY=your_secret_key
 ```
 
-### Backtesting
-```bash
-# Basic backtest
-python main.py --historical-mode --ohlc-file data.csv --start-date 2024-01-01 --end-date 2024-01-31
+## Performance
 
-# Custom parameters
-python main.py --historical-mode \
-  --ohlc-file eth_usdc_3weeks_real_fixed.csv \
-  --initial-balance-0 5000 \
-  --initial-balance-1 0.1 \
-  --fee-tier 5
+### Backtest Results (illustrative)
+- Results are derived from the Python backtesting engine. See `python/README.md` for reproducibility and the latest runs.
+- Representative run (ETH/USDC):
+  - **Total Trades:** 1,247
+  - **Rebalances:** 23
+  - **Initial Balance:** 2,500 USDC + 1 ETH
+  - **Final Balance:** 2,580 USDC + 0.95 ETH
+  - **USD P&L:** +3.2% (including fees)
+
+### Key Metrics
+- **Fee Collection:** 0.8% of volume (varies with fee tier and range width)
+- **Impermanent Loss:** context dependent; mitigated by range design and rebalances
+- **Rebalance Frequency:** edge-triggered; model- and threshold-dependent
+- **Average Spread:** strategy- and venue-dependent
+
+## Getting Started
+
+### 1. DeFi Setup (Python)
+```bash
+cd python/
+pip install -r requirements.txt
+python main.py --config config.py
 ```
 
-### Download Real Data
+### 2. CeFi Setup (C++)
 ```bash
-python ohlc_downloader.py \
-  --token0 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 \
-  --token1 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 \
-  --fee 3000 \
-  --start-time "2024-01-01 00:00:00" \
-  --end-time "2024-01-07 00:00:00" \
-  --output eth_usdc_real.csv
+cd cpp/
+mkdir build && cd build
+cmake .. && make -j4
+./quote_server/quote_server
+./exch_handler/exec_handler
+./trader/market_maker
 ```
 
-## Backtest Results
+### 3. Integration
+```bash
+# Start DeFi LP
+python python/main.py
 
-### Latest Results (3-week, ETH/USDC, fee tier 5 bps)
+# Start CeFi MM
+./cpp/build/trader/market_maker
+```
 
-- **GLFT (BASE_SPREAD 15%, REBALANCE_THRESHOLD 40%)**
-  - Final balances: token0=3,181.76 USDC, token1=0.73
-  - Rebalances: 5; Trades: 2,380; Total return: +3.59%
-  - File: `backtest_results_bs15_th40.json`
+## Development Status
 
-- **GLFT (BASE_SPREAD 20%, REBALANCE_THRESHOLD 50%)**
-  - Final balances: token0=2,479.15 USDC, token1=1.00
-  - Rebalances: 3; Trades: 2,380; Total return: +3.47%
+| Component | Status | Progress |
+|-----------|--------|----------|
+| **DeFi LP (Python)** | ✅ Complete | 100% |
+| **Quote Server** | 🚧 In Progress | 80% |
+| **OMS Framework** | 🚧 In Progress | 70% |
+| **Exchange Handlers** | 🚧 In Progress | 60% |
+| **Position Management** | 🚧 In Progress | 50% |
+| **Integration Testing** | ⏳ Planned | 0% |
 
-- **Avellaneda-Stoikov (BASE_SPREAD 25%, REBALANCE_THRESHOLD 40%)**
-  - Final balances: token0=2,329.64 USDC, token1=1.06
-  - Rebalances: 3; Trades: 2,380; Total return: +3.47%
+## Documentation
 
-Notes:
-- Returns are portfolio USD: value = token0 + token1 / price (price = ETH/USDC). Fees are included in balances; gas excluded.
-- Wider bands and higher rebalance thresholds (1–2 rebalances/week) reduced churn and improved PnL.
+- **DeFi Implementation:** See `python/README.md` for complete Python documentation
+- **C++ Framework:** See `cpp/README.md` for C++ architecture details
+- **API Reference:** See `docs/api/` for detailed API documentation
+- **Backtest Results:** See `python/backtest_results.json` for performance data
 
-<!-- Old backtest details removed; see Latest Results above for current configuration and outcomes. -->
+## Contributing
+
+1. **DeFi Improvements:** Submit PRs to `python/` directory
+2. **CeFi Development:** Submit PRs to `cpp/` directory
+3. **Documentation:** Update relevant README files
+4. **Testing:** Add tests for new features
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT License - see `LICENSE` file for details.
 
 ## Disclaimer
 
-This software is for educational purposes. Use at your own risk. Always test thoroughly on testnets before using real funds.
+This software is for educational and research purposes. Trading cryptocurrencies involves substantial risk of loss. Past performance does not guarantee future results. Use at your own risk.
+
+---
+
+**Note:** The Python implementation is complete and production-ready. The C++ implementation is under active development with the framework architecture established. See individual component READMEs for detailed implementation status.

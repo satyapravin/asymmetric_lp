@@ -90,6 +90,19 @@ class AsymmetricLPStrategy:
         range_a_pct = ranges['range_a_percentage'] / 100.0
         range_b_pct = ranges['range_b_percentage'] / 100.0
 
+        # Enforce symmetric bands on the very first mint
+        if startup_allocation:
+            base = float(getattr(self.config, 'BASE_SPREAD', 0.02))
+            minp = float(getattr(self.config, 'MIN_RANGE_PERCENTAGE', 2.0)) / 100.0
+            maxp = float(getattr(self.config, 'MAX_RANGE_PERCENTAGE', 50.0)) / 100.0
+            base = max(min(base, maxp), minp)
+            range_a_pct = base
+            range_b_pct = base
+            # Reflect enforced symmetry in ranges dict (percent units)
+            ranges = dict(ranges)
+            ranges['range_a_percentage'] = base * 100.0
+            ranges['range_b_percentage'] = base * 100.0
+
         # Adjust balances toward target only after startup mint
         adj_t0 = token0_balance
         adj_t1 = token1_balance
