@@ -1,9 +1,9 @@
-add_executable(grvt_bridge
+add_executable(market_maker
   main.cpp
   zmq_oms.cpp
   market_making_strategy.cpp
 )
 
-target_link_libraries(grvt_bridge PRIVATE utils)
+target_link_libraries(market_maker PRIVATE utils)
 
-target_include_directories(grvt_bridge PRIVATE ${ZeroMQ_INCLUDE_DIRS})
+target_include_directories(market_maker PRIVATE ${ZeroMQ_INCLUDE_DIRS})

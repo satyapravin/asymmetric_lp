@@ -13,7 +13,7 @@ struct AppConfig {
   double min_order_qty{0.0};
   double max_order_qty{0.0};
   int poll_sleep_ms{0};
-  // External MD/ORD buses
+  // External MD/ORD/POS buses
   std::string md_pub_endpoint;  // where quote_server binds PUB
   std::string md_sub_endpoint;  // where MM connects SUB
   std::string md_topic;         // optional override; default md.{exch}.{symbol}
@@ -21,6 +21,9 @@ struct AppConfig {
   std::string ord_sub_endpoint; // where MM connects SUB for events OR exec connects SUB for orders
   std::string ord_topic_new;    // topic to publish new orders
   std::string ord_topic_ev;     // topic to publish order events
+  std::string pos_pub_endpoint; // where position_server binds PUB
+  std::string pos_sub_endpoint; // where MM connects SUB for positions
+  std::string pos_topic;        // optional override; default pos.{exch}.{symbol}
 };
 
 inline std::string getenv_or(const char* key, const char* defv) {
@@ -61,6 +64,9 @@ inline void load_from_ini(const std::string& path, AppConfig& c) {
     else if (key == "ORD_SUB_ENDPOINT") c.ord_sub_endpoint = val;
     else if (key == "ORD_TOPIC_NEW") c.ord_topic_new = val;
     else if (key == "ORD_TOPIC_EV") c.ord_topic_ev = val;
+    else if (key == "POS_PUB_ENDPOINT") c.pos_pub_endpoint = val;
+    else if (key == "POS_SUB_ENDPOINT") c.pos_sub_endpoint = val;
+    else if (key == "POS_TOPIC") c.pos_topic = val;
   }
 }
 
@@ -82,6 +88,9 @@ inline AppConfig load_app_config() {
   c.ord_sub_endpoint = "tcp://127.0.0.1:6003"; // events in
   c.ord_topic_new = "ord.new";
   c.ord_topic_ev = "ord.ev";
+  c.pos_pub_endpoint = "tcp://127.0.0.1:6004"; // positions out
+  c.pos_sub_endpoint = "tcp://127.0.0.1:6004"; // positions in
+  c.pos_topic = "";
 
   // load from config.ini if present
   auto ini_path = getenv_or("CPP_CONFIG", "./cpp/config.ini");

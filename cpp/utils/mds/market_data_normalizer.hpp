@@ -37,6 +37,23 @@ public:
                     uint64_t& timestamp_us) override;
 };
 
+// Mock parser for testing
+class MockParser : public IExchangeParser {
+public:
+  MockParser(const std::string& symbol, double base_price = 2000.0);
+  bool parse_message(const std::string& raw_msg, 
+                    std::string& symbol,
+                    std::vector<std::pair<double, double>>& bids,
+                    std::vector<std::pair<double, double>>& asks,
+                    uint64_t& timestamp_us) override;
+
+private:
+  std::string mock_symbol_;
+  double base_price_;
+  double price_variance_{0.001}; // 0.1% variance
+  uint64_t sequence_{0};
+};
+
 // Market data normalizer
 class MarketDataNormalizer {
 public:

@@ -1,6 +1,7 @@
 #include "order_binary.hpp"
 #include <cstring>
 #include <algorithm>
+#include <chrono>
 
 void OrderBinaryHelper::serialize_order(const std::string& cl_ord_id,
                                        const std::string& exch,

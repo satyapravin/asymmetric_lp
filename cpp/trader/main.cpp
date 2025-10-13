@@ -24,8 +24,11 @@ int main() {
   std::string md_topic = cfg.md_topic.empty() ? 
     (std::string("md.") + cfg.exchanges_csv + "." + cfg.symbol) : cfg.md_topic;
   
+  std::string pos_topic = cfg.pos_topic.empty() ? 
+    (std::string("pos.GRVT.") + cfg.symbol) : cfg.pos_topic;
+  
   auto strategy = std::make_unique<MarketMakingStrategy>(
-    cfg.symbol, cfg.md_sub_endpoint, md_topic, oms, glft_model);
+    cfg.symbol, cfg.md_sub_endpoint, md_topic, cfg.pos_sub_endpoint, pos_topic, oms, glft_model);
   
   // Configure strategy
   strategy->set_min_spread_bps(5.0);  // 5 bps minimum spread
@@ -40,15 +43,8 @@ int main() {
                                      double fill_qty,
                                      double fill_price,
                                      const std::string& text) {
-    std::cout << "[ORDER_EVENT] " << cl_ord_id << " " << symbol 
-              << " type=" << event_type << " qty=" << fill_qty 
-              << " price=" << fill_price << " " << text << std::endl;
-    
-    // Update inventory delta based on fills
-    if (event_type == 1) { // Fill
-      // This is simplified - in reality you'd track which side was filled
-      // and update inventory accordingly
-    }
+    // Forward order events to strategy
+    strategy->on_order_event(cl_ord_id, exch, symbol, event_type, fill_qty, fill_price, text);
   });
   
   // Start strategy
