@@ -117,7 +117,7 @@ class BaseInventoryModel(ABC):
         Args:
             token0_balance: Token0 balance in wei
             token1_balance: Token1 balance in wei
-            spot_price: Current spot price
+            spot_price: Current spot price (token1 per token0)
             token0_decimals: Token0 decimals
             token1_decimals: Token1 decimals
             
@@ -128,9 +128,11 @@ class BaseInventoryModel(ABC):
         token0_amount = token0_balance / (10 ** token0_decimals)
         token1_amount = token1_balance / (10 ** token1_decimals)
         
-        # Calculate dollar values
-        token0_value = token0_amount * spot_price  # token0 value in token1 terms
-        token1_value = token1_amount  # token1 value in token1 terms
+        # Calculate values in consistent units (token0 terms, i.e., USD)
+        # token0 is USDC, so token0_amount is already in USD
+        token0_value = token0_amount  # USD
+        # token1 is ETH, convert to USD using spot_price
+        token1_value = token1_amount / spot_price  # ETH / (ETH/USDC) = USD
         
         total_value = token0_value + token1_value
         

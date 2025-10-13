@@ -73,8 +73,8 @@ class Config:
     DEFAULT_DAILY_VOLATILITY = float(os.getenv('DEFAULT_DAILY_VOLATILITY', '0.02'))  # 2% daily volatility
     
     # Default initial balances for backtesting
-    DEFAULT_INITIAL_BALANCE_0 = float(os.getenv('DEFAULT_INITIAL_BALANCE_0', '5000.0'))
-    DEFAULT_INITIAL_BALANCE_1 = float(os.getenv('DEFAULT_INITIAL_BALANCE_1', '0.1'))
+    DEFAULT_INITIAL_BALANCE_0 = float(os.getenv('DEFAULT_INITIAL_BALANCE_0', '2500.0'))
+    DEFAULT_INITIAL_BALANCE_1 = float(os.getenv('DEFAULT_INITIAL_BALANCE_1', '1.0'))
     
     # Inventory management model parameters
     INVENTORY_RISK_AVERSION = float(os.getenv('INVENTORY_RISK_AVERSION', '0.1'))
@@ -94,6 +94,9 @@ class Config:
     MAX_POSITION_SIZE = float(os.getenv('MAX_POSITION_SIZE', '0.1'))  # 10% max position size
     TERMINAL_INVENTORY_PENALTY = float(os.getenv('TERMINAL_INVENTORY_PENALTY', '0.2'))  # Terminal penalty
     INVENTORY_CONSTRAINT_ACTIVE = os.getenv('INVENTORY_CONSTRAINT_ACTIVE', 'false').lower() == 'true'
+    
+    # ZMQ publishing preferences
+    ASSET_TOKEN = os.getenv('ASSET_TOKEN', '').strip()  # Which token to publish deltas for (e.g., 'A', 'B', 'ETH', 'USDC')
     
     # Telegram alerting
     TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')

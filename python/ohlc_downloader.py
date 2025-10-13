@@ -146,7 +146,7 @@ class OHLCDataDownloader:
         
         return price, tick, sqrt_price_x96
     
-    def get_swap_events(self, pool_address: str, from_block: int, to_block: int, chunk_size: int = 1000) -> List[Dict]:
+    def get_swap_events(self, pool_address: str, from_block: int, to_block: int, chunk_size: int = 5000) -> List[Dict]:
         """Get swap events from pool within block range"""
         pool_address_checksummed = self.checksum_address(pool_address)
         
@@ -172,39 +172,62 @@ class OHLCDataDownloader:
                 
                 all_events.extend(events)
                 
-                # Add a small delay to avoid rate limiting
-                time.sleep(0.1)
+                # Small delay to avoid rate limiting
+                time.sleep(0.02)
             
             logger.info(f"Total events fetched: {len(all_events)}")
-            
+
+            # Cache block timestamps to avoid one RPC per event
+            unique_blocks = sorted({int(ev['blockNumber']) for ev in all_events})
+            block_ts_cache: Dict[int, int] = {}
+            for idx, bn in enumerate(unique_blocks, 1):
+                try:
+                    ts = self.w3.eth.get_block(bn)['timestamp']
+                except Exception as e:
+                    logger.warning(f"Failed to fetch block {bn}: {e}; retrying once...")
+                    time.sleep(0.05)
+                    ts = self.w3.eth.get_block(bn)['timestamp']
+                block_ts_cache[bn] = ts
+                if idx % 1000 == 0:
+                    logger.info(f"Cached timestamps for {idx}/{len(unique_blocks)} blocks...")
+
             swap_data = []
-            for event in all_events:
-                # Decode event data
-                data = event['data']
-                # Convert HexBytes to hex string if needed
-                if hasattr(data, 'hex'):
-                    data = data.hex()
-                # Remove 0x prefix if present
-                if data.startswith('0x'):
-                    data = data[2:]
-                    
-                # Parse the data field (contains amount0, amount1, sqrtPriceX96, liquidity, tick)
-                amount0 = int.from_bytes(bytes.fromhex(data[0:64]), 'big', signed=True)
-                amount1 = int.from_bytes(bytes.fromhex(data[64:128]), 'big', signed=True)
-                sqrt_price_x96 = int(data[128:192], 16)
-                liquidity = int(data[192:256], 16)
-                tick = int.from_bytes(bytes.fromhex(data[256:320]), 'big', signed=True)
-                
-                swap_data.append({
-                    'block_number': event['blockNumber'],
-                    'transaction_hash': event['transactionHash'].hex(),
-                    'timestamp': self.w3.eth.get_block(event['blockNumber'])['timestamp'],
-                    'sqrt_price_x96': sqrt_price_x96,
-                    'tick': tick,
-                    'amount0': amount0,
-                    'amount1': amount1,
-                    'liquidity': liquidity
-                })
+            for idx, event in enumerate(all_events, 1):
+                try:
+                    # Decode event data
+                    data = event['data']
+                    if hasattr(data, 'hex'):
+                        data = data.hex()
+                    if isinstance(data, str) and data.startswith('0x'):
+                        data = data[2:]
+
+                    # Parse the data field (amount0, amount1, sqrtPriceX96, liquidity, tick)
+                    amount0 = int.from_bytes(bytes.fromhex(data[0:64]), 'big', signed=True)
+                    amount1 = int.from_bytes(bytes.fromhex(data[64:128]), 'big', signed=True)
+                    sqrt_price_x96 = int(data[128:192], 16)
+                    liquidity = int(data[192:256], 16)
+                    tick = int.from_bytes(bytes.fromhex(data[256:320]), 'big', signed=True)
+
+                    bn = int(event['blockNumber'])
+                    ts = block_ts_cache.get(bn)
+                    if ts is None:
+                        ts = self.w3.eth.get_block(bn)['timestamp']
+                        block_ts_cache[bn] = ts
+
+                    swap_data.append({
+                        'block_number': bn,
+                        'transaction_hash': event['transactionHash'].hex(),
+                        'timestamp': ts,
+                        'sqrt_price_x96': sqrt_price_x96,
+                        'tick': tick,
+                        'amount0': amount0,
+                        'amount1': amount1,
+                        'liquidity': liquidity
+                    })
+                except Exception as e:
+                    logger.warning(f"Error decoding event at index {idx}: {e}; skipping")
+                if idx % 5000 == 0:
+                    logger.info(f"Decoded {idx}/{len(all_events)} events...")
             
             return swap_data
             

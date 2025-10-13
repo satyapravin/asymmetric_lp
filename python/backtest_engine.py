@@ -41,16 +41,24 @@ class BacktestTrade:
     volume: float
     trade_type: str  # 'buy' or 'sell'
     fees_earned: float  # Fees earned by LP (us), not paid by LP
+    new_token0_balance: float = 0.0
+    new_token1_balance: float = 0.0
+    range_a_percentage: float = 0.0  # upper band width (%) active since last rebalance
+    range_b_percentage: float = 0.0  # lower band width (%) active since last rebalance
     
     @classmethod
-    def from_swap_event(cls, swap_event: SwapEvent) -> 'BacktestTrade':
+    def from_swap_event(cls, swap_event: SwapEvent, range_a_pct_percent: float = 0.0, range_b_pct_percent: float = 0.0) -> 'BacktestTrade':
         """Create BacktestTrade from SwapEvent"""
         return cls(
             timestamp=swap_event.timestamp,
             price=swap_event.price,
             volume=swap_event.volume_usd,  # Use volume_usd from swap event
             trade_type=swap_event.trade_type,
-            fees_earned=swap_event.fees_token0 + swap_event.fees_token1  # Fees earned by LP
+            fees_earned=swap_event.fees_token0 + swap_event.fees_token1,  # Fees earned by LP
+            new_token0_balance=swap_event.new_token0_balance,
+            new_token1_balance=swap_event.new_token1_balance,
+            range_a_percentage=range_a_pct_percent,
+            range_b_percentage=range_b_pct_percent,
         )
 
 @dataclass
@@ -187,9 +195,9 @@ class BacktestEngine:
         
         # Apply falloff to position values
         # Convert both token amounts to USD for consistent units
-        # Temporarily disable falloff factor to test
-        value_0 = position.token0_amount * current_price  # Convert BTC to USD (no falloff)
-        value_1 = position.token1_amount                  # USDC is already in USD (no falloff)
+        # token0 is USDC (already USD); token1 is ETH (convert via 1/price)
+        value_0 = position.token0_amount
+        value_1 = position.token1_amount * (1.0 / current_price)
         
         # Don't add fees to position value - fees are collected separately
         # This prevents unrealistic compounding effects in backtesting
@@ -207,9 +215,9 @@ class BacktestEngine:
             Total portfolio value in USD
         """
         # Calculate balance values in USD
-        # token0 is BTC (priced in USD), token1 is USDC (already in USD)
-        balance_value_0 = self.balance_0 * current_price  # Convert BTC to USD
-        balance_value_1 = self.balance_1                   # USDC is already in USD
+        # token0 is USDC (already USD); token1 is ETH (convert via 1/price)
+        balance_value_0 = self.balance_0
+        balance_value_1 = self.balance_1 * (1.0 / current_price)
         
         # Add position values
         position_value_0 = 0.0
@@ -400,12 +408,39 @@ class BacktestEngine:
 
             # Update engine-side balances to reflect AMM state post-mint
             self.balance_0, self.balance_1 = amm_simulator.get_active_positions_balances()
+            # Capture state for JSON: first mint, next rebalance, and first trade after
+            if not hasattr(self, '_debug_capture'):
+                self._debug_capture = {
+                    'first_mint': None,
+                    'second_rebalance': None,
+                    'first_trade_after_second_rebalance': None
+                }
+            # Record first mint snapshot
+            if self._debug_capture['first_mint'] is None:
+                self._debug_capture['first_mint'] = {
+                    'timestamp': timestamp.isoformat(),
+                    'price': current_price,
+                    'post_mint_balances': {'token0': self.balance_0, 'token1': self.balance_1},
+                    'ranges': {'A': [position_a_lower, position_a_upper], 'B': [position_b_lower, position_b_upper]},
+                }
+            else:
+                # If first mint exists and second rebalance not yet captured, this is the second rebalance
+                if self._debug_capture['second_rebalance'] is None:
+                    self._debug_capture['second_rebalance'] = {
+                        'timestamp': timestamp.isoformat(),
+                        'price': current_price,
+                        'post_rebalance_balances': {'token0': self.balance_0, 'token1': self.balance_1},
+                        'ranges': {'A': [position_a_lower, position_a_upper], 'B': [position_b_lower, position_b_upper]},
+                    }
             # Update rebalance baselines (edge-triggered logic)
             self.last_rebalance_token0 = self.balance_0
             self.last_rebalance_token1 = self.balance_1
             self.last_rebalance_price = current_price
             
             logger.info(f"Created tick-aligned positions: A=[{position_a_lower:.8f},{position_a_upper:.8f}] B=[{position_b_lower:.8f},{position_b_upper:.8f}] (ranges A={ranges['range_a_percentage']}%, B={ranges['range_b_percentage']}%)")
+            # Save current active range percentages (in percent units) for later inclusion on trades
+            self._active_range_a_pct_percent = float(ranges.get('range_a_percentage', 0.0))
+            self._active_range_b_pct_percent = float(ranges.get('range_b_percentage', 0.0))
         
         rebalance_result = {
             'timestamp': timestamp,
@@ -518,12 +553,25 @@ class BacktestEngine:
             
             if swap_event:
                 # Convert swap event to trade
-                trade = BacktestTrade.from_swap_event(swap_event)
+                trade = BacktestTrade.from_swap_event(
+                    swap_event,
+                    getattr(self, '_active_range_a_pct_percent', 0.0),
+                    getattr(self, '_active_range_b_pct_percent', 0.0)
+                )
                 self.trades.append(trade)
                 
                 # Update our balances with new balances from swap event
                 self.balance_0 = swap_event.new_token0_balance
                 self.balance_1 = swap_event.new_token1_balance
+                # If we've already captured the second rebalance, capture the very first trade after it
+                if hasattr(self, '_debug_capture') and self._debug_capture.get('second_rebalance') and not self._debug_capture.get('first_trade_after_second_rebalance'):
+                    self._debug_capture['first_trade_after_second_rebalance'] = {
+                        'timestamp': trade.timestamp.isoformat(),
+                        'price': trade.price,
+                        'trade_type': trade.trade_type,
+                        'fees_earned': trade.fees_earned,
+                        'post_trade_balances': {'token0': self.balance_0, 'token1': self.balance_1}
+                    }
             
             # Check if rebalancing is needed
             if self.should_rebalance(current_price):
@@ -559,8 +607,8 @@ class BacktestEngine:
         token1_return = (final_balance_1 - initial_balance_1) / initial_balance_1 if initial_balance_1 > 0 else 0.0
         
         # Calculate final inventory deviation
-        final_value_0 = final_balance_0 * final_price
-        final_value_1 = final_balance_1
+        final_value_0 = final_balance_0
+        final_value_1 = final_balance_1 * (1.0 / final_price)
         final_total_value = final_value_0 + final_value_1
         final_current_ratio = final_value_0 / final_total_value if final_total_value > 0 else 0.0
         final_inventory_deviation = abs(final_current_ratio - self.initial_target_ratio)
@@ -610,6 +658,45 @@ class BacktestEngine:
             output_file: Output file path
         """
         # Convert to serializable format
+        # Build interleaved timeline of rebalances and trades
+        # Use original datetime objects for sorting, then serialize
+        timeline = []
+        for t in result.trades:
+            timeline.append({
+                '_dt': t.timestamp,
+                'type': 'trade',
+                'timestamp': t.timestamp.isoformat(),
+                'price': t.price,
+                'volume': t.volume,
+                'trade_type': t.trade_type,
+                'fees_earned': t.fees_earned,
+                'new_token0_balance': t.new_token0_balance,
+                'new_token1_balance': t.new_token1_balance,
+                'range_a_percentage': t.range_a_percentage,
+                'range_b_percentage': t.range_b_percentage
+            })
+        for r in result.rebalances:
+            ts = r['timestamp'] if not hasattr(r['timestamp'], 'isoformat') else r['timestamp']
+            # Normalize to datetime
+            try:
+                dt = ts if hasattr(ts, 'isoformat') else datetime.fromisoformat(str(ts))
+            except Exception:
+                dt = None
+            timeline.append({
+                '_dt': dt,
+                'type': 'rebalance',
+                'timestamp': (ts.isoformat() if hasattr(ts, 'isoformat') else str(ts)),
+                'price': r.get('price'),
+                'positions_burned': r.get('positions_burned'),
+                'new_positions': r.get('new_positions'),
+                'ranges': r.get('ranges', {}),
+                'is_initial_mint': r.get('is_initial_mint', False)
+            })
+        # Sort by datetime and drop helper
+        timeline.sort(key=lambda e: (e['_dt'] or datetime.min))
+        for e in timeline:
+            e.pop('_dt', None)
+
         data = {
             'start_time': result.start_time.isoformat(),
             'end_time': result.end_time.isoformat(),
@@ -619,13 +706,18 @@ class BacktestEngine:
             'final_balance_1': result.final_balance_1,
             'total_rebalances': result.total_rebalances,
             'total_trades': result.total_trades,
+            'events': timeline,
             'trades': [
                 {
                     'timestamp': trade.timestamp.isoformat(),
                     'price': trade.price,
                     'volume': trade.volume,
                     'trade_type': trade.trade_type,
-                    'fees_earned': trade.fees_earned
+                    'fees_earned': trade.fees_earned,
+                    'new_token0_balance': trade.new_token0_balance,
+                    'new_token1_balance': trade.new_token1_balance,
+                    'range_a_percentage': trade.range_a_percentage,
+                    'range_b_percentage': trade.range_b_percentage
                 }
                 for trade in result.trades
             ],
@@ -638,7 +730,8 @@ class BacktestEngine:
                     'ranges': rebalance['ranges']
                 }
                 for rebalance in result.rebalances
-            ]
+            ],
+            'debug': getattr(self, '_debug_capture', None)
         }
         
         with open(output_file, 'w') as f:

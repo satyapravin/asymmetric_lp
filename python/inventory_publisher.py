@@ -73,7 +73,9 @@ class InventoryPublisher:
                             deviation: float,
                             should_rebalance: bool,
                             volatility: float,
-                            ranges: Dict[str, float]) -> None:
+                            ranges: Dict[str, float],
+                            initial_token_a_balance: Optional[float] = None,
+                            initial_token_b_balance: Optional[float] = None) -> None:
         """
         Update inventory data for publishing
         
@@ -98,69 +100,42 @@ class InventoryPublisher:
         if not self.enabled:
             return
         
-        # Create comprehensive inventory data
+        # Compute delta for configured asset token only
+        asset_cfg = (self.config.ASSET_TOKEN or '').strip().lower()
+        # Accept common aliases: token0/token1, 0/1, a/b, or symbols
+        use_token0 = asset_cfg in ('token0', '0', 'a') or asset_cfg == token_a_symbol.lower()
+        use_token1 = asset_cfg in ('token1', '1', 'b') or asset_cfg == token_b_symbol.lower()
+
+        if use_token0 and not use_token1:
+            initial = initial_token_a_balance if initial_token_a_balance is not None else 0.0
+            delta_units = token_a_balance - initial
+            selected_symbol = token_a_symbol
+            selected_token = 'token0'
+        elif use_token1 and not use_token0:
+            initial = initial_token_b_balance if initial_token_b_balance is not None else 0.0
+            delta_units = token_b_balance - initial
+            selected_symbol = token_b_symbol
+            selected_token = 'token1'
+        else:
+            # Fallback to token0 if ambiguous/not set
+            initial = initial_token_a_balance if initial_token_a_balance is not None else 0.0
+            delta_units = token_a_balance - initial
+            selected_symbol = token_a_symbol
+            selected_token = 'token0'
+
         inventory_data = {
             'timestamp': datetime.utcnow().isoformat(),
             'source': 'uniswap_v3_lp_rebalancer',
             'chain': self.config.CHAIN_NAME,
             'chain_id': self.config.CHAIN_ID,
-            
-            # Token information
-            'tokens': {
-                'token_a': {
-                    'symbol': token_a_symbol,
-                    'address': token_a_address,
-                    'balance': token_a_balance,
-                    'usd_value': token_a_usd_value,
-                    'range_percentage': ranges.get('token_a_range', 0)
-                },
-                'token_b': {
-                    'symbol': token_b_symbol,
-                    'address': token_b_address,
-                    'balance': token_b_balance,
-                    'usd_value': token_b_usd_value,
-                    'range_percentage': ranges.get('token_b_range', 0)
-                }
-            },
-            
-            # Market data
-            'market': {
-                'spot_price': spot_price,
-                'volatility': volatility,
-                'pair': f"{token_a_symbol}/{token_b_symbol}"
-            },
-            
-            # Inventory metrics
-            'inventory': {
-                'current_ratio': inventory_ratio,
-                'target_ratio': target_ratio,
-                'deviation': deviation,
-                'total_usd_value': total_usd_value,
-                'should_rebalance': should_rebalance
-            },
-            
-            # Notionals for CeFi MM
-            'notionals': {
-                'token_a_notional': token_a_usd_value,
-                'token_b_notional': token_b_usd_value,
-                'total_notional': total_usd_value,
-                'imbalance_usd': abs(token_a_usd_value - token_b_usd_value),
-                'imbalance_percentage': abs(inventory_ratio - target_ratio) * 100
-            },
-            
-            # Configuration context
-            'config': {
-                'max_deviation': self.config.MAX_INVENTORY_DEVIATION,
-                'risk_aversion': self.config.INVENTORY_RISK_AVERSION,
-                'base_spread': self.config.BASE_SPREAD,
-                'min_range': self.config.MIN_RANGE_PERCENTAGE,
-                'max_range': self.config.MAX_RANGE_PERCENTAGE
-            }
+            'asset_token': selected_token,
+            'asset_symbol': selected_symbol,
+            'delta_units': delta_units,
         }
         
         self.last_inventory_data = inventory_data
         
-        # Publish inventory data immediately on every update
+        # Publish minimal delta data immediately on every update
         self._publish_inventory_data(inventory_data)
     
     def _publish_inventory_data(self, inventory_data: Dict[str, Any]):
