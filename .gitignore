@@ -58,3 +58,18 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# C++ / CMake
+cpp/build/
+cpp/**/CMakeFiles/
+cpp/**/CMakeCache.txt
+cpp/**/cmake_install.cmake
+cpp/**/Makefile
+cpp/**/.cache/
+cpp/**/*.o
+cpp/**/*.obj
+cpp/**/*.a
+cpp/**/*.lib
+cpp/**/*.so
+cpp/**/*.dll
+cpp/**/grvt_bridge
