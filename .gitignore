@@ -2,19 +2,31 @@
 .env
 .env.local
 .env.production
+python/.env
+python/.env.local
+python/.env.production
 
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+.venv/
+python/.venv/
+.python-version
+python/.python-version
 .Python
 build/
+python/build/
 develop-eggs/
+python/develop-eggs/
 dist/
+python/dist/
 downloads/
 eggs/
 .eggs/
+python/eggs/
+python/.eggs/
 lib/
 lib64/
 parts/
@@ -22,6 +34,7 @@ sdist/
 var/
 wheels/
 *.egg-info/
+python/*.egg-info/
 .installed.cfg
 *.egg
 MANIFEST
@@ -32,6 +45,11 @@ env/
 ENV/
 env.bak/
 venv.bak/
+python/venv/
+python/env/
+python/ENV/
+python/env.bak/
+python/venv.bak/
 
 # IDE
 .vscode/
