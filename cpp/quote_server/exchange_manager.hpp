@@ -4,10 +4,11 @@
 #include <functional>
 #include <atomic>
 #include <thread>
-#include <uv.h>
+#include <vector>
+#include "i_exchange_manager.hpp"
 
-// Single exchange websocket manager
-class ExchangeManager {
+// Single exchange websocket manager (simplified mock version)
+class ExchangeManager : public IExchangeManager {
 public:
   using MessageCallback = std::function<void(const std::string& message)>;
   using ConnectionCallback = std::function<void(bool connected)>;
@@ -34,34 +35,21 @@ public:
   void set_max_reconnect_attempts(int attempts) { max_reconnect_attempts_ = attempts; }
 
 private:
-  // libuv callbacks
-  static void on_connect(uv_connect_t* req, int status);
-  static void on_message(uv_websocket_t* handle, const char* data, size_t len);
-  static void on_close(uv_websocket_t* handle);
-  static void on_error(uv_websocket_t* handle, int error);
-  
   // Internal methods
-  void connect_websocket();
-  void schedule_reconnect();
+  void simulate_websocket_connection();
   void handle_message(const std::string& message);
   void handle_connection(bool connected);
   
-  // libuv event loop
-  void run_event_loop();
+  // Mock data generation
+  void generate_mock_market_data();
   
   std::string exchange_name_;
   std::string websocket_url_;
   
-  // libuv handles
-  uv_loop_t* loop_;
-  uv_websocket_t websocket_;
-  uv_connect_t connect_req_;
-  uv_timer_t reconnect_timer_;
-  
   // State
   std::atomic<bool> running_{false};
   std::atomic<bool> connected_{false};
-  std::thread event_loop_thread_;
+  std::thread mock_thread_;
   
   // Configuration
   int reconnect_interval_ms_{5000}; // 5 seconds

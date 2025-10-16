@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package proto;
+
+message OrderBookLevel {
+  double price = 1;
+  double qty   = 2;
+}
+
+message OrderBookSnapshot {
+  string exch       = 1;
+  string symbol     = 2;
+  uint64 timestamp_us = 3;
+  repeated OrderBookLevel bids = 4;
+  repeated OrderBookLevel asks = 5;
+}
+
+

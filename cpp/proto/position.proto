@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package proto;
+
+message PositionUpdate {
+  string exch       = 1;
+  string symbol     = 2;
+  double qty        = 3;
+  double avg_price  = 4;
+  uint64 timestamp_us = 5;
+}
+
+

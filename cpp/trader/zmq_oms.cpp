@@ -1,5 +1,8 @@
 #include "zmq_oms.hpp"
 #include <iostream>
+#ifdef PROTO_ENABLED
+#include "order.pb.h"
+#endif
 
 ZMQOMS::ZMQOMS(const std::string& order_pub_endpoint,
                const std::string& order_topic,
@@ -19,10 +22,23 @@ bool ZMQOMS::send_order(const std::string& cl_ord_id,
                        uint32_t is_market,
                        double qty,
                        double price) {
+#ifdef PROTO_ENABLED
+  proto::OrderRequest req;
+  req.set_cl_ord_id(cl_ord_id);
+  req.set_exch(exch);
+  req.set_symbol(symbol);
+  req.set_side(side == 0 ? proto::BUY : proto::SELL);
+  req.set_type(is_market ? proto::MARKET : proto::LIMIT);
+  req.set_qty(qty);
+  req.set_price(price);
+  std::string payload;
+  req.SerializeToString(&payload);
+  return order_publisher_->publish(order_topic_, payload);
+#else
   char buffer[OrderBinaryHelper::ORDER_SIZE];
   OrderBinaryHelper::serialize_order(cl_ord_id, exch, symbol, side, is_market, qty, price, buffer);
-  
   return order_publisher_->publish(order_topic_, std::string(buffer, OrderBinaryHelper::ORDER_SIZE));
+#endif
 }
 
 bool ZMQOMS::cancel_order(const std::string& cl_ord_id,

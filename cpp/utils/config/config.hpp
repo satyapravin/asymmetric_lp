@@ -3,6 +3,15 @@
 #include <string>
 #include <fstream>
 #include <sstream>
+#include <vector>
+#include <iostream>
+
+struct MessageHandlerConfig {
+  std::string name;
+  std::string endpoint;
+  std::string topic;
+  bool enabled{true};
+};
 
 struct AppConfig {
   std::string zmq_endpoint;
@@ -13,6 +22,10 @@ struct AppConfig {
   double min_order_qty{0.0};
   double max_order_qty{0.0};
   int poll_sleep_ms{0};
+  
+  // Message handler configurations
+  std::vector<MessageHandlerConfig> message_handlers;
+  
   // External MD/ORD/POS buses
   std::string md_pub_endpoint;  // where quote_server binds PUB
   std::string md_sub_endpoint;  // where MM connects SUB
@@ -49,6 +62,8 @@ inline void load_from_ini(const std::string& path, AppConfig& c) {
     if (eq == std::string::npos) continue;
     std::string key = trim(line.substr(0, eq));
     std::string val = trim(line.substr(eq + 1));
+    
+    // Basic configuration
     if (key == "ZMQ_SUBSCRIBER_ENDPOINT") c.zmq_endpoint = val;
     else if (key == "ZMQ_TOPIC") c.zmq_topic = val;
     else if (key == "EXCHANGES") c.exchanges_csv = val;
@@ -57,6 +72,35 @@ inline void load_from_ini(const std::string& path, AppConfig& c) {
     else if (key == "MIN_ORDER_QTY") { try { c.min_order_qty = std::stod(val); } catch (...) {} }
     else if (key == "MAX_ORDER_QTY") { try { c.max_order_qty = std::stod(val); } catch (...) {} }
     else if (key == "POLL_SLEEP_MS") { try { c.poll_sleep_ms = std::stoi(val); } catch (...) {} }
+    
+    // Message handler configuration (format: HANDLER_<name>_<property>)
+    else if (key.rfind("HANDLER_", 0) == 0) {
+      auto last_us = key.rfind('_');
+      if (last_us != std::string::npos && last_us > 8) {
+        std::string handler_name = key.substr(8, last_us - 8);
+        std::string property = key.substr(last_us + 1);
+
+        // Find or create handler config
+        MessageHandlerConfig* handler_config = nullptr;
+        for (auto& h : c.message_handlers) {
+          if (h.name == handler_name) {
+            handler_config = &h;
+            break;
+          }
+        }
+        if (!handler_config) {
+          c.message_handlers.push_back(MessageHandlerConfig{handler_name, "", "", true});
+          handler_config = &c.message_handlers.back();
+        }
+
+        // Set property
+        if (property == "ENDPOINT") handler_config->endpoint = val;
+        else if (property == "TOPIC") handler_config->topic = val;
+        else if (property == "ENABLED") handler_config->enabled = (val == "true" || val == "1");
+      }
+    }
+    
+    // External MD/ORD/POS buses
     else if (key == "MD_PUB_ENDPOINT") c.md_pub_endpoint = val;
     else if (key == "MD_SUB_ENDPOINT") c.md_sub_endpoint = val;
     else if (key == "MD_TOPIC") c.md_topic = val;

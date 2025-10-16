@@ -6,6 +6,9 @@
 #include "../utils/zmq/zmq_publisher.hpp"
 #include "../utils/pms/position_binary.hpp"
 #include "../utils/pms/position_feed.hpp"
+#ifdef PROTO_ENABLED
+#include "position.pb.h"
+#endif
 
 static std::vector<char> build_mock_position_binary(const std::string& symbol,
                                                    const std::string& exch,
@@ -33,11 +36,22 @@ int main() {
                                                    const std::string& exch,
                                                    double qty,
                                                    double avg_price) {
-    // Publish binary position data
+#ifdef PROTO_ENABLED
+    proto::PositionUpdate upd;
+    upd.set_exch(exch);
+    upd.set_symbol(symbol);
+    upd.set_qty(qty);
+    upd.set_avg_price(avg_price);
+    upd.set_timestamp_us(0);
+    std::string out;
+    upd.SerializeToString(&out);
+    std::string topic = "pos." + exch + "." + symbol;
+    pub.publish(topic, out);
+#else
     auto binary_data = build_mock_position_binary(symbol, exch, qty, avg_price);
-    
     std::string topic = "pos." + exch + "." + symbol;
     pub.publish(topic, std::string(binary_data.data(), binary_data.size()));
+#endif
     
     std::cout << "[POSITION] " << exch << " " << symbol 
               << " qty=" << qty << " avg_price=" << avg_price << std::endl;

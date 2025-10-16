@@ -15,15 +15,28 @@
 #include <ctime>
 
 MarketMakingStrategy::MarketMakingStrategy(const std::string& symbol,
+                                          std::shared_ptr<ZMQOMS> oms,
+                                          std::shared_ptr<GlftTarget> glft_model,
                                           const std::string& md_endpoint,
                                           const std::string& md_topic,
                                           const std::string& pos_endpoint,
-                                          const std::string& pos_topic,
-                                          std::shared_ptr<ZMQOMS> oms,
-                                          std::shared_ptr<GlftTarget> glft_model)
+                                          const std::string& pos_topic)
     : symbol_(symbol), oms_(oms), glft_model_(glft_model) {
-  md_subscriber_ = std::make_unique<ZmqSubscriber>(md_endpoint, md_topic);
-  pos_subscriber_ = std::make_unique<ZmqSubscriber>(pos_endpoint, pos_topic);
+  
+  // Only create subscribers if endpoints are provided
+  if (!md_endpoint.empty() && !md_topic.empty()) {
+    md_subscriber_ = std::make_unique<ZmqSubscriber>(md_endpoint, md_topic);
+    enable_market_data_ = true;
+  } else {
+    enable_market_data_ = false;
+  }
+  
+  if (!pos_endpoint.empty() && !pos_topic.empty()) {
+    pos_subscriber_ = std::make_unique<ZmqSubscriber>(pos_endpoint, pos_topic);
+    enable_positions_ = true;
+  } else {
+    enable_positions_ = false;
+  }
 }
 
 MarketMakingStrategy::~MarketMakingStrategy() {
@@ -36,13 +49,19 @@ void MarketMakingStrategy::start() {
   running_.store(true);
   strategy_thread_ = std::thread([this]() {
     while (running_.load()) {
-      process_market_data();
-      process_position_data();
+      if (enable_market_data_) {
+        process_market_data();
+      }
+      if (enable_positions_) {
+        process_position_data();
+      }
       std::this_thread::sleep_for(std::chrono::milliseconds(10)); // 100Hz
     }
   });
   
   std::cout << "[STRATEGY] Started market making for " << symbol_ << std::endl;
+  std::cout << "[STRATEGY] Market data: " << (enable_market_data_ ? "enabled" : "disabled") << std::endl;
+  std::cout << "[STRATEGY] Positions: " << (enable_positions_ ? "enabled" : "disabled") << std::endl;
 }
 
 void MarketMakingStrategy::stop() {
@@ -249,5 +268,28 @@ void MarketMakingStrategy::place_new_quotes(double mid_price, double spread) {
       has_active_ask_.store(true);
       std::cout << "[STRATEGY] Placed ask: " << ask_price << " @ " << quote_size_ << std::endl;
     }
+  }
+}
+
+void MarketMakingStrategy::on_message(const std::string& handler_name, const std::string& data) {
+  std::cout << "[STRATEGY] Received message from handler '" << handler_name 
+            << "': " << data.substr(0, std::min(data.length(), size_t(100))) 
+            << (data.length() > 100 ? "..." : "") << std::endl;
+  
+  // Route messages based on handler name
+  if (handler_name == "market_data") {
+    // Process market data
+    // TODO: Parse binary orderbook data
+  } else if (handler_name == "positions") {
+    // Process position updates
+    // TODO: Parse position data
+  } else if (handler_name == "inventory") {
+    // Process inventory deltas
+    // TODO: Parse inventory delta
+  } else if (handler_name == "order_events") {
+    // Process order events
+    // TODO: Parse order event data
+  } else {
+    std::cout << "[STRATEGY] Unknown handler: " << handler_name << std::endl;
   }
 }

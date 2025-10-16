@@ -19,13 +19,14 @@ public:
                                              const std::vector<std::pair<double, double>>& asks,
                                              uint64_t timestamp_us)>;
   
+  // Constructor with optional components
   MarketMakingStrategy(const std::string& symbol,
-                      const std::string& md_endpoint,
-                      const std::string& md_topic,
-                      const std::string& pos_endpoint,
-                      const std::string& pos_topic,
                       std::shared_ptr<ZMQOMS> oms,
-                      std::shared_ptr<GlftTarget> glft_model);
+                      std::shared_ptr<GlftTarget> glft_model,
+                      const std::string& md_endpoint = "",
+                      const std::string& md_topic = "",
+                      const std::string& pos_endpoint = "",
+                      const std::string& pos_topic = "");
   
   ~MarketMakingStrategy();
   
@@ -51,7 +52,10 @@ public:
                          double avg_price,
                          uint64_t timestamp_us);
   
-  // Order event callback
+  // Named callback method for message handlers
+  void on_message(const std::string& handler_name, const std::string& data);
+  
+  // Order event callback (legacy support)
   void on_order_event(const std::string& cl_ord_id,
                      const std::string& exch,
                      const std::string& symbol,
@@ -72,6 +76,10 @@ private:
   std::unique_ptr<ZmqSubscriber> pos_subscriber_;
   std::shared_ptr<ZMQOMS> oms_;
   std::shared_ptr<GlftTarget> glft_model_;
+  
+  // Feed enable flags (deprecated; feeds come via message handlers)
+  bool enable_market_data_{false};
+  bool enable_positions_{false};
   
   // Market data state
   std::atomic<bool> running_{false};

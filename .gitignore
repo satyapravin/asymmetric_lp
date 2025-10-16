@@ -91,3 +91,5 @@ cpp/**/*.lib
 cpp/**/*.so
 cpp/**/*.dll
 cpp/**/grvt_bridge
+cpp/**/*.pb.cc
+cpp/**/*.pb.h

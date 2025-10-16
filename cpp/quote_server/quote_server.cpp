@@ -1,6 +1,8 @@
 #include "quote_server.hpp"
 #include "i_exchange_manager.hpp"
-#include "exchange_manager_factory.hpp"
+#ifdef PROTO_ENABLED
+#include "market_data.pb.h"
+#endif
 #include <iostream>
 #include <algorithm>
 #include <chrono>
@@ -181,24 +183,40 @@ void QuoteServer::publish_orderbook(const std::string& symbol,
                                   const std::vector<std::pair<double, double>>& bids,
                                   const std::vector<std::pair<double, double>>& asks,
                                   uint64_t timestamp_us) {
+  // If protobuf enabled, publish proto snapshot; else use binary helper
+#ifdef PROTO_ENABLED
+  proto::OrderBookSnapshot snap;
+  snap.set_exch(exchange_name_);
+  snap.set_symbol(symbol);
+  snap.set_timestamp_us(timestamp_us);
+  for (const auto& [p, q] : bids) {
+    auto* lvl = snap.add_bids();
+    lvl->set_price(p);
+    lvl->set_qty(q);
+  }
+  for (const auto& [p, q] : asks) {
+    auto* lvl = snap.add_asks();
+    lvl->set_price(p);
+    lvl->set_qty(q);
+  }
+  std::string payload;
+  snap.SerializeToString(&payload);
+  std::string topic = "md." + exchange_name_ + "." + symbol;
+  publisher_->publish(topic, payload);
+#else
   try {
-    // Calculate binary size
     size_t size = OrderBookBinaryHelper::calculate_size(symbol.length(), bids.size(), asks.size());
     std::vector<char> buffer(size);
-    
-    // Serialize orderbook
     uint32_t sequence = normalizer_->get_next_sequence();
     OrderBookBinaryHelper::serialize(symbol, bids, asks, timestamp_us, sequence, buffer.data(), size);
-    
-    // Publish via ZMQ
     std::string topic = "md." + exchange_name_ + "." + symbol;
     publisher_->publish(topic, std::string(buffer.data(), buffer.size()));
-    
-    std::cout << "[QUOTE_SERVER] Published " << symbol 
-              << " bids=" << bids.size() << " asks=" << asks.size() << std::endl;
   } catch (const std::exception& e) {
     std::cerr << "[QUOTE_SERVER] Publish error: " << e.what() << std::endl;
   }
+#endif
+  std::cout << "[QUOTE_SERVER] Published " << symbol 
+            << " bids=" << bids.size() << " asks=" << asks.size() << std::endl;
 }
 
 QuoteServer::Stats QuoteServer::get_stats() const {

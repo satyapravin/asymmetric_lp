@@ -6,6 +6,9 @@
 #include "../utils/zmq/zmq_subscriber.hpp"
 #include "../utils/zmq/zmq_publisher.hpp"
 #include "../utils/oms/order_binary.hpp"
+#ifdef PROTO_ENABLED
+#include "order.pb.h"
+#endif
 
 // Very simple order schema: {cl_id, exch, symbol, side, qty}
 static std::optional<std::string> parse_field(const std::string& json, const std::string& key) {
@@ -34,6 +37,31 @@ int main() {
     auto msg = sub.receive();
     if (!msg) continue;
     
+#ifdef PROTO_ENABLED
+    // Try to parse OrderRequest proto first
+    proto::OrderRequest req;
+    if (req.ParseFromString(*msg)) {
+      std::cout << "[EXEC] Proto order: " << req.cl_ord_id() << " " << req.exch()
+                << " " << req.symbol() << " " << (req.side()==proto::BUY?"BUY":"SELL")
+                << " " << req.qty() << " @ " << req.price() << std::endl;
+      // Publish Ack and Fill as proto OrderEvent
+      proto::OrderEvent ev;
+      ev.set_cl_ord_id(req.cl_ord_id());
+      ev.set_exch(req.exch());
+      ev.set_symbol(req.symbol());
+      ev.set_event_type(proto::ACK);
+      std::string out;
+      ev.SerializeToString(&out);
+      pub.publish(cfg.ord_topic_ev, out);
+      ev.set_event_type(proto::FILL);
+      ev.set_fill_qty(req.qty());
+      ev.set_fill_price(req.price());
+      ev.set_text("filled");
+      ev.SerializeToString(&out);
+      pub.publish(cfg.ord_topic_ev, out);
+      continue;
+    }
+#endif
     // Try to parse as binary order first
     if (msg->size() == OrderBinaryHelper::ORDER_SIZE) {
       std::string cl_ord_id, exch, symbol;
