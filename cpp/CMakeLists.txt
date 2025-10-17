@@ -1,6 +1,27 @@
 cmake_minimum_required(VERSION 3.15)
 project(asymmetric_cpp)
 
+# Require UWS_ROOT to be set and valid
+set(UWS_ROOT "" CACHE PATH "Path to local uWebSockets clone (required)")
+if(NOT UWS_ROOT)
+  message(FATAL_ERROR "UWS_ROOT is not set. Please set -DUWS_ROOT=/absolute/path/to/uWebSockets (contains src/App.h)")
+endif()
+set(UWS_DIR ${UWS_ROOT})
+
+# uWebSockets headers live under src (App.h)
+if(EXISTS ${UWS_DIR}/src/App.h)
+  message(STATUS "uWebSockets headers at: ${UWS_DIR}/src")
+  include_directories(${UWS_DIR}/src)
+  if(EXISTS ${UWS_DIR}/uSockets/src)
+    include_directories(${UWS_DIR}/uSockets/src)
+  endif()
+else()
+  message(FATAL_ERROR "uWebSockets headers not found under ${UWS_DIR}/src. Ensure UWS_ROOT points to the uWebSockets clone (with src/App.h present)")
+endif()
+
+find_package(OpenSSL REQUIRED)
+find_package(ZLIB REQUIRED)
+
 # Allow environment overrides for Protobuf locations
 if(DEFINED ENV{PROTOBUF_ROOT})
   list(PREPEND CMAKE_PREFIX_PATH $ENV{PROTOBUF_ROOT})
@@ -101,15 +122,5 @@ if(Protobuf_FOUND)
   target_compile_definitions(position_server PRIVATE PROTO_ENABLED)
 endif()
 
-if(Protobuf_FOUND)
-  target_link_libraries(market_maker PRIVATE proto_msgs)
-  target_link_libraries(quote_server PRIVATE proto_msgs)
-  target_link_libraries(exec_handler PRIVATE proto_msgs)
-  target_link_libraries(position_server PRIVATE proto_msgs)
-  target_compile_definitions(market_maker PRIVATE PROTO_ENABLED)
-  target_compile_definitions(quote_server PRIVATE PROTO_ENABLED)
-  target_compile_definitions(exec_handler PRIVATE PROTO_ENABLED)
-  target_compile_definitions(position_server PRIVATE PROTO_ENABLED)
-endif()
 
 

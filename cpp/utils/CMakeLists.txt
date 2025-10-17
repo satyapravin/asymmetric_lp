@@ -3,6 +3,7 @@ add_library(utils STATIC
   zmq/zmq_subscriber.cpp
   mds/orderbook_binary.cpp
   mds/market_data_normalizer.cpp
+  mds/parser_factory.cpp
   oms/order_binary.cpp
   pms/position_binary.cpp
   pms/position_feed.cpp

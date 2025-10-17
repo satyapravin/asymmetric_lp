@@ -11,6 +11,7 @@
 #include <functional>
 #include "../utils/mds/orderbook_binary.hpp"
 #include "../utils/mds/market_data_normalizer.hpp"
+#include "../utils/mds/parser_factory.hpp"
 #include "../utils/zmq/zmq_publisher.hpp"
 
 // Forward declaration
@@ -53,6 +54,8 @@ public:
   void set_parser(std::unique_ptr<IExchangeParser> parser);
   void set_publish_rate_hz(double rate_hz) { publish_rate_hz_ = rate_hz; }
   void set_max_depth(int depth) { max_depth_ = depth; }
+  // Provide raw exchange-specific config entries for the manager
+  void set_exchange_config(const std::vector<std::pair<std::string, std::string>>& kv) { exchange_kv_ = kv; }
   
   // Statistics
   struct Stats {
@@ -78,6 +81,7 @@ private:
   std::unique_ptr<ZmqPublisher> publisher_;
   std::unique_ptr<MarketDataNormalizer> normalizer_;
   std::unique_ptr<IExchangeManager> exchange_manager_;
+  std::vector<std::pair<std::string, std::string>> exchange_kv_;
   
   // Symbol management
   std::set<std::string> active_symbols_;

@@ -71,6 +71,11 @@ void QuoteServer::connect_to_exchange() {
         std::cout << "[QUOTE_SERVER] Exchange " << exchange_name_ 
                   << " connection: " << (connected ? "UP" : "DOWN") << std::endl;
       });
+
+      // Pass through any exchange-specific config section to the manager if provided
+      if (!exchange_kv_.empty()) {
+        exchange_manager_->configure_kv(exchange_kv_);
+      }
       
       exchange_manager_->start();
       std::cout << "[QUOTE_SERVER] Connected to exchange: " << exchange_name_ << std::endl;

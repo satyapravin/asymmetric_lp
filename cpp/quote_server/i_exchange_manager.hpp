@@ -4,6 +4,7 @@
 #include <functional>
 #include <atomic>
 #include <vector>
+#include <utility>
 
 // Base interface for exchange-specific managers
 class IExchangeManager {
@@ -25,6 +26,9 @@ public:
   // Callbacks
   virtual void set_message_callback(MessageCallback callback) = 0;
   virtual void set_connection_callback(ConnectionCallback callback) = 0;
+
+  // Optional: custom key/value configuration from per-exchange section
+  virtual void configure_kv(const std::vector<std::pair<std::string, std::string>>& kv) {}
   
   // Exchange-specific configuration
   virtual void set_api_key(const std::string& key) {}
