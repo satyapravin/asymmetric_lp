@@ -5,6 +5,7 @@
 #include <atomic>
 #include <algorithm>
 #include <mutex>
+#include <simdjson.h>
 #include "../common/exchange_manager_base.hpp"
 
 class BinanceManager : public ExchangeManagerBase {
@@ -30,14 +31,24 @@ public:
   }
 
   // Public wrappers to allow callbacks to signal events
-  void handle_ws_open() { emit_connection(true); }
-  void handle_ws_close() { emit_connection(false); }
-  void handle_ws_message(const std::string& msg) { emit_message(msg); }
+  void handle_ws_open();
+  void handle_ws_close();
+  void handle_ws_message(const std::string& msg);
+
+private:
+  void process_complete_message(const std::string& message);
+  void process_orderbook_message(const simdjson::dom::object& data, 
+                                const std::string& symbol, 
+                                uint64_t timestamp_us);
+  void process_trade_message(const simdjson::dom::object& data, 
+                            const std::string& symbol, 
+                            uint64_t timestamp_us);
 
 private:
   std::string websocket_url_;
   std::atomic<bool> running_{false};
   std::thread worker_;
+  std::string message_buffer_; // Buffer for fragmented messages
   volatile int runflag_{0};
   std::vector<std::string> subs_;
   bool snapshot_only_{true};

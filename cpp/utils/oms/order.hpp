@@ -21,6 +21,8 @@ struct OrderEvent {
   double fill_qty{0.0};
   double fill_price{0.0};
   std::string text;           // reject reason, etc.
+  std::string exchange_order_id; // Exchange's internal order ID
+  uint64_t timestamp_us{0};   // Timestamp in microseconds
 };
 
 

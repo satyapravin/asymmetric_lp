@@ -5,13 +5,17 @@
 #include <atomic>
 #include <optional>
 #include <thread>
+#include <functional>
+#include <map>
 #include "../utils/mds/orderbook_binary.hpp"
 #include "../utils/pms/position_binary.hpp"
 #include "../utils/zmq/zmq_subscriber.hpp"
-#include "zmq_oms.hpp"
+#include "../utils/oms/enhanced_oms.hpp"
+#include "../utils/oms/mock_exchange_oms.hpp"
+#include "../utils/oms/order_state.hpp"
 #include "models/glft_target.hpp"
 
-// Market making strategy that reacts to market data updates
+// Unified market making strategy with integrated OMS, GLFT model, and inventory management
 class MarketMakingStrategy {
 public:
   using OrderBookCallback = std::function<void(const std::string& symbol,
@@ -19,14 +23,18 @@ public:
                                              const std::vector<std::pair<double, double>>& asks,
                                              uint64_t timestamp_us)>;
   
-  // Constructor with optional components
+  using OrderEventCallback = std::function<void(const OrderEvent& event)>;
+  using OrderStateCallback = std::function<void(const OrderStateInfo& order_info)>;
+  
+  // Constructor with integrated OMS and GLFT model
   MarketMakingStrategy(const std::string& symbol,
-                      std::shared_ptr<ZMQOMS> oms,
                       std::shared_ptr<GlftTarget> glft_model,
                       const std::string& md_endpoint = "",
                       const std::string& md_topic = "",
                       const std::string& pos_endpoint = "",
-                      const std::string& pos_topic = "");
+                      const std::string& pos_topic = "",
+                      const std::string& inventory_endpoint = "",
+                      const std::string& inventory_topic = "");
   
   ~MarketMakingStrategy();
   
@@ -49,61 +57,96 @@ public:
   void on_position_update(const std::string& symbol,
                          const std::string& exch,
                          double qty,
-                         double avg_price,
-                         uint64_t timestamp_us);
+                         double avg_price);
   
-  // Named callback method for message handlers
+  // Inventory callback (from DeFi)
+  void on_inventory_update(const std::string& symbol,
+                          double inventory_delta);
+  
+  // Order management
+  void submit_order(const Order& order);
+  void cancel_order(const std::string& cl_ord_id);
+  void modify_order(const std::string& cl_ord_id, double new_price, double new_qty);
+  
+  // Exchange management
+  void register_exchange(const std::string& exchange_name, std::shared_ptr<IExchangeOMS> oms);
+  void disconnect_from_exchanges();
+  
+  // Order state queries
+  OrderStateInfo get_order_state(const std::string& cl_ord_id);
+  std::vector<OrderStateInfo> get_active_orders();
+  std::vector<OrderStateInfo> get_all_orders();
+  
+  // Statistics
+  struct OrderStats {
+    size_t total_orders = 0;
+    size_t filled_orders = 0;
+    size_t cancelled_orders = 0;
+    size_t rejected_orders = 0;
+    double total_volume = 0.0;
+    double filled_volume = 0.0;
+  };
+  OrderStats get_order_statistics();
+  
+  // Callbacks
+  void set_order_event_callback(OrderEventCallback callback) { order_event_callback_ = callback; }
+  void set_order_state_callback(OrderStateCallback callback) { order_state_callback_ = callback; }
+  
+  // Generic message handler for ZeroMQ feeds
   void on_message(const std::string& handler_name, const std::string& data);
   
-  // Order event callback (legacy support)
-  void on_order_event(const std::string& cl_ord_id,
-                     const std::string& exch,
-                     const std::string& symbol,
-                     uint32_t event_type,
-                     double fill_qty,
-                     double fill_price,
-                     const std::string& text);
-
 private:
   void process_market_data();
   void process_position_data();
+  void process_inventory_data();
+  void process_order_events();
+  
+  // GLFT-based pricing
+  std::pair<double, double> calculate_optimal_quotes(double mid_price, double inventory_delta);
+  
+  // Order management
   void update_quotes();
-  void cancel_existing_orders();
-  void place_new_quotes(double mid_price, double spread);
+  void cancel_existing_quotes();
   
   std::string symbol_;
-  std::unique_ptr<ZmqSubscriber> md_subscriber_;
-  std::unique_ptr<ZmqSubscriber> pos_subscriber_;
-  std::shared_ptr<ZMQOMS> oms_;
   std::shared_ptr<GlftTarget> glft_model_;
   
-  // Feed enable flags (deprecated; feeds come via message handlers)
-  bool enable_market_data_{false};
-  bool enable_positions_{false};
+  // ZeroMQ subscribers
+  std::unique_ptr<ZmqSubscriber> md_subscriber_;
+  std::unique_ptr<ZmqSubscriber> pos_subscriber_;
+  std::unique_ptr<ZmqSubscriber> inventory_subscriber_;
   
-  // Market data state
-  std::atomic<bool> running_{false};
-  std::vector<std::pair<double, double>> current_bids_;
-  std::vector<std::pair<double, double>> current_asks_;
-  std::atomic<uint64_t> last_update_time_{0};
-  
-  // Position state
-  std::atomic<double> current_position_qty_{0.0};
-  std::atomic<double> current_avg_price_{0.0};
-  std::atomic<uint64_t> last_position_time_{0};
-  
-  // Strategy state
-  std::atomic<double> current_inventory_delta_{0.0};
-  double min_spread_bps_{5.0};  // 5 basis points minimum spread
-  double max_position_size_{100.0};
-  double quote_size_{1.0};
-  
-  // Order tracking
-  std::string active_bid_order_id_;
-  std::string active_ask_order_id_;
-  std::atomic<bool> has_active_bid_{false};
-  std::atomic<bool> has_active_ask_{false};
+  // OMS integration
+  std::unique_ptr<OMS> oms_;
+  std::map<std::string, std::shared_ptr<IExchangeOMS>> exchange_oms_;
   
   // Threading
-  std::thread strategy_thread_;
+  std::atomic<bool> running_{false};
+  std::thread md_thread_;
+  std::thread pos_thread_;
+  std::thread inventory_thread_;
+  std::thread order_thread_;
+  
+  // State
+  std::atomic<double> current_inventory_delta_{0.0};
+  std::map<std::string, double> current_positions_; // symbol -> qty
+  std::map<std::string, double> avg_prices_;       // symbol -> avg_price
+  
+  // Configuration
+  double min_spread_bps_{10.0};  // 10 basis points minimum spread
+  double max_position_size_{1.0}; // Maximum position size
+  double quote_size_{0.1};       // Default quote size
+  
+  // Active orders
+  std::string last_bid_order_id_;
+  std::string last_ask_order_id_;
+  
+  // Callbacks
+  OrderEventCallback order_event_callback_;
+  OrderStateCallback order_state_callback_;
+  
+  // Feed enable flags (defaulted to false as handlers drive feeds)
+  bool enable_market_data_{false};
+  bool enable_positions_{false};
+  bool enable_inventory_{false};
 };

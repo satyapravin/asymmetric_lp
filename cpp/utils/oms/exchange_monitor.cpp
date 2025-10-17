@@ -1,0 +1,253 @@
+#include "exchange_monitor.hpp"
+#include <iostream>
+#include <iomanip>
+#include <sstream>
+
+ExchangeMonitor::ExchangeMonitor() {
+  // Set up default alert thresholds
+  health_alert_callback_ = [](const std::string& exchange, HealthStatus status) {
+    if (status == HealthStatus::UNHEALTHY) {
+      std::cout << "[MONITOR] ALERT: Exchange " << exchange << " is UNHEALTHY!" << std::endl;
+    } else if (status == HealthStatus::DEGRADED) {
+      std::cout << "[MONITOR] WARNING: Exchange " << exchange << " is DEGRADED" << std::endl;
+    }
+  };
+  
+  performance_alert_callback_ = [](const std::string& exchange, const std::string& message) {
+    std::cout << "[MONITOR] PERFORMANCE ALERT: " << exchange << " - " << message << std::endl;
+  };
+}
+
+void ExchangeMonitor::record_order_attempt(const std::string& exchange, const std::string& symbol) {
+  std::lock_guard<std::mutex> lock(metrics_mutex_);
+  exchange_metrics_[exchange].total_orders++;
+}
+
+void ExchangeMonitor::record_order_success(const std::string& exchange, const std::string& symbol, 
+                                          double volume, uint64_t latency_us) {
+  std::lock_guard<std::mutex> lock(metrics_mutex_);
+  auto& metrics = exchange_metrics_[exchange];
+  metrics.successful_orders++;
+  double current_volume = metrics.total_volume.load();
+  metrics.total_volume.store(current_volume + volume);
+  metrics.total_latency_us += latency_us;
+  metrics.latency_samples++;
+  
+  check_performance_thresholds(exchange);
+}
+
+void ExchangeMonitor::record_order_failure(const std::string& exchange, const std::string& symbol, 
+                                          const std::string& error_code) {
+  std::lock_guard<std::mutex> lock(metrics_mutex_);
+  exchange_metrics_[exchange].failed_orders++;
+  
+  update_health_status(exchange);
+}
+
+void ExchangeMonitor::record_order_fill(const std::string& exchange, const std::string& symbol, 
+                                       double volume) {
+  std::lock_guard<std::mutex> lock(metrics_mutex_);
+  auto& metrics = exchange_metrics_[exchange];
+  metrics.filled_orders++;
+  double current_filled_volume = metrics.filled_volume.load();
+  metrics.filled_volume.store(current_filled_volume + volume);
+}
+
+void ExchangeMonitor::record_connection_event(const std::string& exchange, bool success) {
+  std::lock_guard<std::mutex> lock(metrics_mutex_);
+  auto& metrics = exchange_metrics_[exchange];
+  
+  if (success) {
+    metrics.connection_attempts++;
+  } else {
+    metrics.connection_attempts++;
+    metrics.connection_failures++;
+  }
+  
+  update_health_status(exchange);
+}
+
+ExchangeMetrics ExchangeMonitor::get_metrics(const std::string& exchange) const {
+  std::lock_guard<std::mutex> lock(metrics_mutex_);
+  auto it = exchange_metrics_.find(exchange);
+  if (it != exchange_metrics_.end()) {
+    // Create a copy manually since atomic members can't be copied
+    ExchangeMetrics result;
+    result.total_orders.store(it->second.total_orders.load());
+    result.successful_orders.store(it->second.successful_orders.load());
+    result.failed_orders.store(it->second.failed_orders.load());
+    result.cancelled_orders.store(it->second.cancelled_orders.load());
+    result.rejected_orders.store(it->second.rejected_orders.load());
+    result.filled_orders.store(it->second.filled_orders.load());
+    result.total_volume.store(it->second.total_volume.load());
+    result.filled_volume.store(it->second.filled_volume.load());
+    result.total_latency_us.store(it->second.total_latency_us.load());
+    result.latency_samples.store(it->second.latency_samples.load());
+    result.connection_attempts.store(it->second.connection_attempts.load());
+    result.connection_failures.store(it->second.connection_failures.load());
+    result.disconnections.store(it->second.disconnections.load());
+    result.start_time = it->second.start_time;
+    return std::move(result);
+  }
+  return ExchangeMetrics{};
+}
+
+std::map<std::string, ExchangeMetrics> ExchangeMonitor::get_all_metrics() const {
+  std::lock_guard<std::mutex> lock(metrics_mutex_);
+  std::map<std::string, ExchangeMetrics> result;
+  for (const auto& [exchange, metrics] : exchange_metrics_) {
+    ExchangeMetrics copy;
+    copy.total_orders.store(metrics.total_orders.load());
+    copy.successful_orders.store(metrics.successful_orders.load());
+    copy.failed_orders.store(metrics.failed_orders.load());
+    copy.cancelled_orders.store(metrics.cancelled_orders.load());
+    copy.rejected_orders.store(metrics.rejected_orders.load());
+    copy.filled_orders.store(metrics.filled_orders.load());
+    copy.total_volume.store(metrics.total_volume.load());
+    copy.filled_volume.store(metrics.filled_volume.load());
+    copy.total_latency_us.store(metrics.total_latency_us.load());
+    copy.latency_samples.store(metrics.latency_samples.load());
+    copy.connection_attempts.store(metrics.connection_attempts.load());
+    copy.connection_failures.store(metrics.connection_failures.load());
+    copy.disconnections.store(metrics.disconnections.load());
+    copy.start_time = metrics.start_time;
+    result[exchange] = std::move(copy);
+  }
+  return result;
+}
+
+HealthInfo ExchangeMonitor::get_health_status(const std::string& exchange) const {
+  std::lock_guard<std::mutex> lock(health_mutex_);
+  auto it = exchange_health_.find(exchange);
+  if (it != exchange_health_.end()) {
+    return it->second;
+  }
+  return HealthInfo(HealthStatus::UNKNOWN, "No health data available");
+}
+
+std::map<std::string, HealthInfo> ExchangeMonitor::get_all_health_status() const {
+  std::lock_guard<std::mutex> lock(health_mutex_);
+  return exchange_health_;
+}
+
+void ExchangeMonitor::set_health_alert_callback(std::function<void(const std::string&, HealthStatus)> callback) {
+  health_alert_callback_ = callback;
+}
+
+void ExchangeMonitor::set_performance_alert_callback(std::function<void(const std::string&, const std::string&)> callback) {
+  performance_alert_callback_ = callback;
+}
+
+void ExchangeMonitor::print_metrics_summary() const {
+  std::cout << "\n=== Exchange Performance Metrics ===" << std::endl;
+  
+  auto all_metrics = get_all_metrics();
+  for (const auto& [exchange, metrics] : all_metrics) {
+    std::cout << "\n[" << exchange << "]" << std::endl;
+    std::cout << "  Total Orders: " << metrics.total_orders.load() << std::endl;
+    std::cout << "  Success Rate: " << std::fixed << std::setprecision(2) 
+              << metrics.get_success_rate() * 100 << "%" << std::endl;
+    std::cout << "  Fill Rate: " << std::fixed << std::setprecision(2) 
+              << metrics.get_fill_rate() * 100 << "%" << std::endl;
+    std::cout << "  Avg Latency: " << std::fixed << std::setprecision(2) 
+              << metrics.get_avg_latency_us() / 1000.0 << " ms" << std::endl;
+    std::cout << "  Total Volume: " << std::fixed << std::setprecision(2) 
+              << metrics.total_volume.load() << std::endl;
+    std::cout << "  Filled Volume: " << std::fixed << std::setprecision(2) 
+              << metrics.filled_volume.load() << std::endl;
+    std::cout << "  Uptime: " << std::fixed << std::setprecision(1) 
+              << metrics.get_uptime_seconds() << " seconds" << std::endl;
+  }
+}
+
+void ExchangeMonitor::print_health_summary() const {
+  std::cout << "\n=== Exchange Health Status ===" << std::endl;
+  
+  auto all_health = get_all_health_status();
+  for (const auto& [exchange, health] : all_health) {
+    std::string status_str;
+    switch (health.status) {
+      case HealthStatus::HEALTHY: status_str = "HEALTHY"; break;
+      case HealthStatus::DEGRADED: status_str = "DEGRADED"; break;
+      case HealthStatus::UNHEALTHY: status_str = "UNHEALTHY"; break;
+      case HealthStatus::UNKNOWN: status_str = "UNKNOWN"; break;
+    }
+    
+    std::cout << "[" << exchange << "] " << status_str << " - " << health.message << std::endl;
+  }
+}
+
+void ExchangeMonitor::update_health_status(const std::string& exchange) {
+  std::lock_guard<std::mutex> lock(health_mutex_);
+  
+  auto metrics_it = exchange_metrics_.find(exchange);
+  if (metrics_it == exchange_metrics_.end()) {
+    exchange_health_[exchange] = HealthInfo(HealthStatus::UNKNOWN, "No metrics available");
+    return;
+  }
+  
+  const auto& metrics = metrics_it->second;
+  
+  // Calculate health based on metrics
+  HealthStatus status = HealthStatus::HEALTHY;
+  std::string message = "All systems operational";
+  
+  // Check success rate
+  double success_rate = metrics.get_success_rate();
+  if (success_rate < 0.5) {
+    status = HealthStatus::UNHEALTHY;
+    message = "Low success rate: " + std::to_string(success_rate * 100) + "%";
+  } else if (success_rate < 0.8) {
+    status = HealthStatus::DEGRADED;
+    message = "Degraded success rate: " + std::to_string(success_rate * 100) + "%";
+  }
+  
+  // Check connection failures
+  uint64_t failures = metrics.connection_failures.load();
+  uint64_t attempts = metrics.connection_attempts.load();
+  if (attempts > 0) {
+    double failure_rate = static_cast<double>(failures) / attempts;
+    if (failure_rate > 0.3) {
+      status = HealthStatus::UNHEALTHY;
+      message = "High connection failure rate: " + std::to_string(failure_rate * 100) + "%";
+    }
+  }
+  
+  // Check latency
+  double avg_latency_ms = metrics.get_avg_latency_us() / 1000.0;
+  if (avg_latency_ms > 1000) {  // > 1 second
+    if (status == HealthStatus::HEALTHY) {
+      status = HealthStatus::DEGRADED;
+      message = "High latency: " + std::to_string(avg_latency_ms) + " ms";
+    }
+  }
+  
+  exchange_health_[exchange] = HealthInfo(status, message);
+  
+  // Trigger alert if status changed
+  if (health_alert_callback_) {
+    health_alert_callback_(exchange, status);
+  }
+}
+
+void ExchangeMonitor::check_performance_thresholds(const std::string& exchange) {
+  auto metrics_it = exchange_metrics_.find(exchange);
+  if (metrics_it == exchange_metrics_.end()) return;
+  
+  const auto& metrics = metrics_it->second;
+  
+  // Check if performance is degrading
+  double success_rate = metrics.get_success_rate();
+  if (success_rate < 0.7 && metrics.total_orders.load() > 10) {
+    if (performance_alert_callback_) {
+      performance_alert_callback_(exchange, "Success rate below 70%");
+    }
+  }
+  
+  double avg_latency_ms = metrics.get_avg_latency_us() / 1000.0;
+  if (avg_latency_ms > 500 && metrics.latency_samples.load() > 5) {
+    if (performance_alert_callback_) {
+      performance_alert_callback_(exchange, "Average latency above 500ms");
+    }
+  }
+}

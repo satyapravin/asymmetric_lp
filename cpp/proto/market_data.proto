@@ -15,4 +15,14 @@ message OrderBookSnapshot {
   repeated OrderBookLevel asks = 5;
 }
 
+message Trade {
+  string exch       = 1;
+  string symbol     = 2;
+  uint64 timestamp_us = 3;
+  double price      = 4;
+  double qty        = 5;
+  bool is_buyer_maker = 6;  // true if buyer is maker (sell), false if buyer is taker (buy)
+  string trade_id   = 7;   // exchange-specific trade ID
+}
+
 

@@ -1,3 +1,8 @@
+# Find libwebsockets and simdjson
+find_package(PkgConfig)
+pkg_check_modules(LIBWEBSOCKETS libwebsockets)
+find_package(simdjson REQUIRED)
+
 add_library(utils STATIC
   zmq/zmq_publisher.cpp
   zmq/zmq_subscriber.cpp
@@ -5,8 +10,14 @@ add_library(utils STATIC
   mds/market_data_normalizer.cpp
   mds/parser_factory.cpp
   oms/order_binary.cpp
+  oms/order_manager.cpp
+  oms/enhanced_oms.cpp
+  oms/mock_exchange_oms.cpp
+  oms/exchange_oms_factory.cpp
+  # oms/exchange_monitor.cpp  # Temporarily disabled due to atomic copy issues
   pms/position_binary.cpp
   pms/position_feed.cpp
+  pms/position_feed_factory.cpp
   handlers/message_handler.cpp
   handlers/message_handler_manager.cpp
 )
@@ -14,4 +25,10 @@ add_library(utils STATIC
 # Public include dirs so subprojects can include headers
 target_include_directories(utils PUBLIC ${CMAKE_CURRENT_LIST_DIR} ${CMAKE_CURRENT_LIST_DIR}/oms ${CMAKE_CURRENT_LIST_DIR}/mds ${CMAKE_CURRENT_LIST_DIR}/zmq ${CMAKE_CURRENT_LIST_DIR}/config ${CMAKE_CURRENT_LIST_DIR}/pms ${CMAKE_CURRENT_LIST_DIR}/handlers ${ZeroMQ_INCLUDE_DIRS})
 
-target_link_libraries(utils PUBLIC ${ZeroMQ_LIBRARIES})
+if(LIBWEBSOCKETS_FOUND)
+  target_include_directories(utils PUBLIC ${LIBWEBSOCKETS_INCLUDE_DIRS})
+  target_link_libraries(utils PUBLIC ${ZeroMQ_LIBRARIES} OpenSSL::SSL OpenSSL::Crypto ${LIBWEBSOCKETS_LIBRARIES} simdjson::simdjson)
+else()
+  message(WARNING "libwebsockets not found via pkg-config; please install libwebsockets-dev")
+  target_link_libraries(utils PUBLIC ${ZeroMQ_LIBRARIES} OpenSSL::SSL OpenSSL::Crypto simdjson::simdjson)
+endif()

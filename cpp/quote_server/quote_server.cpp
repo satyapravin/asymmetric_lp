@@ -58,7 +58,10 @@ void QuoteServer::set_websocket_url(const std::string& url) {
 }
 
 void QuoteServer::connect_to_exchange() {
+  std::cout << "[QUOTE_SERVER] connect_to_exchange called for " << exchange_name_ << std::endl;
+  std::cout << "[QUOTE_SERVER] websocket_url: '" << websocket_url_ << "'" << std::endl;
   if (!websocket_url_.empty()) {
+    std::cout << "[QUOTE_SERVER] Creating exchange manager via factory" << std::endl;
     exchange_manager_ = ExchangeManagerFactory::create(exchange_name_, websocket_url_);
     
     if (exchange_manager_) {

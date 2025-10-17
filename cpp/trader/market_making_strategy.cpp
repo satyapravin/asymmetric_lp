@@ -2,41 +2,50 @@
 #include <iostream>
 #include <algorithm>
 #include <cmath>
-#include <thread>
-#include <chrono>
-#include <ctime>
+#include <sstream>
+#include <iomanip>
 
-#include "market_making_strategy.hpp"
-#include <iostream>
-#include <algorithm>
-#include <cmath>
-#include <thread>
-#include <chrono>
-#include <ctime>
-
-MarketMakingStrategy::MarketMakingStrategy(const std::string& symbol,
-                                          std::shared_ptr<ZMQOMS> oms,
-                                          std::shared_ptr<GlftTarget> glft_model,
-                                          const std::string& md_endpoint,
-                                          const std::string& md_topic,
-                                          const std::string& pos_endpoint,
-                                          const std::string& pos_topic)
-    : symbol_(symbol), oms_(oms), glft_model_(glft_model) {
+MarketMakingStrategy::MarketMakingStrategy(
+    const std::string& symbol,
+    std::shared_ptr<GlftTarget> glft_model,
+    const std::string& md_endpoint,
+    const std::string& md_topic,
+    const std::string& pos_endpoint,
+    const std::string& pos_topic,
+    const std::string& inventory_endpoint,
+    const std::string& inventory_topic)
+  : symbol_(symbol)
+  , glft_model_(glft_model) {
   
-  // Only create subscribers if endpoints are provided
-  if (!md_endpoint.empty() && !md_topic.empty()) {
+  // Initialize OMS components
+  oms_ = std::make_unique<OMS>();
+  
+  // Set up OMS event callback to forward events to strategy callbacks
+  oms_->set_event_callback([this](const OrderEvent& event) {
+    if (order_event_callback_) {
+      order_event_callback_(event);
+    }
+  });
+  
+  // Initialize market data subscriber if endpoint provided
+  if (!md_endpoint.empty()) {
     md_subscriber_ = std::make_unique<ZmqSubscriber>(md_endpoint, md_topic);
     enable_market_data_ = true;
-  } else {
-    enable_market_data_ = false;
   }
   
-  if (!pos_endpoint.empty() && !pos_topic.empty()) {
+  // Initialize position subscriber if endpoint provided
+  if (!pos_endpoint.empty()) {
     pos_subscriber_ = std::make_unique<ZmqSubscriber>(pos_endpoint, pos_topic);
     enable_positions_ = true;
-  } else {
-    enable_positions_ = false;
   }
+  
+  // Initialize inventory subscriber if endpoint provided (from DeFi)
+  if (!inventory_endpoint.empty()) {
+    inventory_subscriber_ = std::make_unique<ZmqSubscriber>(inventory_endpoint, inventory_topic);
+    enable_inventory_ = true;
+  }
+  
+  std::cout << "[MARKET_MAKING_STRATEGY] Initialized for symbol: " << symbol_ << std::endl;
 }
 
 MarketMakingStrategy::~MarketMakingStrategy() {
@@ -47,249 +56,361 @@ void MarketMakingStrategy::start() {
   if (running_.load()) return;
   
   running_.store(true);
-  strategy_thread_ = std::thread([this]() {
-    while (running_.load()) {
-      if (enable_market_data_) {
-        process_market_data();
-      }
-      if (enable_positions_) {
-        process_position_data();
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds(10)); // 100Hz
-    }
-  });
   
-  std::cout << "[STRATEGY] Started market making for " << symbol_ << std::endl;
-  std::cout << "[STRATEGY] Market data: " << (enable_market_data_ ? "enabled" : "disabled") << std::endl;
-  std::cout << "[STRATEGY] Positions: " << (enable_positions_ ? "enabled" : "disabled") << std::endl;
+  // Connect to all registered exchanges
+  oms_->connect_all_exchanges();
+  
+  // Start processing threads
+  if (enable_market_data_) {
+    md_thread_ = std::thread([this]() { process_market_data(); });
+  }
+  
+  if (enable_positions_) {
+    pos_thread_ = std::thread([this]() { process_position_data(); });
+  }
+  
+  if (enable_inventory_) {
+    inventory_thread_ = std::thread([this]() { process_inventory_data(); });
+  }
+  
+  order_thread_ = std::thread([this]() { process_order_events(); });
+  
+  std::cout << "[MARKET_MAKING_STRATEGY] Started for " << symbol_ << std::endl;
 }
 
 void MarketMakingStrategy::stop() {
   if (!running_.load()) return;
   
   running_.store(false);
-  if (strategy_thread_.joinable()) {
-    strategy_thread_.join();
+  
+  // Disconnect from exchanges
+  disconnect_from_exchanges();
+  
+  // Wait for threads to finish (with timeout)
+  std::cout << "[MARKET_MAKING_STRATEGY] Waiting for threads to finish..." << std::endl;
+  
+  if (md_thread_.joinable()) {
+    md_thread_.join();
+    std::cout << "[MARKET_MAKING_STRATEGY] Market data thread stopped" << std::endl;
+  }
+  if (pos_thread_.joinable()) {
+    pos_thread_.join();
+    std::cout << "[MARKET_MAKING_STRATEGY] Position thread stopped" << std::endl;
+  }
+  if (inventory_thread_.joinable()) {
+    inventory_thread_.join();
+    std::cout << "[MARKET_MAKING_STRATEGY] Inventory thread stopped" << std::endl;
+  }
+  if (order_thread_.joinable()) {
+    order_thread_.join();
+    std::cout << "[MARKET_MAKING_STRATEGY] Order thread stopped" << std::endl;
   }
   
-  cancel_existing_orders();
-  std::cout << "[STRATEGY] Stopped market making for " << symbol_ << std::endl;
+  std::cout << "[MARKET_MAKING_STRATEGY] Stopped for " << symbol_ << std::endl;
 }
 
-void MarketMakingStrategy::process_market_data() {
-  auto msg = md_subscriber_->receive();
-  if (!msg) return;
+void MarketMakingStrategy::on_orderbook_update(
+    const std::string& symbol,
+    const std::vector<std::pair<double, double>>& bids,
+    const std::vector<std::pair<double, double>>& asks,
+    uint64_t timestamp_us) {
   
-  if (msg->size() >= sizeof(OrderBookBinary)) {
-    std::string symbol;
-    std::vector<std::pair<double, double>> bids, asks;
-    uint64_t timestamp_us;
-    uint32_t sequence;
-    
-    if (OrderBookBinaryHelper::deserialize(msg->data(), msg->size(), symbol, bids, asks, timestamp_us, sequence)) {
-      if (symbol == symbol_) {
-        on_orderbook_update(symbol, bids, asks, timestamp_us);
-      }
-    }
-  }
+  if (symbol != symbol_) return;
+  
+  if (bids.empty() || asks.empty()) return;
+  
+  double best_bid = bids[0].first;
+  double best_ask = asks[0].first;
+  double mid_price = (best_bid + best_ask) / 2.0;
+  
+  std::cout << "[MARKET_MAKING_STRATEGY] Orderbook update: " << symbol 
+            << " bid=" << best_bid << " ask=" << best_ask << " mid=" << mid_price << std::endl;
+  
+  // Update quotes using GLFT model
+  update_quotes();
 }
 
-void MarketMakingStrategy::process_position_data() {
-  auto msg = pos_subscriber_->receive();
-  if (!msg) return;
+void MarketMakingStrategy::on_position_update(
+    const std::string& symbol,
+    const std::string& exch,
+    double qty,
+    double avg_price) {
   
-  if (msg->size() >= sizeof(PositionBinary)) {
-    std::string symbol, exch;
-    double qty, avg_price;
-    uint64_t timestamp_us;
-    
-    if (PositionBinaryHelper::deserialize_position(msg->data(), symbol, exch, qty, avg_price, timestamp_us)) {
-      if (symbol == symbol_) {
-        on_position_update(symbol, exch, qty, avg_price, timestamp_us);
-      }
-    }
-  }
-}
-
-void MarketMakingStrategy::on_position_update(const std::string& symbol,
-                                             const std::string& exch,
-                                             double qty,
-                                             double avg_price,
-                                             uint64_t timestamp_us) {
-  current_position_qty_.store(qty);
-  current_avg_price_.store(avg_price);
-  last_position_time_.store(timestamp_us);
+  if (symbol != symbol_) return;
   
-  std::cout << "[POSITION] " << symbol << " " << exch 
-            << " qty=" << qty << " avg_price=" << avg_price << std::endl;
+  current_positions_[exch] = qty;
+  avg_prices_[exch] = avg_price;
+  
+  std::cout << "[MARKET_MAKING_STRATEGY] Position update: " << symbol 
+            << " " << exch << " qty=" << qty << " avg_price=" << avg_price << std::endl;
   
   // Update quotes based on new position
   update_quotes();
 }
 
-void MarketMakingStrategy::on_orderbook_update(const std::string& symbol,
-                                              const std::vector<std::pair<double, double>>& bids,
-                                              const std::vector<std::pair<double, double>>& asks,
-                                              uint64_t timestamp_us) {
-  current_bids_ = bids;
-  current_asks_ = asks;
-  last_update_time_.store(timestamp_us);
+void MarketMakingStrategy::on_inventory_update(
+    const std::string& symbol,
+    double inventory_delta) {
   
+  if (symbol != symbol_) return;
+  
+  current_inventory_delta_.store(inventory_delta);
+  
+  std::cout << "[MARKET_MAKING_STRATEGY] Inventory update: " << symbol 
+            << " delta=" << inventory_delta << std::endl;
+  
+  // Update quotes based on inventory delta
   update_quotes();
 }
 
-void MarketMakingStrategy::on_order_event(const std::string& cl_ord_id,
-                                         const std::string& exch,
-                                         const std::string& symbol,
-                                         uint32_t event_type,
-                                         double fill_qty,
-                                         double fill_price,
-                                         const std::string& text) {
-  std::cout << "[ORDER_EVENT] " << cl_ord_id << " " << symbol 
-            << " type=" << event_type << " qty=" << fill_qty 
-            << " price=" << fill_price << " " << text << std::endl;
+void MarketMakingStrategy::submit_order(const Order& order) {
+  std::cout << "[MARKET_MAKING_STRATEGY] Submitting order: " << order.cl_ord_id 
+            << " " << to_string(order.side) << " " << order.qty 
+            << " " << symbol_ << " @ " << order.price << std::endl;
   
-  // Handle different order event types
-  if (event_type == 1) { // Fill
-    // Update active order tracking
-    if (cl_ord_id == active_bid_order_id_) {
-      has_active_bid_.store(false);
-      active_bid_order_id_.clear();
-    } else if (cl_ord_id == active_ask_order_id_) {
-      has_active_ask_.store(false);
-      active_ask_order_id_.clear();
-    }
-    
-    // Update quotes after fill
-    update_quotes();
-  } else if (event_type == 2) { // Cancel
-    // Update active order tracking
-    if (cl_ord_id == active_bid_order_id_) {
-      has_active_bid_.store(false);
-      active_bid_order_id_.clear();
-    } else if (cl_ord_id == active_ask_order_id_) {
-      has_active_ask_.store(false);
-      active_ask_order_id_.clear();
-    }
+  oms_->send_order(order);
+}
+
+void MarketMakingStrategy::cancel_order(const std::string& cl_ord_id) {
+  std::cout << "[MARKET_MAKING_STRATEGY] Cancelling order: " << cl_ord_id << std::endl;
+  
+  // Find the first available exchange to cancel the order
+  // TODO: Track which exchange the order was sent to
+  if (!exchange_oms_.empty()) {
+    std::string exchange_name = exchange_oms_.begin()->first;
+    oms_->cancel_order(exchange_name, cl_ord_id);
+  } else {
+    std::cout << "[MARKET_MAKING_STRATEGY] No exchanges available for order cancellation" << std::endl;
   }
 }
 
-void MarketMakingStrategy::update_quotes() {
-  if (current_bids_.empty() || current_asks_.empty()) return;
+void MarketMakingStrategy::modify_order(const std::string& cl_ord_id, double new_price, double new_qty) {
+  std::cout << "[MARKET_MAKING_STRATEGY] Modifying order: " << cl_ord_id 
+            << " new_price=" << new_price << " new_qty=" << new_qty << std::endl;
   
-  double best_bid = current_bids_[0].first;
-  double best_ask = current_asks_[0].first;
-  double mid_price = (best_bid + best_ask) / 2.0;
-  
-  // Calculate inventory-adjusted spread using GLFT model
-  double inventory_delta = current_inventory_delta_.load();
-  double position_qty = current_position_qty_.load();
-  
-  // Combine LP inventory delta with exchange position
-  double total_inventory = inventory_delta + position_qty;
-  double target_inventory = glft_model_->compute_target(-total_inventory);
-  double inventory_skew = total_inventory - target_inventory;
-  
-  // Base spread calculation (simplified GLFT logic)
-  double base_spread_bps = min_spread_bps_;
-  double inventory_component = std::abs(inventory_skew) * 10.0; // 10 bps per unit skew
-  double total_spread_bps = base_spread_bps + inventory_component;
-  
-  // Clamp spread
-  total_spread_bps = std::max(total_spread_bps, min_spread_bps_);
-  total_spread_bps = std::min(total_spread_bps, 100.0); // Max 100 bps
-  
-  double spread = mid_price * total_spread_bps / 10000.0;
-  
-  // Adjust quotes based on inventory
-  double bid_price = mid_price - spread * 0.5;
-  double ask_price = mid_price + spread * 0.5;
-  
-  // Inventory skewing: widen quotes on the side we want to reduce
-  if (inventory_skew > 0) {
-    // Long inventory, widen ask (make it harder to sell)
-    ask_price += spread * 0.5;
-  } else if (inventory_skew < 0) {
-    // Short inventory, widen bid (make it harder to buy)
-    bid_price -= spread * 0.5;
-  }
-  
-  // Position size limits
-  if (std::abs(total_inventory) >= max_position_size_) {
-    // Stop quoting on the side that would increase position
-    if (total_inventory > 0) {
-      ask_price = 0; // Don't quote ask
-    } else {
-      bid_price = 0; // Don't quote bid
-    }
-  }
-  
-  place_new_quotes(mid_price, spread);
-}
-
-void MarketMakingStrategy::cancel_existing_orders() {
-  if (has_active_bid_.load() && !active_bid_order_id_.empty()) {
-    oms_->cancel_order(active_bid_order_id_, "GRVT");
-    has_active_bid_.store(false);
-    active_bid_order_id_.clear();
-  }
-  
-  if (has_active_ask_.load() && !active_ask_order_id_.empty()) {
-    oms_->cancel_order(active_ask_order_id_, "GRVT");
-    has_active_ask_.store(false);
-    active_ask_order_id_.clear();
+  // Find the first available exchange to modify the order
+  // TODO: Track which exchange the order was sent to
+  if (!exchange_oms_.empty()) {
+    std::string exchange_name = exchange_oms_.begin()->first;
+    oms_->modify_order(exchange_name, cl_ord_id, "", new_price, new_qty);
+  } else {
+    std::cout << "[MARKET_MAKING_STRATEGY] No exchanges available for order modification" << std::endl;
   }
 }
 
-void MarketMakingStrategy::place_new_quotes(double mid_price, double spread) {
-  cancel_existing_orders();
+void MarketMakingStrategy::register_exchange(const std::string& exchange_name, std::shared_ptr<IExchangeOMS> oms) {
+  std::cout << "[MARKET_MAKING_STRATEGY] Registering exchange: " << exchange_name << std::endl;
   
-  double best_bid = current_bids_.empty() ? mid_price - spread : current_bids_[0].first;
-  double best_ask = current_asks_.empty() ? mid_price + spread : current_asks_[0].first;
-  
-  // Place bid quote (if we have room and want to buy)
-  double bid_price = mid_price - spread * 0.5;
-  double total_inventory = current_inventory_delta_.load() + current_position_qty_.load();
-  if (bid_price > best_bid && std::abs(total_inventory) < max_position_size_) {
-    std::string bid_id = symbol_ + "-BID-" + std::to_string(time(nullptr));
-    if (oms_->send_order(bid_id, "GRVT", symbol_, 0, 0, quote_size_, bid_price)) {
-      active_bid_order_id_ = bid_id;
-      has_active_bid_.store(true);
-      std::cout << "[STRATEGY] Placed bid: " << bid_price << " @ " << quote_size_ << std::endl;
-    }
+  exchange_oms_[exchange_name] = oms;
+  this->oms_->register_exchange(exchange_name, oms);
+}
+
+void MarketMakingStrategy::disconnect_from_exchanges() {
+  for (auto& [exchange_name, oms] : exchange_oms_) {
+    oms->disconnect();
   }
-  
-  // Place ask quote (if we have room and want to sell)
-  double ask_price = mid_price + spread * 0.5;
-  if (ask_price < best_ask && std::abs(total_inventory) < max_position_size_) {
-    std::string ask_id = symbol_ + "-ASK-" + std::to_string(time(nullptr));
-    if (oms_->send_order(ask_id, "GRVT", symbol_, 1, 0, quote_size_, ask_price)) {
-      active_ask_order_id_ = ask_id;
-      has_active_ask_.store(true);
-      std::cout << "[STRATEGY] Placed ask: " << ask_price << " @ " << quote_size_ << std::endl;
-    }
-  }
+}
+
+OrderStateInfo MarketMakingStrategy::get_order_state(const std::string& cl_ord_id) {
+  // TODO: Implement order state tracking
+  OrderStateInfo empty_state;
+  return empty_state;
+}
+
+std::vector<OrderStateInfo> MarketMakingStrategy::get_active_orders() {
+  // TODO: Implement active order tracking
+  return {};
+}
+
+std::vector<OrderStateInfo> MarketMakingStrategy::get_all_orders() {
+  // TODO: Implement order history tracking
+  return {};
+}
+
+MarketMakingStrategy::OrderStats MarketMakingStrategy::get_order_statistics() {
+  // TODO: Implement order statistics tracking
+  OrderStats stats;
+  return stats;
 }
 
 void MarketMakingStrategy::on_message(const std::string& handler_name, const std::string& data) {
-  std::cout << "[STRATEGY] Received message from handler '" << handler_name 
+  std::cout << "[MARKET_MAKING_STRATEGY] Received message from handler '" << handler_name 
             << "': " << data.substr(0, std::min(data.length(), size_t(100))) 
             << (data.length() > 100 ? "..." : "") << std::endl;
   
   // Route messages based on handler name
   if (handler_name == "market_data") {
-    // Process market data
     // TODO: Parse binary orderbook data
   } else if (handler_name == "positions") {
-    // Process position updates
     // TODO: Parse position data
   } else if (handler_name == "inventory") {
-    // Process inventory deltas
     // TODO: Parse inventory delta
   } else if (handler_name == "order_events") {
-    // Process order events
     // TODO: Parse order event data
   } else {
-    std::cout << "[STRATEGY] Unknown handler: " << handler_name << std::endl;
+    std::cout << "[MARKET_MAKING_STRATEGY] Unknown handler: " << handler_name << std::endl;
+  }
+}
+
+void MarketMakingStrategy::process_market_data() {
+  if (!md_subscriber_) return;
+  
+  std::cout << "[MARKET_MAKING_STRATEGY] Market data processor started" << std::endl;
+  
+  while (running_.load()) {
+    try {
+      auto message = md_subscriber_->receive();
+      if (message.has_value()) {
+        // TODO: Parse market data message and call on_orderbook_update
+        // For now, simulate with mock data
+        static int counter = 0;
+        if (counter % 10 == 0) { // Every 10th message
+          std::vector<std::pair<double, double>> bids = {{50000.0, 0.1}};
+          std::vector<std::pair<double, double>> asks = {{50001.0, 0.1}};
+          on_orderbook_update(symbol_, bids, asks, 
+            std::chrono::duration_cast<std::chrono::microseconds>(
+              std::chrono::system_clock::now().time_since_epoch()).count());
+        }
+        counter++;
+      }
+    } catch (const std::exception& e) {
+      std::cout << "[MARKET_MAKING_STRATEGY] Error processing market data: " << e.what() << std::endl;
+    }
+  }
+}
+
+void MarketMakingStrategy::process_position_data() {
+  if (!pos_subscriber_) return;
+  
+  std::cout << "[MARKET_MAKING_STRATEGY] Position data processor started" << std::endl;
+  
+  while (running_.load()) {
+    try {
+      auto message = pos_subscriber_->receive();
+      if (message.has_value()) {
+        // TODO: Parse position data message and call on_position_update
+        // For now, simulate with mock data
+        static int counter = 0;
+        if (counter % 20 == 0) { // Every 20th message
+          on_position_update(symbol_, "BINANCE", 0.5, 50000.0);
+        }
+        counter++;
+      }
+    } catch (const std::exception& e) {
+      std::cout << "[MARKET_MAKING_STRATEGY] Error processing position data: " << e.what() << std::endl;
+    }
+  }
+}
+
+void MarketMakingStrategy::process_inventory_data() {
+  if (!inventory_subscriber_) return;
+  
+  std::cout << "[MARKET_MAKING_STRATEGY] Inventory data processor started" << std::endl;
+  
+  while (running_.load()) {
+    try {
+      auto message = inventory_subscriber_->receive();
+      if (message.has_value()) {
+        // TODO: Parse inventory data message and call on_inventory_update
+        // For now, simulate with mock data
+        static int counter = 0;
+        if (counter % 30 == 0) { // Every 30th message
+          double inventory_delta = (counter % 60 < 30) ? 0.1 : -0.1; // Oscillating inventory
+          on_inventory_update(symbol_, inventory_delta);
+        }
+        counter++;
+      }
+    } catch (const std::exception& e) {
+      std::cout << "[MARKET_MAKING_STRATEGY] Error processing inventory data: " << e.what() << std::endl;
+    }
+  }
+}
+
+void MarketMakingStrategy::process_order_events() {
+  std::cout << "[MARKET_MAKING_STRATEGY] Order event processor started" << std::endl;
+  
+  while (running_.load()) {
+    try {
+      // Process order events from OMS
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    } catch (const std::exception& e) {
+      std::cout << "[MARKET_MAKING_STRATEGY] Error processing order events: " << e.what() << std::endl;
+    }
+  }
+}
+
+std::pair<double, double> MarketMakingStrategy::calculate_optimal_quotes(double mid_price, double inventory_delta) {
+  // Use GLFT model for optimal pricing
+  if (glft_model_) {
+    // TODO: Integrate with GLFT model for optimal bid/ask calculation
+    // For now, use simple inventory-based pricing
+    double spread = mid_price * min_spread_bps_ / 10000.0; // Convert bps to decimal
+    double inventory_adjustment = inventory_delta * 0.001; // Small adjustment based on inventory
+    
+    double bid_price = mid_price - spread/2.0 - inventory_adjustment;
+    double ask_price = mid_price + spread/2.0 + inventory_adjustment;
+    
+    return {bid_price, ask_price};
+  } else {
+    // Fallback to simple spread
+    double spread = mid_price * min_spread_bps_ / 10000.0;
+    return {mid_price - spread/2.0, mid_price + spread/2.0};
+  }
+}
+
+void MarketMakingStrategy::update_quotes() {
+  // Cancel existing quotes
+  cancel_existing_quotes();
+  
+  // Calculate optimal quotes using GLFT model
+  double mid_price = 50000.0; // TODO: Get from market data
+  double inventory_delta = current_inventory_delta_.load();
+  
+  auto [bid_price, ask_price] = calculate_optimal_quotes(mid_price, inventory_delta);
+  
+  // Submit new orders (simple strategy - use first exchange)
+  std::string default_exchange = exchange_oms_.empty() ? "BINANCE" : exchange_oms_.begin()->first;
+  
+  Order bid_order;
+  bid_order.cl_ord_id = "BID_" + symbol_ + "_" + std::to_string(std::time(nullptr));
+  bid_order.exch = default_exchange;
+  bid_order.symbol = symbol_;
+  bid_order.side = Side::Buy;
+  bid_order.qty = quote_size_;
+  bid_order.price = bid_price;
+  bid_order.is_market = false;
+  
+  Order ask_order;
+  ask_order.cl_ord_id = "ASK_" + symbol_ + "_" + std::to_string(std::time(nullptr));
+  ask_order.exch = default_exchange;
+  ask_order.symbol = symbol_;
+  ask_order.side = Side::Sell;
+  ask_order.qty = quote_size_;
+  ask_order.price = ask_price;
+  ask_order.is_market = false;
+  
+  submit_order(bid_order);
+  submit_order(ask_order);
+  
+  last_bid_order_ids_[default_exchange] = bid_order.cl_ord_id;
+  last_ask_order_ids_[default_exchange] = ask_order.cl_ord_id;
+  
+  // Calculate spread in basis points
+  double spread_bps = (ask_price - bid_price) / mid_price * 10000.0;
+  
+  std::cout << "[MARKET_MAKING_STRATEGY] Submitted quotes: bid=" << bid_price 
+            << " ask=" << ask_price << " spread=" << std::fixed << std::setprecision(1) 
+            << spread_bps << "bps across " << exchange_oms_.size() << " exchanges" << std::endl;
+}
+
+void MarketMakingStrategy::cancel_existing_quotes() {
+  // Cancel existing quotes on all exchanges
+  for (const auto& [exchange_name, oms] : exchange_oms_) {
+    if (!last_bid_order_ids_[exchange_name].empty()) {
+      cancel_order(last_bid_order_ids_[exchange_name]);
+    }
+    if (!last_ask_order_ids_[exchange_name].empty()) {
+      cancel_order(last_ask_order_ids_[exchange_name]);
+    }
   }
 }
