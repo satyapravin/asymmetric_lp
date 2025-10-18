@@ -7,31 +7,49 @@
 #include "../../../../exchanges/binance/private_websocket/binance_private_websocket_handler.hpp"
 #include "../../../../exchanges/binance/http/binance_data_fetcher.hpp"
 #include "../../../../exchanges/binance/http/binance_oms.hpp"
+#include "../../../config/test_config_manager.hpp"
 
 using namespace binance;
+using namespace test_config;
 
 TEST_SUITE("Exchange Authentication Tests") {
 
+    TEST_CASE("Load Test Configuration") {
+        // Load test configuration
+        auto& config_manager = get_test_config();
+        CHECK(config_manager.load_config("cpp/tests/config/test_exchange_config.ini"));
+        
+        // Verify configuration loaded
+        CHECK(config_manager.is_test_mode());
+        CHECK_EQ(config_manager.get_log_level(), "DEBUG");
+    }
+
     TEST_CASE("Public WebSocket - No Authentication Required") {
+        auto& config_manager = get_test_config();
+        auto binance_config = config_manager.get_exchange_config("BINANCE");
+        
         BinancePublicWebSocketHandler handler;
         
         // Public streams don't require authentication
-        CHECK(handler.connect("wss://fstream.binance.com/stream"));
+        CHECK(handler.connect(binance_config.public_ws_url));
         CHECK(handler.is_connected());
         
         // Should be able to subscribe to public channels
-        CHECK(handler.subscribe_to_ticker("BTCUSDT"));
-        CHECK(handler.subscribe_to_orderbook("BTCUSDT", 20));
+        CHECK(handler.subscribe_to_ticker(binance_config.symbol));
+        CHECK(handler.subscribe_to_orderbook(binance_config.symbol, 20));
         
         handler.disconnect();
     }
 
     TEST_CASE("Private WebSocket - Authentication Required") {
-        // Test with valid credentials
-        BinancePrivateWebSocketHandler handler("valid_api_key", "valid_api_secret");
+        auto& config_manager = get_test_config();
+        auto binance_config = config_manager.get_exchange_config("BINANCE");
+        
+        // Test with valid credentials from config
+        BinancePrivateWebSocketHandler handler(binance_config.api_key, binance_config.api_secret);
         
         // Should be able to connect with valid credentials
-        CHECK(handler.connect("wss://fstream.binance.com/ws/valid_listen_key"));
+        CHECK(handler.connect(binance_config.private_ws_url + "/test_listen_key"));
         CHECK(handler.is_connected());
         
         // Should be able to subscribe to private channels
@@ -42,20 +60,26 @@ TEST_SUITE("Exchange Authentication Tests") {
     }
 
     TEST_CASE("Private WebSocket - Authentication Failure") {
+        auto& config_manager = get_test_config();
+        auto binance_config = config_manager.get_exchange_config("BINANCE");
+        
         // Test with invalid credentials
         BinancePrivateWebSocketHandler handler("invalid_api_key", "invalid_api_secret");
         
         // Should fail to connect with invalid credentials
-        CHECK_FALSE(handler.connect("wss://fstream.binance.com/ws/invalid_listen_key"));
+        CHECK_FALSE(handler.connect(binance_config.private_ws_url + "/invalid_listen_key"));
         CHECK_FALSE(handler.is_connected());
     }
 
     TEST_CASE("HTTP Data Fetcher - Authentication Required") {
-        // Test with valid credentials
-        BinanceDataFetcher fetcher("valid_api_key", "valid_api_secret");
+        auto& config_manager = get_test_config();
+        auto binance_config = config_manager.get_exchange_config("BINANCE");
+        
+        // Test with valid credentials from config
+        BinanceDataFetcher fetcher(binance_config.api_key, binance_config.api_secret);
         
         // Should be able to connect with valid credentials
-        CHECK(fetcher.connect("https://fapi.binance.com"));
+        CHECK(fetcher.connect(binance_config.http_url));
         CHECK(fetcher.is_connected());
         
         // Should be able to fetch private data
@@ -66,34 +90,43 @@ TEST_SUITE("Exchange Authentication Tests") {
     }
 
     TEST_CASE("HTTP Data Fetcher - Authentication Failure") {
+        auto& config_manager = get_test_config();
+        auto binance_config = config_manager.get_exchange_config("BINANCE");
+        
         // Test with invalid credentials
         BinanceDataFetcher fetcher("invalid_api_key", "invalid_api_secret");
         
         // Should fail to connect with invalid credentials
-        CHECK_FALSE(fetcher.connect("https://fapi.binance.com"));
+        CHECK_FALSE(fetcher.connect(binance_config.http_url));
         CHECK_FALSE(fetcher.is_connected());
     }
 
     TEST_CASE("HTTP OMS - Authentication Required") {
-        // Test with valid credentials
-        BinanceOMS oms("valid_api_key", "valid_api_secret");
+        auto& config_manager = get_test_config();
+        auto binance_config = config_manager.get_exchange_config("BINANCE");
+        
+        // Test with valid credentials from config
+        BinanceOMS oms(binance_config.api_key, binance_config.api_secret);
         
         // Should be able to connect with valid credentials
-        CHECK(oms.connect("https://fapi.binance.com"));
+        CHECK(oms.connect(binance_config.http_url));
         CHECK(oms.is_connected());
         
         // Should be able to place orders
-        auto result = oms.place_market_order("BTCUSDT", "BUY", 0.1);
+        auto result = oms.place_market_order(binance_config.symbol, "BUY", 0.1);
         
         oms.disconnect();
     }
 
     TEST_CASE("HTTP OMS - Authentication Failure") {
+        auto& config_manager = get_test_config();
+        auto binance_config = config_manager.get_exchange_config("BINANCE");
+        
         // Test with invalid credentials
         BinanceOMS oms("invalid_api_key", "invalid_api_secret");
         
         // Should fail to connect with invalid credentials
-        CHECK_FALSE(oms.connect("https://fapi.binance.com"));
+        CHECK_FALSE(oms.connect(binance_config.http_url));
         CHECK_FALSE(oms.is_connected());
     }
 

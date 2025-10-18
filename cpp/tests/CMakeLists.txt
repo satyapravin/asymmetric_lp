@@ -7,6 +7,8 @@ find_package(simdjson REQUIRED)
 # Add test executable
 add_executable(run_tests
   test_runner.cpp
+  # Test Configuration Manager
+  config/test_config_manager.cpp
   # Exchange WebSocket Handler Tests
   unit/exchanges/binance/public_websocket/test_binance_public_websocket_handler.cpp
   unit/exchanges/binance/private_websocket/test_binance_private_websocket_handler.cpp
@@ -39,6 +41,7 @@ target_include_directories(run_tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../trader
   ${CMAKE_CURRENT_SOURCE_DIR}/../trader/models
   ${CMAKE_CURRENT_SOURCE_DIR}/../exchanges
+  ${CMAKE_CURRENT_SOURCE_DIR}/config
   ${ZeroMQ_INCLUDE_DIRS}
   ${Protobuf_INCLUDE_DIRS}
 )

@@ -50,6 +50,46 @@ tests/unit/exchanges/
 - **Error Handling**: Invalid parameters, order failures
 - **Thread Safety**: Concurrent operations, callback safety
 
+## Test Configuration
+
+Tests use a centralized configuration system similar to production:
+
+### Configuration Files
+- `cpp/tests/config/test_exchange_config.ini` - Main test configuration
+- `cpp/tests/config/env.test.example` - Environment variables template
+- `cpp/tests/config/test_config_manager.hpp/cpp` - Configuration manager
+
+### Configuration Structure
+```ini
+[GLOBAL]
+TEST_MODE=true
+LOG_LEVEL=DEBUG
+USE_MOCK_EXCHANGES=false
+
+[BINANCE]
+API_KEY=${BINANCE_TEST_API_KEY}
+API_SECRET=${BINANCE_TEST_API_SECRET}
+PUBLIC_WS_URL=${BINANCE_PUBLIC_WS_URL}
+PRIVATE_WS_URL=${BINANCE_PRIVATE_WS_URL}
+HTTP_URL=${BINANCE_HTTP_URL}
+TESTNET=true
+ASSET_TYPE=FUTURES
+SYMBOL=BTCUSDT
+```
+
+### Usage in Tests
+```cpp
+#include "../../../config/test_config_manager.hpp"
+
+TEST_CASE("Authentication Test") {
+    auto& config_manager = get_test_config();
+    auto binance_config = config_manager.get_exchange_config("BINANCE");
+    
+    BinanceOMS oms(binance_config.api_key, binance_config.api_secret);
+    CHECK(oms.connect(binance_config.http_url));
+}
+```
+
 ## Running Tests
 
 ```bash
@@ -60,12 +100,33 @@ make run_tests
 # Run tests
 ./tests/run_tests
 
+# Run with test configuration
+./tests/run_tests --config=../tests/config/test_exchange_config.ini
+
 # Run specific test suite
+./tests/run_tests --test-suite="Exchange Authentication Tests"
 ./tests/run_tests --test-suite="BinancePublicWebSocketHandler"
 ./tests/run_tests --test-suite="BinancePrivateWebSocketHandler"
 ./tests/run_tests --test-suite="BinanceDataFetcher"
 ./tests/run_tests --test-suite="BinanceOMS"
 ```
+
+## Test Setup
+
+1. **Copy environment template**:
+   ```bash
+   cp cpp/tests/config/env.test.example cpp/tests/config/.env.test
+   ```
+
+2. **Fill in test credentials**:
+   - Use testnet/sandbox API keys
+   - Never use production credentials in tests
+   - Update URLs for testnet endpoints
+
+3. **Configure test scenarios**:
+   - Enable/disable specific test scenarios in config
+   - Set mock parameters for offline testing
+   - Adjust timeouts and retry limits
 
 ## Test Coverage
 
