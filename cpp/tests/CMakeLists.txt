@@ -7,6 +7,11 @@ find_package(simdjson REQUIRED)
 # Add test executable
 add_executable(run_tests
   test_runner.cpp
+  # Exchange WebSocket Handler Tests
+  unit/exchanges/binance/public_websocket/test_binance_public_websocket_handler.cpp
+  unit/exchanges/binance/private_websocket/test_binance_private_websocket_handler.cpp
+  unit/exchanges/binance/http/test_binance_data_fetcher.cpp
+  unit/exchanges/binance/http/test_binance_oms.cpp
 )
 
 # Link with all required libraries
@@ -14,12 +19,14 @@ target_link_libraries(run_tests PRIVATE
   utils 
   position_server_lib
   trader_lib
+  exchanges
   simdjson::simdjson
   ${ZeroMQ_LIBRARIES}
   ${Protobuf_LIBRARIES}
   ssl
   crypto
   websockets
+  curl
 )
 
 # Include directories
@@ -30,6 +37,7 @@ target_include_directories(run_tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../position_server
   ${CMAKE_CURRENT_SOURCE_DIR}/../trader
   ${CMAKE_CURRENT_SOURCE_DIR}/../trader/models
+  ${CMAKE_CURRENT_SOURCE_DIR}/../exchanges
   ${ZeroMQ_INCLUDE_DIRS}
   ${Protobuf_INCLUDE_DIRS}
 )
