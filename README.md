@@ -1,21 +1,8 @@
 # Asymmetric Liquidity Provision Strategy
 
-A quick note: The DeFi LP implementation in Python is production-ready. For full details, setup, and the latest results, see `python/README.md`.
+A sophisticated market-making strategy that combines DeFi liquidity provision with CeFi market making to create a statistical, inventory-aware hedge implemented via passive orders.
 
-## Production Status at a Glance
-
-| Component | Status |
-|-----------|--------|
-| DeFi LP (Python) | Production-ready |
-| Quote Server (C++) | ✅ Complete |
-| Trading Engine (C++) | ✅ Complete |
-| Position Server (C++) | ✅ Complete |
-| Trader Process (C++) | ✅ Complete |
-| Process Management | ✅ Complete |
-
-A sophisticated market-making strategy that combines **DeFi liquidity provision** with **CeFi market making** to create a statistical, inventory-aware hedge implemented via passive orders.
-
-## Strategy Overview
+## Overview
 
 This strategy operates on two fronts:
 
@@ -24,7 +11,18 @@ This strategy operates on two fronts:
 
 ### Core Concept
 
-The strategy uses **residual inventory from DeFi LP positions** to market make on CeFi exchanges in the **opposite direction**, creating a statistical, inventory-aware hedge. When DeFi LP accumulates inventory in one direction, the CeFi market maker quotes passively in the opposing direction to reduce net exposure over time.
+The strategy uses residual inventory from DeFi LP positions to market make on CeFi exchanges in the opposite direction, creating a statistical, inventory-aware hedge. When DeFi LP accumulates inventory in one direction, the CeFi market maker quotes passively in the opposing direction to reduce net exposure over time.
+
+## Production Status
+
+| Component | Status |
+|-----------|--------|
+| DeFi LP (Python) | Production-ready |
+| Quote Server (C++) | Complete |
+| Trading Engine (C++) | Complete |
+| Position Server (C++) | Complete |
+| Trader Process (C++) | Complete |
+| Process Management | Complete |
 
 ## Architecture
 
@@ -80,7 +78,7 @@ The strategy uses **residual inventory from DeFi LP positions** to market make o
 
 ## Components
 
-### 1. DeFi Liquidity Provision (Python) ✅ **Complete**
+### DeFi Liquidity Provision (Python)
 
 **Location:** `python/`
 
@@ -99,36 +97,36 @@ The Python implementation provides liquidity on Uniswap V3 using sophisticated m
 - USD valuation and P&L tracking
 - ZMQ inventory publishing for CeFi integration
 
-**Status:** ✅ **Production Ready** - See `python/README.md` for detailed documentation.
+**Status:** Production Ready - See `python/README.md` for detailed documentation.
 
-### 2. CeFi Market Making (C++) ✅ **Complete**
+### CeFi Market Making (C++)
 
 **Location:** `cpp/`
 
 The C++ implementation provides a complete multi-process trading system:
 
-#### **Trader Process** ✅ **Complete**
+#### Trader Process
 - **Strategy Engine** - Market making strategy implementation
 - **Risk Management** - Position limits and exposure controls
 - **Order Generation** - Intelligent order creation based on market conditions
 - **ZMQ Communication** - Coordinates with all exchange processes
 - **Configuration-driven** - Per-process configuration system
 
-#### **Quote Server (Per Exchange)** ✅ **Complete**
+#### Quote Server (Per Exchange)
 - **Public WebSocket Streams** - Real-time market data via libuv
 - **Market Data Processing** - Orderbook, ticker, trade data
 - **Exchange-specific Parsers** - Custom message handling per exchange
 - **ZMQ Publishing** - High-performance inter-process communication
 - **Configurable Subscriptions** - Rate limiting and depth control
 
-#### **Trading Engine (Per Exchange)** ✅ **Complete**
+#### Trading Engine (Per Exchange)
 - **Dual Connectivity** - HTTP API + Private WebSocket
 - **Order Management** - Send, cancel, modify operations
 - **Private Data Streams** - Order updates, account data, balance updates
 - **Authentication** - API key, secret, signature management
 - **Rate Limiting** - Exchange-specific rate limit enforcement
 
-#### **Position Server (Per Exchange)** ✅ **Complete**
+#### Position Server (Per Exchange)
 - **Real-time Position Tracking** - Exchange position monitoring
 - **Balance Management** - Account balance and PnL calculation
 - **Risk Monitoring** - Position limits and exposure tracking
@@ -138,19 +136,19 @@ The C++ implementation provides a complete multi-process trading system:
 
 ### Inventory-Aware Passive Hedging
 
-The strategy implements a **statistical, inventory-aware hedge** (not a perfect delta hedge):
+The strategy implements a statistical, inventory-aware hedge (not a perfect delta hedge):
 
-1. **DeFi LP** accumulates inventory through passive limit orders
-2. **CeFi MM** takes opposite positions using residual inventory
-3. **Passive Orders** on both venues gradually balance exposure via fills
-4. **Inventory Delta** from DeFi drives CeFi positioning
+1. DeFi LP accumulates inventory through passive limit orders
+2. CeFi MM takes opposite positions using residual inventory
+3. Passive orders on both venues gradually balance exposure via fills
+4. Inventory delta from DeFi drives CeFi positioning
 
 ### Risk Management
 
-- **Inventory Limits** - Maximum position sizes per exchange
-- **Correlation Monitoring** - DeFi/CeFi price correlation tracking
-- **Slippage Control** - Order size optimization for market impact
-- **Liquidity Management** - Dynamic range adjustment based on volatility
+- Inventory Limits - Maximum position sizes per exchange
+- Correlation Monitoring - DeFi/CeFi price correlation tracking
+- Slippage Control - Order size optimization for market impact
+- Liquidity Management - Dynamic range adjustment based on volatility
 
 ## Data Flow
 
@@ -248,17 +246,17 @@ COLLECT_ORDERBOOK=true
 ### Backtest Results (illustrative)
 - Results are derived from the Python backtesting engine. See `python/README.md` for reproducibility and the latest runs.
 - Representative run (ETH/USDC):
-  - **Total Trades:** 1,247
-  - **Rebalances:** 23
-  - **Initial Balance:** 2,500 USDC + 1 ETH
-  - **Final Balance:** 2,580 USDC + 0.95 ETH
-  - **USD P&L:** +3.2% (including fees)
+  - Total Trades: 1,247
+  - Rebalances: 23
+  - Initial Balance: 2,500 USDC + 1 ETH
+  - Final Balance: 2,580 USDC + 0.95 ETH
+  - USD P&L: +3.2% (including fees)
 
 ### Key Metrics
-- **Fee Collection:** 0.8% of volume (varies with fee tier and range width)
-- **Impermanent Loss:** context dependent; mitigated by range design and rebalances
-- **Rebalance Frequency:** edge-triggered; model- and threshold-dependent
-- **Average Spread:** strategy- and venue-dependent
+- Fee Collection: 0.8% of volume (varies with fee tier and range width)
+- Impermanent Loss: context dependent; mitigated by range design and rebalances
+- Rebalance Frequency: edge-triggered; model- and threshold-dependent
+- Average Spread: strategy- and venue-dependent
 
 ## Getting Started
 
@@ -327,30 +325,30 @@ python python/main.py
 
 | Component | Status | Progress |
 |-----------|--------|----------|
-| **DeFi LP (Python)** | ✅ Complete | 100% |
-| **Trader Process** | ✅ Complete | 100% |
-| **Quote Server** | ✅ Complete | 100% |
-| **Trading Engine** | ✅ Complete | 100% |
-| **Position Server** | ✅ Complete | 100% |
-| **Process Management** | ✅ Complete | 100% |
-| **Configuration System** | ✅ Complete | 100% |
-| **Integration Testing** | ⏳ Planned | 0% |
+| DeFi LP (Python) | Complete | 100% |
+| Trader Process | Complete | 100% |
+| Quote Server | Complete | 100% |
+| Trading Engine | Complete | 100% |
+| Position Server | Complete | 100% |
+| Process Management | Complete | 100% |
+| Configuration System | Complete | 100% |
+| Integration Testing | Planned | 0% |
 
 ## Documentation
 
-- **DeFi Implementation:** See `python/README.md` for complete Python documentation
-- **C++ Architecture:** See `cpp/README.md` for C++ framework details
-- **Configuration System:** See `cpp/config/README.md` for per-process configuration
-- **Trading Engine:** See `cpp/trading_engine/README.md` for trading engine details
-- **API Reference:** See `docs/api/` for detailed API documentation
-- **Backtest Results:** See `python/backtest_results.json` for performance data
+- DeFi Implementation: See `python/README.md` for complete Python documentation
+- C++ Architecture: See `cpp/README.md` for C++ framework details
+- Configuration System: See `cpp/config/README.md` for per-process configuration
+- Trading Engine: See `cpp/trading_engine/README.md` for trading engine details
+- API Reference: See `docs/api/` for detailed API documentation
+- Backtest Results: See `python/backtest_results.json` for performance data
 
 ## Contributing
 
-1. **DeFi Improvements:** Submit PRs to `python/` directory
-2. **CeFi Development:** Submit PRs to `cpp/` directory
-3. **Documentation:** Update relevant README files
-4. **Testing:** Add tests for new features
+1. DeFi Improvements: Submit PRs to `python/` directory
+2. CeFi Development: Submit PRs to `cpp/` directory
+3. Documentation: Update relevant README files
+4. Testing: Add tests for new features
 
 ## License
 
@@ -362,4 +360,4 @@ This software is for educational and research purposes. Trading cryptocurrencies
 
 ---
 
-**Note:** Both Python and C++ implementations are complete and production-ready. The system provides a comprehensive multi-process trading architecture with per-process configuration, dual connectivity (HTTP + WebSocket), and robust inter-process communication via ZMQ. See individual component READMEs for detailed implementation status.
+Note: Both Python and C++ implementations are complete and production-ready. The system provides a comprehensive multi-process trading architecture with per-process configuration, dual connectivity (HTTP + WebSocket), and robust inter-process communication via ZMQ. See individual component READMEs for detailed implementation status.
