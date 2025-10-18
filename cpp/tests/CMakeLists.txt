@@ -15,6 +15,20 @@ add_executable(run_tests
   unit/exchanges/binance/http/test_binance_data_fetcher.cpp
   unit/exchanges/binance/http/test_binance_oms.cpp
   unit/exchanges/binance/test_authentication.cpp
+  # Configuration System Tests
+  unit/config/test_configuration_system.cpp
+  # Utility Component Tests
+  unit/utils/test_utility_components.cpp
+  # Protocol Buffer Tests
+  unit/protobuf/test_protocol_buffers.cpp
+  # Process-Specific Tests
+  unit/processes/test_process_specific.cpp
+  # Integration Tests
+  integration/workflows/test_end_to_end_workflows.cpp
+  # Performance Tests
+  performance/test_performance.cpp
+  # Security Tests
+  security/test_security.cpp
 )
 
 # Link with all required libraries
@@ -23,6 +37,7 @@ target_link_libraries(run_tests PRIVATE
   position_server_lib
   trader_lib
   exchanges
+  quote_server_lib
   simdjson::simdjson
   ${ZeroMQ_LIBRARIES}
   ${Protobuf_LIBRARIES}
@@ -30,6 +45,8 @@ target_link_libraries(run_tests PRIVATE
   crypto
   websockets
   curl
+  OpenSSL::SSL
+  OpenSSL::Crypto
 )
 
 # Include directories
