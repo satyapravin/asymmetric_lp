@@ -14,6 +14,7 @@ public:
   enum class ExchangeType {
     BINANCE,
     DERIBIT,
+    GRVT,
     MOCK
   };
   

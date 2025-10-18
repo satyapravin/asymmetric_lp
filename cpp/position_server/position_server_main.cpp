@@ -4,6 +4,7 @@
 #include <chrono>
 #include <signal.h>
 #include <atomic>
+#include <algorithm>
 #include "../utils/config/config.hpp"
 #include "../utils/zmq/zmq_publisher.hpp"
 #include "../utils/pms/position_binary.hpp"
@@ -32,32 +33,64 @@ static std::vector<char> build_mock_position_binary(const std::string& symbol,
   return buffer;
 }
 
-int main() {
+int main(int argc, char** argv) {
   // Set up signal handlers
   signal(SIGINT, signal_handler);
   signal(SIGTERM, signal_handler);
   
-  auto cfg = load_app_config();
+  // Load configuration from command line
+  AppConfig cfg;
+  std::string config_file;
+  for (int i = 1; i < argc; ++i) {
+    std::string arg = argv[i];
+    if ((arg == "-c" || arg == "--config") && i + 1 < argc) {
+      config_file = argv[++i];
+    } else if (arg.rfind("--config=", 0) == 0) {
+      config_file = arg.substr(std::string("--config=").size());
+    }
+  }
+  if (config_file.empty()) {
+    std::cerr << "Usage: position_server -c <path/to/config.ini>" << std::endl;
+    return 1;
+  }
+
+  // Read configuration
+  load_from_ini(config_file, cfg);
+  
+  // Validate required configuration
+  if (cfg.exchanges_csv.empty() || cfg.pos_pub_endpoint.empty()) {
+    std::cerr << "Config missing required keys. Need EXCHANGES, POS_PUB_ENDPOINT." << std::endl;
+    return 1;
+  }
+  
+  std::cout << "Starting Position Server for exchange: " << cfg.exchanges_csv << std::endl;
   
   // Position publisher endpoint
-  std::string pos_pub_endpoint = "tcp://127.0.0.1:6004"; // Different port for positions
-  ZmqPublisher pub(pos_pub_endpoint);
-  std::cout << "Position server publishing on " << pos_pub_endpoint << std::endl;
+  ZmqPublisher pub(cfg.pos_pub_endpoint);
+  std::cout << "Position server publishing on " << cfg.pos_pub_endpoint << std::endl;
 
   // Create position feed based on configuration
-  std::string exchange_type = "MOCK";  // Default to mock
+  std::string exchange_type = cfg.exchanges_csv;
   std::string api_key = "";
   std::string api_secret = "";
   
-  // TODO: Read from config file
-  // For now, use environment variables or command line args
-  if (const char* env_exchange = std::getenv("POSITION_EXCHANGE")) {
-    exchange_type = env_exchange;
+  // Get API credentials from exchange-specific section
+  for (const auto& sec : cfg.sections) {
+    std::string sec_upper = sec.name;
+    std::transform(sec_upper.begin(), sec_upper.end(), sec_upper.begin(), ::toupper);
+    if (sec_upper == exchange_type) {
+      for (const auto& [k, v] : sec.entries) {
+        if (k == "API_KEY") api_key = v;
+        else if (k == "API_SECRET") api_secret = v;
+      }
+    }
   }
-  if (const char* env_key = std::getenv("POSITION_API_KEY")) {
+  
+  // Fallback to environment variables if not in config
+  if (api_key.empty() && const char* env_key = std::getenv("POSITION_API_KEY")) {
     api_key = env_key;
   }
-  if (const char* env_secret = std::getenv("POSITION_API_SECRET")) {
+  if (api_secret.empty() && const char* env_secret = std::getenv("POSITION_API_SECRET")) {
     api_secret = env_secret;
   }
   

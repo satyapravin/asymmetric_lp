@@ -8,6 +8,7 @@
 std::map<std::string, PositionServerFactory::ExchangeType> PositionServerFactory::exchange_map_ = {
   {"BINANCE", ExchangeType::BINANCE},
   {"DERIBIT", ExchangeType::DERIBIT},
+  {"GRVT", ExchangeType::GRVT},
   {"MOCK", ExchangeType::MOCK}
 };
 
@@ -30,6 +31,11 @@ std::unique_ptr<IExchangePositionFeed> PositionServerFactory::create(
         return std::make_unique<MockPositionFeed>();
       }
       return std::make_unique<DeribitPositionFeed>(api_key, api_secret);
+      
+    case ExchangeType::GRVT:
+      // TODO: Implement GRVT position feed
+      std::cout << "[POSITION_SERVER_FACTORY] GRVT position feed not implemented yet, using mock" << std::endl;
+      return std::make_unique<MockPositionFeed>();
       
     case ExchangeType::MOCK:
     default:
