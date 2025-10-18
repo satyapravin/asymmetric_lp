@@ -22,14 +22,14 @@ add_executable(trader
   trader_main.cpp
 )
 
-add_executable(enhanced_trader
-  enhanced_trader_main.cpp
+add_executable(production_trader
+  production_trader_main.cpp
 )
 
 target_link_libraries(market_maker PRIVATE utils trader_lib)
 target_link_libraries(trader PRIVATE trader_lib)
-target_link_libraries(enhanced_trader PRIVATE trader_lib)
+target_link_libraries(production_trader PRIVATE trader_lib)
 
 target_include_directories(market_maker PRIVATE ${ZeroMQ_INCLUDE_DIRS})
 target_include_directories(trader PRIVATE ${ZeroMQ_INCLUDE_DIRS})
-target_include_directories(enhanced_trader PRIVATE ${ZeroMQ_INCLUDE_DIRS})
+target_include_directories(production_trader PRIVATE ${ZeroMQ_INCLUDE_DIRS})

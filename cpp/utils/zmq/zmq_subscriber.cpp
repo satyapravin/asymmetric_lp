@@ -45,6 +45,31 @@ std::optional<std::string> ZmqSubscriber::receive() {
   return payload;
 }
 
+std::optional<std::string> ZmqSubscriber::receive_blocking(int timeout_ms) {
+  // Set receive timeout
+  zmq_setsockopt(sub_, ZMQ_RCVTIMEO, &timeout_ms, sizeof(timeout_ms));
+  
+  zmq_msg_t topic;
+  zmq_msg_init(&topic);
+  int rc = zmq_msg_recv(&topic, sub_, 0);
+  if (rc == -1) {
+    zmq_msg_close(&topic);
+    return std::nullopt;
+  }
+  zmq_msg_t msg;
+  zmq_msg_init(&msg);
+  rc = zmq_msg_recv(&msg, sub_, 0);
+  if (rc == -1) {
+    zmq_msg_close(&topic);
+    zmq_msg_close(&msg);
+    return std::nullopt;
+  }
+  std::string payload(static_cast<char*>(zmq_msg_data(&msg)), zmq_msg_size(&msg));
+  zmq_msg_close(&topic);
+  zmq_msg_close(&msg);
+  return payload;
+}
+
 std::optional<DeltaMsg> ZmqSubscriber::parse_minimal_delta(const std::string& json) {
   // Extremely simple parse (no dependency): look for keys
   auto find_value = [&](const std::string& key) -> std::optional<std::string> {

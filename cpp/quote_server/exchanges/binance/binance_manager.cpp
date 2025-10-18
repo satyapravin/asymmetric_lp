@@ -9,9 +9,9 @@
 #include "binance_lws_client.h"
 #include <atomic>
 #include <sstream>
-#ifdef PROTO_ENABLED
-#include "market_data.pb.h"
-#endif
+// #ifdef PROTO_ENABLED // Temporarily commented out
+// #include "market_data.pb.h"
+// #endif
 
 BinanceManager::BinanceManager(const std::string& websocket_url)
   : websocket_url_(websocket_url) {}

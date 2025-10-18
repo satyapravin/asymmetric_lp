@@ -29,22 +29,19 @@ int main() {
   
   // Create market making strategy (no legacy feed gating; handlers drive feeds)
   auto strategy = std::make_unique<MarketMakingStrategy>(
-    cfg.symbol, oms, glft_model);
+    cfg.symbol, glft_model, cfg.md_pub_endpoint, "market_data", 
+    cfg.pos_pub_endpoint, "positions", "", "");
   
   // Configure strategy
   strategy->set_min_spread_bps(5.0);  // 5 bps minimum spread
   strategy->set_max_position_size(100.0);
   strategy->set_quote_size(1.0);
   
-  // Set up order event handling (handlers now preferred; keep OMS callback active)
-  oms->set_event_callback([&strategy](const std::string& cl_ord_id,
-                                     const std::string& exch,
-                                     const std::string& symbol,
-                                     uint32_t event_type,
-                                     double fill_qty,
-                                     double fill_price,
-                                     const std::string& text) {
-    strategy->on_order_event(cl_ord_id, exch, symbol, event_type, fill_qty, fill_price, text);
+  // Set up order event handling
+  strategy->set_order_event_callback([](const OrderEvent& event) {
+    std::cout << "[ORDER_EVENT] " << event.cl_ord_id << " " << event.exch << " " << event.symbol 
+              << " " << to_string(event.type) << " qty=" << event.fill_qty << " price=" << event.fill_price 
+              << " " << event.text << std::endl;
   });
   
   // Start strategy

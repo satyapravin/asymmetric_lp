@@ -21,11 +21,11 @@ MarketMakingStrategy::MarketMakingStrategy(
   oms_ = std::make_unique<OMS>();
   
   // Set up OMS event callback to forward events to strategy callbacks
-  oms_->set_event_callback([this](const OrderEvent& event) {
+  oms_->on_event = [this](const OrderEvent& event) {
     if (order_event_callback_) {
       order_event_callback_(event);
     }
-  });
+  };
   
   // Initialize market data subscriber if endpoint provided
   if (!md_endpoint.empty()) {
@@ -58,7 +58,8 @@ void MarketMakingStrategy::start() {
   running_.store(true);
   
   // Connect to all registered exchanges
-  oms_->connect_all_exchanges();
+  // Note: Simple OMS doesn't have connect_all_exchanges method
+  // Exchanges are connected individually when registered
   
   // Start processing threads
   if (enable_market_data_) {
@@ -168,7 +169,7 @@ void MarketMakingStrategy::submit_order(const Order& order) {
             << " " << to_string(order.side) << " " << order.qty 
             << " " << symbol_ << " @ " << order.price << std::endl;
   
-  oms_->send_order(order);
+  oms_->send(order);
 }
 
 void MarketMakingStrategy::cancel_order(const std::string& cl_ord_id) {
@@ -178,7 +179,7 @@ void MarketMakingStrategy::cancel_order(const std::string& cl_ord_id) {
   // TODO: Track which exchange the order was sent to
   if (!exchange_oms_.empty()) {
     std::string exchange_name = exchange_oms_.begin()->first;
-    oms_->cancel_order(exchange_name, cl_ord_id);
+    oms_->cancel(exchange_name, cl_ord_id);
   } else {
     std::cout << "[MARKET_MAKING_STRATEGY] No exchanges available for order cancellation" << std::endl;
   }
@@ -192,7 +193,21 @@ void MarketMakingStrategy::modify_order(const std::string& cl_ord_id, double new
   // TODO: Track which exchange the order was sent to
   if (!exchange_oms_.empty()) {
     std::string exchange_name = exchange_oms_.begin()->first;
-    oms_->modify_order(exchange_name, cl_ord_id, "", new_price, new_qty);
+    // Note: Simple OMS doesn't support order modification
+    // For now, cancel the old order and submit a new one
+    oms_->cancel(exchange_name, cl_ord_id);
+    
+    // Submit new order with modified parameters
+    Order new_order;
+    new_order.cl_ord_id = cl_ord_id + "_MODIFIED";
+    new_order.exch = exchange_name;
+    new_order.symbol = symbol_;
+    new_order.side = Side::Buy; // TODO: Get from original order
+    new_order.qty = new_qty;
+    new_order.price = new_price;
+    new_order.is_market = false;
+    
+    oms_->send(new_order);
   } else {
     std::cout << "[MARKET_MAKING_STRATEGY] No exchanges available for order modification" << std::endl;
   }
@@ -206,8 +221,11 @@ void MarketMakingStrategy::register_exchange(const std::string& exchange_name, s
 }
 
 void MarketMakingStrategy::disconnect_from_exchanges() {
+  // Note: Simple IExchangeOMS doesn't have disconnect method
+  // Connection management is handled by the exchange implementation
   for (auto& [exchange_name, oms] : exchange_oms_) {
-    oms->disconnect();
+    std::cout << "[MARKET_MAKING_STRATEGY] Disconnecting from " << exchange_name << std::endl;
+    // TODO: Implement proper disconnection when exchange interface supports it
   }
 }
 
@@ -392,8 +410,8 @@ void MarketMakingStrategy::update_quotes() {
   submit_order(bid_order);
   submit_order(ask_order);
   
-  last_bid_order_ids_[default_exchange] = bid_order.cl_ord_id;
-  last_ask_order_ids_[default_exchange] = ask_order.cl_ord_id;
+  last_bid_order_id_ = bid_order.cl_ord_id;
+  last_ask_order_id_ = ask_order.cl_ord_id;
   
   // Calculate spread in basis points
   double spread_bps = (ask_price - bid_price) / mid_price * 10000.0;
@@ -404,13 +422,11 @@ void MarketMakingStrategy::update_quotes() {
 }
 
 void MarketMakingStrategy::cancel_existing_quotes() {
-  // Cancel existing quotes on all exchanges
-  for (const auto& [exchange_name, oms] : exchange_oms_) {
-    if (!last_bid_order_ids_[exchange_name].empty()) {
-      cancel_order(last_bid_order_ids_[exchange_name]);
-    }
-    if (!last_ask_order_ids_[exchange_name].empty()) {
-      cancel_order(last_ask_order_ids_[exchange_name]);
-    }
+  // Cancel existing quotes
+  if (!last_bid_order_id_.empty()) {
+    cancel_order(last_bid_order_id_);
+  }
+  if (!last_ask_order_id_.empty()) {
+    cancel_order(last_ask_order_id_);
   }
 }

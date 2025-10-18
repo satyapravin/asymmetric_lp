@@ -4,6 +4,10 @@
 #include <chrono>
 #include <map>
 #include <optional>
+#include <sstream>
+#include "order.hpp"
+#include "order_state.hpp"
+#include "oms.hpp"  // For IExchangeOMS interface
 
 // Rich error information for exchange operations
 struct ExchangeError {
@@ -79,7 +83,7 @@ struct OrderResponse {
 };
 
 // Enhanced exchange OMS interface with rich error handling
-class IEnhancedExchangeOMS {
+class IEnhancedExchangeOMS : public IExchangeOMS {
 public:
   virtual ~IEnhancedExchangeOMS() = default;
   
@@ -105,4 +109,19 @@ public:
   // Event handling
   std::function<void(const OrderEvent&)> on_order_event;
   std::function<void(const ExchangeError&)> on_error;
+  
+  // Implement base IExchangeOMS interface
+  void send(const Order& order) override {
+    auto result = send_order(order);
+    if (result.is_error() && on_error) {
+      on_error(result.error());
+    }
+  }
+  
+  void cancel(const std::string& cl_ord_id) override {
+    auto result = cancel_order(cl_ord_id, "");
+    if (result.is_error() && on_error) {
+      on_error(result.error());
+    }
+  }
 };

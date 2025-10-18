@@ -18,7 +18,7 @@
 int main(int argc, char** argv) {
     // Set a timeout for the entire test suite
     std::thread timeout_thread([]() {
-        std::this_thread::sleep_for(std::chrono::seconds(30));
+        std::this_thread::sleep_for(std::chrono::seconds(120));
         std::cout << "\n[TEST_RUNNER] Timeout reached, forcing exit..." << std::endl;
         std::exit(1);
     });

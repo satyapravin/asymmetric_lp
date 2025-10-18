@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  trader:
+    build: .
+    container_name: asymmetric_lp_trader
+    restart: unless-stopped
+    
+    environment:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      - DATA_DIR=/data
+      
+      # Exchange API Keys (set these in .env file)
+      - BINANCE_API_KEY=${BINANCE_API_KEY}
+      - BINANCE_API_SECRET=${BINANCE_API_SECRET}
+      - DERIBIT_API_KEY=${DERIBIT_API_KEY}
+      - DERIBIT_API_SECRET=${DERIBIT_API_SECRET}
+      - GRVT_API_KEY=${GRVT_API_KEY}
+      - GRVT_API_SECRET=${GRVT_API_SECRET}
+    
+    volumes:
+      - ./data:/data
+      - ./logs:/home/trader/logs
+      - ./config:/home/trader/config
+    
+    networks:
+      - trading_network
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "production_trader"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: Add monitoring services
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - trading_network
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - trading_network
+    profiles:
+      - monitoring
+
+networks:
+  trading_network:
+    driver: bridge
+
+volumes:
+  grafana_data:

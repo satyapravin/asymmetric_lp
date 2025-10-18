@@ -1,8 +1,11 @@
 #pragma once
-#include "enhanced_oms.hpp"
+#include "oms.hpp"  // Use the base OMS interface
 #include <random>
 #include <thread>
 #include <chrono>
+#include <atomic>
+#include <mutex>
+#include <unordered_map>
 
 // Mock exchange OMS for testing
 class MockExchangeOMS : public IExchangeOMS {
@@ -13,18 +16,16 @@ public:
                   std::chrono::milliseconds response_delay = std::chrono::milliseconds(100));
   ~MockExchangeOMS();
 
-  // IExchangeOMS interface
-  bool send_order(const Order& order) override;
-  bool cancel_order(const std::string& cl_ord_id, const std::string& exchange_order_id) override;
-  bool modify_order(const std::string& cl_ord_id, const std::string& exchange_order_id,
-                   double new_price, double new_qty) override;
+  // IExchangeOMS interface (simple version)
+  void send(const Order& order) override;
+  void cancel(const std::string& cl_ord_id) override;
   
-  bool connect() override;
-  void disconnect() override;
-  bool is_connected() const override;
-  
-  std::string get_exchange_name() const override { return exchange_name_; }
-  std::vector<std::string> get_supported_symbols() const override;
+  // Additional methods for enhanced functionality
+  bool connect();
+  void disconnect();
+  bool is_connected() const;
+  std::string get_exchange_name() const { return exchange_name_; }
+  std::vector<std::string> get_supported_symbols() const;
 
 private:
   void process_order(const Order& order);

@@ -1,7 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest.h"
 #include "../utils/oms/exchange_oms_factory.hpp"
-#include "../utils/oms/enhanced_oms.hpp"
+#include "../utils/oms/oms.hpp"
 #include <memory>
 #include <string>
 

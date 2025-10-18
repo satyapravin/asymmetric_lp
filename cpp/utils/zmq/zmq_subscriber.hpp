@@ -13,6 +13,7 @@ class ZmqSubscriber {
   ZmqSubscriber(const std::string& endpoint, const std::string& topic);
   ~ZmqSubscriber();
   std::optional<std::string> receive();
+  std::optional<std::string> receive_blocking(int timeout_ms = 1000);
   static std::optional<DeltaMsg> parse_minimal_delta(const std::string& json);
  private:
   void* ctx_{};

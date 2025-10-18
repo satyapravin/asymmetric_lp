@@ -1,10 +1,9 @@
-#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest.h"
-#include "../trader/market_making_strategy.hpp"
-#include "../trader/models/glft_target.hpp"
-#include "../utils/oms/mock_exchange_oms.hpp"
-#include "../utils/oms/order.hpp"
-#include "../utils/oms/types.hpp"
+#include "../../trader/market_making_strategy.hpp"
+#include "../../trader/models/glft_target.hpp"
+#include "../../utils/oms/mock_exchange_oms.hpp"
+#include "../../utils/oms/order.hpp"
+#include "../../utils/oms/types.hpp"
 #include <memory>
 #include <string>
 #include <thread>
@@ -57,7 +56,7 @@ TEST_SUITE("MarketMakingStrategy") {
         strategy.register_exchange("TEST_EXCHANGE", mock_oms);
         
         std::vector<OrderEvent> events;
-        mock_oms->on_order_event = [&events](const OrderEvent& event) {
+        mock_oms->on_event = [&events](const OrderEvent& event) {
             events.push_back(event);
         };
         
@@ -91,7 +90,7 @@ TEST_SUITE("MarketMakingStrategy") {
         strategy.register_exchange("TEST_EXCHANGE", mock_oms);
         
         std::vector<OrderEvent> events;
-        mock_oms->on_order_event = [&events](const OrderEvent& event) {
+        mock_oms->on_event = [&events](const OrderEvent& event) {
             events.push_back(event);
         };
         
@@ -154,7 +153,7 @@ TEST_SUITE("MarketMakingStrategy") {
         strategy.register_exchange("TEST_EXCHANGE", mock_oms);
         
         std::vector<OrderEvent> events;
-        mock_oms->on_order_event = [&events](const OrderEvent& event) {
+        mock_oms->on_event = [&events](const OrderEvent& event) {
             events.push_back(event);
         };
         

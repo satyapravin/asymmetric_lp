@@ -3,7 +3,11 @@
 #include <memory>
 #include <map>
 #include <functional>
-#include "../oms/enhanced_oms.hpp"
+#include <vector>
+#include "exchange_oms.hpp"
+
+// Forward declaration
+class IExchangeOMS;
 
 // Exchange configuration structure
 struct ExchangeConfig {

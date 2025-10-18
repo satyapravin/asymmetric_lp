@@ -1,0 +1,37 @@
+[Unit]
+Description=Trading Engine for @EXCHANGE_NAME@
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=trading
+Group=trading
+WorkingDirectory=/opt/trading
+ExecStart=/opt/trading/bin/trading_engine @EXCHANGE_NAME@ --daemon
+ExecReload=/bin/kill -HUP $MAINPID
+ExecStop=/bin/kill -TERM $MAINPID
+PIDFile=/tmp/trading_engine_@EXCHANGE_NAME_LOWER@.pid
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=trading_engine_@EXCHANGE_NAME_LOWER@
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/tmp /var/log/trading
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=32768
+
+# Environment
+Environment=CONFIG_FILE=/opt/trading/config/config.ini
+Environment=LOG_LEVEL=INFO
+
+[Install]
+WantedBy=multi-user.target

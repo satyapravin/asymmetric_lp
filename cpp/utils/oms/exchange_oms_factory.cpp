@@ -1,5 +1,7 @@
 #include "exchange_oms_factory.hpp"
-#include "mock_exchange_oms.hpp"
+#include "exchange_oms.hpp"
+#include "oms.hpp"  // For IExchangeOMS interface
+#include "exchanges/binance/binance_oms.hpp"
 #include "../config/config.hpp"
 #include <iostream>
 #include <fstream>
@@ -13,7 +15,7 @@ void ExchangeOMSFactory::register_exchange_type(const std::string& type, Exchang
   creators_[type] = creator;
 }
 
-std::shared_ptr<IExchangeOMS> ExchangeOMSFactory::create_exchange(const ExchangeConfig& config) {
+std::shared_ptr<IEnhancedExchangeOMS> ExchangeOMSFactory::create_exchange(const ExchangeConfig& config) {
   if (!initialized_) {
     initialize_default_creators();
   }
@@ -36,7 +38,9 @@ std::shared_ptr<IExchangeOMS> ExchangeOMSFactory::create_exchange(const Exchange
 std::shared_ptr<IExchangeOMS> ExchangeOMSFactory::create_exchange(const std::string& type, const ExchangeConfig& config) {
   ExchangeConfig config_copy = config;
   config_copy.type = type;
-  return create_exchange(config_copy);
+  // Create OMS and cast to base interface
+  auto oms = create_exchange(config_copy);
+  return std::static_pointer_cast<IExchangeOMS>(oms);
 }
 
 std::vector<ExchangeConfig> ExchangeOMSFactory::load_exchanges_from_config(const std::string& config_file) {
@@ -107,49 +111,207 @@ void ExchangeOMSFactory::initialize_default_creators() {
   if (initialized_) return;
   
   // Register mock exchange creator
-  register_exchange_type("MOCK", [](const ExchangeConfig& config) -> std::shared_ptr<IExchangeOMS> {
-    return std::make_shared<MockExchangeOMS>(
+  register_exchange_type("MOCK", [](const ExchangeConfig& config) -> std::shared_ptr<IEnhancedExchangeOMS> {
+    // Create a simple mock that implements IEnhancedExchangeOMS
+    class MockEnhancedOMS : public IEnhancedExchangeOMS {
+    public:
+      MockEnhancedOMS(const std::string& name, double fill_prob, double reject_prob, int delay_ms)
+        : name_(name), fill_probability_(fill_prob), reject_probability_(reject_prob), 
+          delay_ms_(delay_ms), connected_(false) {}
+      
+      Result<bool> connect() override { 
+        connected_ = true;
+        return Result<bool>(true); 
+      }
+      
+      void disconnect() override { connected_ = false; }
+      bool is_connected() const override { return connected_; }
+      std::string get_exchange_name() const override { return name_; }
+      
+      Result<OrderResponse> send_order(const Order& order) override {
+        OrderResponse response(order.cl_ord_id, "MOCK_" + std::to_string(std::time(nullptr)), name_, order.symbol);
+        response.status = "ACKNOWLEDGED";
+        return Result<OrderResponse>(std::move(response));
+      }
+      
+      Result<bool> cancel_order(const std::string& cl_ord_id, const std::string& exchange_order_id) override {
+        return Result<bool>(true);
+      }
+      
+      Result<bool> modify_order(const std::string& cl_ord_id, const std::string& exchange_order_id,
+                               double new_price, double new_qty) override {
+        return Result<bool>(true);
+      }
+      
+      std::vector<std::string> get_supported_symbols() const override {
+        return {"BTCUSDT", "ETHUSDT"};
+      }
+      
+      Result<std::map<std::string, std::string>> get_health_status() const override {
+        std::map<std::string, std::string> status;
+        status["connected"] = connected_ ? "true" : "false";
+        status["exchange"] = name_;
+        return status;
+      }
+      
+      Result<std::map<std::string, double>> get_performance_metrics() const override {
+        std::map<std::string, double> metrics;
+        metrics["orders_sent"] = 0;
+        return metrics;
+      }
+      
+    private:
+      std::string name_;
+      double fill_probability_;
+      double reject_probability_;
+      int delay_ms_;
+      bool connected_;
+    };
+    
+    return std::make_shared<MockEnhancedOMS>(
       config.name,
       config.fill_probability,
       config.reject_probability,
-      std::chrono::milliseconds(config.response_delay_ms)
+      config.response_delay_ms
     );
   });
   
-  // Register Binance exchange creator (placeholder for real implementation)
-  register_exchange_type("BINANCE", [](const ExchangeConfig& config) -> std::shared_ptr<IExchangeOMS> {
-    // TODO: Implement real BinanceOMS
+  // Register Binance exchange creator (real implementation)
+  register_exchange_type("BINANCE", [](const ExchangeConfig& config) -> std::shared_ptr<IEnhancedExchangeOMS> {
     std::cout << "[EXCHANGE_FACTORY] Creating Binance OMS for " << config.name << std::endl;
-    return std::make_shared<MockExchangeOMS>(
-      config.name,
-      config.fill_probability,
-      config.reject_probability,
-      std::chrono::milliseconds(config.response_delay_ms)
-    );
+    
+    binance_real::BinanceConfig binance_config;
+    binance_config.api_key = config.api_key;
+    binance_config.api_secret = config.api_secret;
+    binance_config.exchange_name = config.name;  // Use configurable exchange name
+    binance_config.fill_probability = config.fill_probability;
+    binance_config.reject_probability = config.reject_probability;
+    
+    // Set custom parameters if available
+    auto it = config.custom_params.find("BASE_URL");
+    if (it != config.custom_params.end()) {
+      binance_config.base_url = it->second;
+    }
+    
+    it = config.custom_params.find("WS_URL");
+    if (it != config.custom_params.end()) {
+      binance_config.ws_url = it->second;
+    }
+    
+    it = config.custom_params.find("TIMEOUT_MS");
+    if (it != config.custom_params.end()) {
+      try { binance_config.timeout_ms = std::stoi(it->second); } catch (...) {}
+    }
+    
+    return std::make_shared<binance_real::BinanceRealOMS>(binance_config);
   });
   
   // Register Deribit exchange creator (placeholder for real implementation)
-  register_exchange_type("DERIBIT", [](const ExchangeConfig& config) -> std::shared_ptr<IExchangeOMS> {
+  register_exchange_type("DERIBIT", [](const ExchangeConfig& config) -> std::shared_ptr<IEnhancedExchangeOMS> {
     // TODO: Implement real DeribitOMS
     std::cout << "[EXCHANGE_FACTORY] Creating Deribit OMS for " << config.name << std::endl;
-    return std::make_shared<MockExchangeOMS>(
-      config.name,
-      config.fill_probability,
-      config.reject_probability,
-      std::chrono::milliseconds(config.response_delay_ms)
-    );
+    
+    // For now, return a simple mock that implements IEnhancedExchangeOMS
+    class MockDeribitOMS : public IEnhancedExchangeOMS {
+    public:
+      MockDeribitOMS(const std::string& name) : name_(name) {}
+      
+      Result<bool> connect() override { return Result<bool>(true); }
+      void disconnect() override {}
+      bool is_connected() const override { return true; }
+      std::string get_exchange_name() const override { return name_; }
+      
+      Result<OrderResponse> send_order(const Order& order) override {
+        OrderResponse response(order.cl_ord_id, "DER_" + std::to_string(std::time(nullptr)), "DERIBIT", order.symbol);
+        response.status = "ACKNOWLEDGED";
+        return Result<OrderResponse>(std::move(response));
+      }
+      
+      Result<bool> cancel_order(const std::string& cl_ord_id, const std::string& exchange_order_id) override {
+        return Result<bool>(true);
+      }
+      
+      Result<bool> modify_order(const std::string& cl_ord_id, const std::string& exchange_order_id,
+                               double new_price, double new_qty) override {
+        return Result<bool>(true);
+      }
+      
+      std::vector<std::string> get_supported_symbols() const override {
+        return {"BTC-PERPETUAL", "ETH-PERPETUAL"};
+      }
+      
+      Result<std::map<std::string, std::string>> get_health_status() const override {
+        std::map<std::string, std::string> status;
+        status["connected"] = "true";
+        status["exchange"] = "DERIBIT";
+        return status;
+      }
+      
+      Result<std::map<std::string, double>> get_performance_metrics() const override {
+        std::map<std::string, double> metrics;
+        metrics["orders_sent"] = 0;
+        return metrics;
+      }
+      
+    private:
+      std::string name_;
+    };
+    
+    return std::make_shared<MockDeribitOMS>(config.name);
   });
   
   // Register GRVT exchange creator (placeholder for real implementation)
-  register_exchange_type("GRVT", [](const ExchangeConfig& config) -> std::shared_ptr<IExchangeOMS> {
+  register_exchange_type("GRVT", [](const ExchangeConfig& config) -> std::shared_ptr<IEnhancedExchangeOMS> {
     // TODO: Implement real GRVT_OMS
     std::cout << "[EXCHANGE_FACTORY] Creating GRVT OMS for " << config.name << std::endl;
-    return std::make_shared<MockExchangeOMS>(
-      config.name,
-      config.fill_probability,
-      config.reject_probability,
-      std::chrono::milliseconds(config.response_delay_ms)
-    );
+    
+    // For now, return a simple mock that implements IEnhancedExchangeOMS
+    class MockGRVTOMS : public IEnhancedExchangeOMS {
+    public:
+      MockGRVTOMS(const std::string& name) : name_(name) {}
+      
+      Result<bool> connect() override { return Result<bool>(true); }
+      void disconnect() override {}
+      bool is_connected() const override { return true; }
+      std::string get_exchange_name() const override { return name_; }
+      
+      Result<OrderResponse> send_order(const Order& order) override {
+        OrderResponse response(order.cl_ord_id, "GRVT_" + std::to_string(std::time(nullptr)), "GRVT", order.symbol);
+        response.status = "ACKNOWLEDGED";
+        return Result<OrderResponse>(std::move(response));
+      }
+      
+      Result<bool> cancel_order(const std::string& cl_ord_id, const std::string& exchange_order_id) override {
+        return Result<bool>(true);
+      }
+      
+      Result<bool> modify_order(const std::string& cl_ord_id, const std::string& exchange_order_id,
+                               double new_price, double new_qty) override {
+        return Result<bool>(true);
+      }
+      
+      std::vector<std::string> get_supported_symbols() const override {
+        return {"BTCUSDC", "ETHUSDC"};
+      }
+      
+      Result<std::map<std::string, std::string>> get_health_status() const override {
+        std::map<std::string, std::string> status;
+        status["connected"] = "true";
+        status["exchange"] = "GRVT";
+        return status;
+      }
+      
+      Result<std::map<std::string, double>> get_performance_metrics() const override {
+        std::map<std::string, double> metrics;
+        metrics["orders_sent"] = 0;
+        return metrics;
+      }
+      
+    private:
+      std::string name_;
+    };
+    
+    return std::make_shared<MockGRVTOMS>(config.name);
   });
   
   initialized_ = true;

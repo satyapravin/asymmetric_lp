@@ -1,11 +1,10 @@
-#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest.h"
-#include "../position_server/position_server_factory.hpp"
-#include "../utils/oms/exchange_oms_factory.hpp"
-#include "../trader/market_making_strategy.hpp"
-#include "../trader/models/glft_target.hpp"
-#include "../utils/oms/order.hpp"
-#include "../utils/oms/types.hpp"
+#include "../../position_server/position_server_factory.hpp"
+#include "../../utils/oms/exchange_oms_factory.hpp"
+#include "../../trader/market_making_strategy.hpp"
+#include "../../trader/models/glft_target.hpp"
+#include "../../utils/oms/order.hpp"
+#include "../../utils/oms/types.hpp"
 #include <memory>
 #include <string>
 #include <thread>
@@ -56,7 +55,7 @@ TEST_SUITE("Integration Tests") {
         REQUIRE(mock_oms != nullptr);
         
         // Test connection (mock should work)
-        CHECK(mock_oms->connect() == true);
+        CHECK(mock_oms->connect().is_success());
         CHECK(mock_oms->is_connected() == true);
         
         mock_oms->disconnect();
@@ -146,8 +145,11 @@ TEST_SUITE("Integration Tests") {
         auto mock_oms = std::make_shared<MockExchangeOMS>("TEST_EXCHANGE", 1.0, 0.0, std::chrono::milliseconds(10));
         strategy.register_exchange("TEST_EXCHANGE", mock_oms);
         
+        // Connect the exchange to enable order processing
+        mock_oms->connect();
+        
         std::vector<OrderEvent> events;
-        mock_oms->on_order_event = [&events](const OrderEvent& event) {
+        mock_oms->on_event = [&events](const OrderEvent& event) {
             events.push_back(event);
         };
         
@@ -190,14 +192,18 @@ TEST_SUITE("Integration Tests") {
         strategy.register_exchange("BINANCE", binance_oms);
         strategy.register_exchange("DERIBIT", deribit_oms);
         
+        // Connect exchanges to enable order processing
+        binance_oms->connect();
+        deribit_oms->connect();
+        
         std::vector<OrderEvent> binance_events;
         std::vector<OrderEvent> deribit_events;
         
-        binance_oms->on_order_event = [&binance_events](const OrderEvent& event) {
+        binance_oms->on_event = [&binance_events](const OrderEvent& event) {
             binance_events.push_back(event);
         };
         
-        deribit_oms->on_order_event = [&deribit_events](const OrderEvent& event) {
+        deribit_oms->on_event = [&deribit_events](const OrderEvent& event) {
             deribit_events.push_back(event);
         };
         

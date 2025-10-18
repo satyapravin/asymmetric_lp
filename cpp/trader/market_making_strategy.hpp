@@ -10,7 +10,7 @@
 #include "../utils/mds/orderbook_binary.hpp"
 #include "../utils/pms/position_binary.hpp"
 #include "../utils/zmq/zmq_subscriber.hpp"
-#include "../utils/oms/enhanced_oms.hpp"
+#include "../utils/oms/oms.hpp"
 #include "../utils/oms/mock_exchange_oms.hpp"
 #include "../utils/oms/order_state.hpp"
 #include "models/glft_target.hpp"

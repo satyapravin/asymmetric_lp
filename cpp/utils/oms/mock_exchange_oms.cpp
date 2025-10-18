@@ -2,6 +2,8 @@
 #include <iostream>
 #include <sstream>
 #include <iomanip>
+#include <mutex>
+#include <atomic>
 
 MockExchangeOMS::MockExchangeOMS(const std::string& exchange_name, 
                                double fill_probability,
@@ -19,10 +21,19 @@ MockExchangeOMS::~MockExchangeOMS() {
   disconnect();
 }
 
-bool MockExchangeOMS::send_order(const Order& order) {
+void MockExchangeOMS::send(const Order& order) {
   if (!connected_.load()) {
     std::cout << "[" << exchange_name_ << "] Not connected, rejecting order " << order.cl_ord_id << std::endl;
-    return false;
+    if (on_event) {
+      OrderEvent event;
+      event.cl_ord_id = order.cl_ord_id;
+      event.exch = exchange_name_;
+      event.symbol = order.symbol;
+      event.type = OrderEventType::Reject;
+      event.text = "Not connected";
+      on_event(event);
+    }
+    return;
   }
   
   std::cout << "[" << exchange_name_ << "] Received order: " << order.cl_ord_id 
@@ -44,25 +55,23 @@ bool MockExchangeOMS::send_order(const Order& order) {
     std::this_thread::sleep_for(response_delay_);
     process_order(order);
   }).detach();
-  
-  return true;
 }
 
-bool MockExchangeOMS::cancel_order(const std::string& cl_ord_id, const std::string& exchange_order_id) {
+void MockExchangeOMS::cancel(const std::string& cl_ord_id) {
   if (!connected_.load()) {
     std::cout << "[" << exchange_name_ << "] Not connected, cannot cancel " << cl_ord_id << std::endl;
-    return false;
+    return;
   }
   
-  std::string actual_exchange_order_id = exchange_order_id;
+  std::string actual_exchange_order_id;
   
-  // If no exchange order ID provided, look it up
-  if (actual_exchange_order_id.empty()) {
+  // Look up exchange order ID
+  {
     std::lock_guard<std::mutex> lock(orders_mutex_);
     auto it = cl_ord_to_exch_ord_.find(cl_ord_id);
     if (it == cl_ord_to_exch_ord_.end()) {
       std::cout << "[" << exchange_name_ << "] Order " << cl_ord_id << " not found" << std::endl;
-      return false;
+      return;
     }
     actual_exchange_order_id = it->second;
   }
@@ -78,7 +87,7 @@ bool MockExchangeOMS::cancel_order(const std::string& cl_ord_id, const std::stri
   }
   
   // Send cancel event
-  if (on_order_event) {
+  if (on_event) {
     OrderEvent cancel_event;
     cancel_event.cl_ord_id = cl_ord_id;
     cancel_event.exch = exchange_name_;
@@ -86,46 +95,8 @@ bool MockExchangeOMS::cancel_order(const std::string& cl_ord_id, const std::stri
     cancel_event.timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
       std::chrono::system_clock::now().time_since_epoch()).count();
     
-    on_order_event(cancel_event);
+    on_event(cancel_event);
   }
-  
-  return true;
-}
-
-bool MockExchangeOMS::modify_order(const std::string& cl_ord_id, const std::string& exchange_order_id,
-                                  double new_price, double new_qty) {
-  if (!connected_.load()) {
-    std::cout << "[" << exchange_name_ << "] Not connected, cannot modify " << cl_ord_id << std::endl;
-    return false;
-  }
-  
-  std::string actual_exchange_order_id = exchange_order_id;
-  
-  // If no exchange order ID provided, look it up
-  if (actual_exchange_order_id.empty()) {
-    std::lock_guard<std::mutex> lock(orders_mutex_);
-    auto it = cl_ord_to_exch_ord_.find(cl_ord_id);
-    if (it == cl_ord_to_exch_ord_.end()) {
-      std::cout << "[" << exchange_name_ << "] Order " << cl_ord_id << " not found" << std::endl;
-      return false;
-    }
-    actual_exchange_order_id = it->second;
-  }
-  
-  std::cout << "[" << exchange_name_ << "] Modifying order " << cl_ord_id 
-            << " new_price=" << new_price << " new_qty=" << new_qty << std::endl;
-  
-  // Update order in active orders
-  {
-    std::lock_guard<std::mutex> lock(orders_mutex_);
-    auto it = active_orders_.find(actual_exchange_order_id);
-    if (it != active_orders_.end()) {
-      it->second.price = new_price;
-      it->second.qty = new_qty;
-    }
-  }
-  
-  return true;
 }
 
 bool MockExchangeOMS::connect() {
@@ -157,7 +128,7 @@ void MockExchangeOMS::disconnect() {
     for (const auto& pair : cl_ord_to_exch_ord_) {
       const std::string& cl_ord_id = pair.first;
       
-      if (on_order_event) {
+      if (on_event) {
         OrderEvent cancel_event;
         cancel_event.cl_ord_id = cl_ord_id;
         cancel_event.exch = exchange_name_;
@@ -166,7 +137,7 @@ void MockExchangeOMS::disconnect() {
         cancel_event.timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
           std::chrono::system_clock::now().time_since_epoch()).count();
         
-        on_order_event(cancel_event);
+        on_event(cancel_event);
       }
     }
     
@@ -214,7 +185,7 @@ void MockExchangeOMS::process_order(const Order& order) {
 void MockExchangeOMS::simulate_ack(const Order& order, const std::string& exchange_order_id) {
   std::cout << "[" << exchange_name_ << "] Acknowledging order " << order.cl_ord_id << std::endl;
   
-  if (on_order_event) {
+  if (on_event) {
     OrderEvent ack_event;
     ack_event.cl_ord_id = order.cl_ord_id;
     ack_event.exch = exchange_name_;
@@ -223,7 +194,7 @@ void MockExchangeOMS::simulate_ack(const Order& order, const std::string& exchan
     ack_event.timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
       std::chrono::system_clock::now().time_since_epoch()).count();
     
-    on_order_event(ack_event);
+    on_event(ack_event);
   }
 }
 
@@ -238,7 +209,7 @@ void MockExchangeOMS::simulate_fill(const Order& order, const std::string& excha
   std::uniform_real_distribution<double> price_noise(-0.001, 0.001);
   fill_price *= (1.0 + price_noise(rng_));
   
-  if (on_order_event) {
+  if (on_event) {
     OrderEvent fill_event;
     fill_event.cl_ord_id = order.cl_ord_id;
     fill_event.exch = exchange_name_;
@@ -249,7 +220,7 @@ void MockExchangeOMS::simulate_fill(const Order& order, const std::string& excha
     fill_event.timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
       std::chrono::system_clock::now().time_since_epoch()).count();
     
-    on_order_event(fill_event);
+    on_event(fill_event);
   }
   
   // Remove from active orders
@@ -264,7 +235,7 @@ void MockExchangeOMS::simulate_reject(const Order& order, const std::string& rea
   std::cout << "[" << exchange_name_ << "] Rejecting order " << order.cl_ord_id 
             << " reason: " << reason << std::endl;
   
-  if (on_order_event) {
+  if (on_event) {
     OrderEvent reject_event;
     reject_event.cl_ord_id = order.cl_ord_id;
     reject_event.exch = exchange_name_;
@@ -274,7 +245,7 @@ void MockExchangeOMS::simulate_reject(const Order& order, const std::string& rea
     reject_event.timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
       std::chrono::system_clock::now().time_since_epoch()).count();
     
-    on_order_event(reject_event);
+    on_event(reject_event);
   }
   
   // Remove from active orders
