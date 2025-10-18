@@ -60,9 +60,3 @@ public:
   // Exchange-specific methods
   virtual std::string get_exchange_name() const = 0;
 };
-
-// Exchange handler factory
-class ExchangeHandlerFactory {
-public:
-  static std::unique_ptr<IExchangeHandler> create(const std::string& exchange_name);
-};
