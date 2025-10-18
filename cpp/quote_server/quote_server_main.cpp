@@ -66,10 +66,9 @@ int main(int argc, char** argv) {
   if (!cfg.websocket_url.empty()) {
     quote_server->set_websocket_url(cfg.websocket_url);
   } else {
-    // Use a sensible default for Binance perps combined stream
-    if (exchange == "BINANCE") {
-      quote_server->set_websocket_url("wss://fstream.binance.com/stream");
-    }
+    // Log warning if no websocket URL is provided
+    std::cerr << "[QUOTE_SERVER] Warning: No websocket URL provided for exchange: " << exchange << std::endl;
+    std::cerr << "[QUOTE_SERVER] Please set WEBSOCKET_URL in config or provide exchange-specific websocket URL" << std::endl;
   }
   
   // Configure exchange-specific section (channels, symbols, plugin path, etc.)
@@ -81,7 +80,9 @@ int main(int argc, char** argv) {
       // If plugin path is specified for this exchange, export an env var for factory
       for (const auto& kv : sec.entries) {
         if (kv.first == "PLUGIN_PATH") {
-          if (exchange == "BINANCE") setenv("BINANCE_PLUGIN_PATH", kv.second.c_str(), 1);
+          std::string env_var_name = exchange + "_PLUGIN_PATH";
+          setenv(env_var_name.c_str(), kv.second.c_str(), 1);
+          std::cout << "[QUOTE_SERVER] Set " << env_var_name << "=" << kv.second << std::endl;
         }
       }
     }
