@@ -6,6 +6,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <cstring>
+#include <algorithm>
+#include "../utils/config/config.hpp"
 
 namespace trading_engine {
 
@@ -229,19 +231,39 @@ bool TradingEngineProcess::daemonize() {
 int main(int argc, char* argv[]) {
     std::cout << "=== Trading Engine Process ===" << std::endl;
     
-    if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <exchange_name> [--daemon]" << std::endl;
+    // Load configuration from command line
+    AppConfig cfg;
+    std::string config_file;
+    bool daemon_mode = false;
+    
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if ((arg == "-c" || arg == "--config") && i + 1 < argc) {
+            config_file = argv[++i];
+        } else if (arg.rfind("--config=", 0) == 0) {
+            config_file = arg.substr(std::string("--config=").size());
+        } else if (arg == "--daemon") {
+            daemon_mode = true;
+        }
+    }
+    
+    if (config_file.empty()) {
+        std::cerr << "Usage: " << argv[0] << " -c <path/to/config.ini> [--daemon]" << std::endl;
         std::cerr << "Available exchanges: BINANCE, DERIBIT, GRVT" << std::endl;
         return 1;
     }
+
+    // Read configuration
+    load_from_ini(config_file, cfg);
     
-    std::string exchange_name = argv[1];
-    bool daemon_mode = false;
-    
-    // Check for daemon flag
-    if (argc > 2 && std::strcmp(argv[2], "--daemon") == 0) {
-        daemon_mode = true;
+    // Validate required configuration
+    if (cfg.exchanges_csv.empty()) {
+        std::cerr << "Config missing required key: EXCHANGES" << std::endl;
+        return 1;
     }
+    
+    std::string exchange_name = cfg.exchanges_csv;
+    std::transform(exchange_name.begin(), exchange_name.end(), exchange_name.begin(), ::toupper);
     
     std::cout << "Starting trading engine for exchange: " << exchange_name << std::endl;
     if (daemon_mode) {
