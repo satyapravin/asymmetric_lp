@@ -128,6 +128,21 @@ sed -i 's/your_binance_api_secret/'"$BINANCE_API_SECRET"'/g' config/*binance*.in
 ```
 
 ### **4. Start Trading System**
+
+#### **Option A: Docker Deployment (Recommended)**
+```bash
+# Build and start both components
+docker-compose build
+docker-compose up -d
+
+# View logs for both components
+docker-compose logs -f python-defi cpp-cefi
+
+# Check system status
+docker-compose ps
+```
+
+#### **Option B: Manual Deployment**
 ```bash
 # Start Python DeFi LP (Terminal 1)
 cd python/

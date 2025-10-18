@@ -262,14 +262,43 @@ COLLECT_ORDERBOOK=true
 
 ## Getting Started
 
-### 1. DeFi Setup (Python)
+### Prerequisites
+- Docker and Docker Compose (recommended)
+- Python 3.8+ with pip (for manual deployment)
+- C++17 compiler (GCC 9+ or Clang 10+) (for manual deployment)
+- CMake 3.16+ (for manual deployment)
+
+### Option A: Docker Deployment (Recommended)
+
+```bash
+git clone <repository-url>
+cd asymmetric_lp
+
+# Create environment file
+cp docker/.env.template .env
+# Edit .env with your API keys and configuration
+
+# Build and start both components
+docker-compose build
+docker-compose up -d
+
+# View logs
+docker-compose logs -f python-defi cpp-cefi
+
+# Check system status
+docker-compose ps
+```
+
+### Option B: Manual Deployment
+
+#### 1. DeFi Setup (Python)
 ```bash
 cd python/
 pip install -r requirements.txt
 python main.py --config config.py
 ```
 
-### 2. CeFi Setup (C++)
+#### 2. CeFi Setup (C++)
 ```bash
 cd cpp/
 mkdir build && cd build
@@ -282,7 +311,7 @@ cmake .. && make -j4
 ./bin/trader config/trader.ini &
 ```
 
-### 3. Integration
+#### 3. Integration
 ```bash
 # Start DeFi LP
 python python/main.py

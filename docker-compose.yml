@@ -1,9 +1,56 @@
 version: '3.8'
 
 services:
-  trader:
+  # Python DeFi LP Component
+  python-defi:
     build: .
-    container_name: asymmetric_lp_trader
+    container_name: asymmetric_lp_python_defi
+    restart: unless-stopped
+    
+    environment:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      - DATA_DIR=/data
+      
+      # Python DeFi Configuration
+      - ETHEREUM_RPC_URL=${ETHEREUM_RPC_URL}
+      - WALLET_PRIVATE_KEY=${WALLET_PRIVATE_KEY}
+      - UNISWAP_V3_ROUTER_ADDRESS=${UNISWAP_V3_ROUTER_ADDRESS:-0xE592427A0AEce92De3Edee1F18E0157C05861564}
+      
+      # ZMQ Configuration
+      - ZMQ_PUBLISHER_HOST=0.0.0.0
+      - ZMQ_PUBLISHER_PORT=6000
+    
+    volumes:
+      - ./data:/data
+      - ./logs:/home/trader/logs
+      - ./python:/home/trader/asymmetric_lp/python
+    
+    networks:
+      - trading_network
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "main.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # C++ CeFi Multi-Process Component
+  cpp-cefi:
+    build: .
+    container_name: asymmetric_lp_cpp_cefi
     restart: unless-stopped
     
     environment:
@@ -18,14 +65,22 @@ services:
       - DERIBIT_API_SECRET=${DERIBIT_API_SECRET}
       - GRVT_API_KEY=${GRVT_API_KEY}
       - GRVT_API_SECRET=${GRVT_API_SECRET}
+      
+      # ZMQ Configuration
+      - ZMQ_SUBSCRIBER_HOST=python-defi
+      - ZMQ_SUBSCRIBER_PORT=6000
     
     volumes:
       - ./data:/data
       - ./logs:/home/trader/logs
-      - ./config:/home/trader/config
+      - ./cpp/config:/home/trader/config
     
     networks:
       - trading_network
+    
+    depends_on:
+      python-defi:
+        condition: service_healthy
     
     # Resource limits
     deploy:
