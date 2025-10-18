@@ -196,149 +196,48 @@ std::vector<std::string> ApiEndpointManager::get_validation_errors() const {
 }
 
 void ApiEndpointManager::load_default_binance_config() {
-    ExchangeConfig config;
-    config.exchange_name = "BINANCE";
-    config.version = "v1";
-    config.default_timeout_ms = 5000;
-    config.max_retries = 3;
-    
-    // Futures configuration
-    AssetConfig futures_config;
-    futures_config.type = AssetType::FUTURES;
-    futures_config.name = "futures";
-    futures_config.base_url = "https://fapi.binance.com";
-    futures_config.ws_url = "wss://fstream.binance.com";
-    
-    // Add endpoints
-    futures_config.endpoints["place_order"] = {
-        "place_order", "/fapi/v1/order", HttpMethod::POST, true, true, {}, "Place a new order"
-    };
-    futures_config.endpoints["cancel_order"] = {
-        "cancel_order", "/fapi/v1/order", HttpMethod::DELETE, true, true, {}, "Cancel an order"
-    };
-    futures_config.endpoints["get_order"] = {
-        "get_order", "/fapi/v1/order", HttpMethod::GET, true, true, {}, "Get order status"
-    };
-    futures_config.endpoints["get_open_orders"] = {
-        "get_open_orders", "/fapi/v1/openOrders", HttpMethod::GET, true, true, {}, "Get open orders"
-    };
-    futures_config.endpoints["get_account"] = {
-        "get_account", "/fapi/v2/account", HttpMethod::GET, true, true, {}, "Get account information"
-    };
-    futures_config.endpoints["get_positions"] = {
-        "get_positions", "/fapi/v2/positionRisk", HttpMethod::GET, true, true, {}, "Get position information"
-    };
-    futures_config.endpoints["get_trades"] = {
-        "get_trades", "/fapi/v1/userTrades", HttpMethod::GET, true, true, {}, "Get trade history"
-    };
-    futures_config.endpoints["get_listen_key"] = {
-        "get_listen_key", "/fapi/v1/listenKey", HttpMethod::POST, true, true, {}, "Get listen key for user data stream"
-    };
-    
-    config.assets[AssetType::FUTURES] = futures_config;
-    
-    // Spot configuration
-    AssetConfig spot_config;
-    spot_config.type = AssetType::SPOT;
-    spot_config.name = "spot";
-    spot_config.base_url = "https://api.binance.com";
-    spot_config.ws_url = "wss://stream.binance.com";
-    
-    // Add spot endpoints
-    spot_config.endpoints["place_order"] = {
-        "place_order", "/api/v3/order", HttpMethod::POST, true, true, {}, "Place a new spot order"
-    };
-    spot_config.endpoints["cancel_order"] = {
-        "cancel_order", "/api/v3/order", HttpMethod::DELETE, true, true, {}, "Cancel a spot order"
-    };
-    spot_config.endpoints["get_order"] = {
-        "get_order", "/api/v3/order", HttpMethod::GET, true, true, {}, "Get spot order status"
-    };
-    spot_config.endpoints["get_open_orders"] = {
-        "get_open_orders", "/api/v3/openOrders", HttpMethod::GET, true, true, {}, "Get open spot orders"
-    };
-    spot_config.endpoints["get_account"] = {
-        "get_account", "/api/v3/account", HttpMethod::GET, true, true, {}, "Get spot account information"
-    };
-    
-    config.assets[AssetType::SPOT] = spot_config;
-    
-    exchange_configs_["BINANCE"] = config;
-    std::cout << "[API_CONFIG] Loaded default Binance configuration" << std::endl;
+    // Load from JSON configuration file instead of hardcoded values
+    std::string config_file = "cpp/exchanges/config/api_endpoints.json";
+    if (!load_config(config_file)) {
+        std::cerr << "[API_CONFIG] Failed to load Binance config from JSON, using fallback" << std::endl;
+        // Fallback to minimal configuration
+        ExchangeConfig config;
+        config.exchange_name = "BINANCE";
+        config.version = "v1";
+        config.default_timeout_ms = 5000;
+        config.max_retries = 3;
+        exchange_configs_["BINANCE"] = config;
+    }
 }
 
 void ApiEndpointManager::load_default_deribit_config() {
-    ExchangeConfig config;
-    config.exchange_name = "DERIBIT";
-    config.version = "v2";
-    config.default_timeout_ms = 5000;
-    config.max_retries = 3;
-    
-    // Options configuration
-    AssetConfig options_config;
-    options_config.type = AssetType::OPTIONS;
-    options_config.name = "options";
-    options_config.base_url = "https://www.deribit.com";
-    options_config.ws_url = "wss://www.deribit.com";
-    
-    // Add endpoints
-    options_config.endpoints["place_order"] = {
-        "place_order", "/api/v2/private/buy", HttpMethod::POST, true, true, {}, "Place a new options order"
-    };
-    options_config.endpoints["cancel_order"] = {
-        "cancel_order", "/api/v2/private/cancel", HttpMethod::POST, true, true, {}, "Cancel an options order"
-    };
-    options_config.endpoints["get_order"] = {
-        "get_order", "/api/v2/private/get_order_state", HttpMethod::POST, true, true, {}, "Get options order status"
-    };
-    options_config.endpoints["get_open_orders"] = {
-        "get_open_orders", "/api/v2/private/get_open_orders_by_currency", HttpMethod::POST, true, true, {}, "Get open options orders"
-    };
-    options_config.endpoints["get_account"] = {
-        "get_account", "/api/v2/private/get_account_summary", HttpMethod::POST, true, true, {}, "Get options account information"
-    };
-    
-    config.assets[AssetType::OPTIONS] = options_config;
-    
-    exchange_configs_["DERIBIT"] = config;
-    std::cout << "[API_CONFIG] Loaded default Deribit configuration" << std::endl;
+    // Load from JSON configuration file instead of hardcoded values
+    std::string config_file = "cpp/exchanges/config/api_endpoints.json";
+    if (!load_config(config_file)) {
+        std::cerr << "[API_CONFIG] Failed to load Deribit config from JSON, using fallback" << std::endl;
+        // Fallback to minimal configuration
+        ExchangeConfig config;
+        config.exchange_name = "DERIBIT";
+        config.version = "v2";
+        config.default_timeout_ms = 5000;
+        config.max_retries = 3;
+        exchange_configs_["DERIBIT"] = config;
+    }
 }
 
 void ApiEndpointManager::load_default_grvt_config() {
-    ExchangeConfig config;
-    config.exchange_name = "GRVT";
-    config.version = "v1";
-    config.default_timeout_ms = 5000;
-    config.max_retries = 3;
-    
-    // Perpetual configuration
-    AssetConfig perpetual_config;
-    perpetual_config.type = AssetType::PERPETUAL;
-    perpetual_config.name = "perpetual";
-    perpetual_config.base_url = "https://api.grvt.io";
-    perpetual_config.ws_url = "wss://api.grvt.io";
-    
-    // Add endpoints
-    perpetual_config.endpoints["place_order"] = {
-        "place_order", "/v1/orders", HttpMethod::POST, true, true, {}, "Place a new perpetual order"
-    };
-    perpetual_config.endpoints["cancel_order"] = {
-        "cancel_order", "/v1/orders", HttpMethod::DELETE, true, true, {}, "Cancel a perpetual order"
-    };
-    perpetual_config.endpoints["get_order"] = {
-        "get_order", "/v1/orders", HttpMethod::GET, true, true, {}, "Get perpetual order status"
-    };
-    perpetual_config.endpoints["get_open_orders"] = {
-        "get_open_orders", "/v1/orders/open", HttpMethod::GET, true, true, {}, "Get open perpetual orders"
-    };
-    perpetual_config.endpoints["get_account"] = {
-        "get_account", "/v1/account", HttpMethod::GET, true, true, {}, "Get perpetual account information"
-    };
-    
-    config.assets[AssetType::PERPETUAL] = perpetual_config;
-    
-    exchange_configs_["GRVT"] = config;
-    std::cout << "[API_CONFIG] Loaded default GRVT configuration" << std::endl;
+    // Load from JSON configuration file instead of hardcoded values
+    std::string config_file = "cpp/exchanges/config/api_endpoints.json";
+    if (!load_config(config_file)) {
+        std::cerr << "[API_CONFIG] Failed to load GRVT config from JSON, using fallback" << std::endl;
+        // Fallback to minimal configuration
+        ExchangeConfig config;
+        config.exchange_name = "GRVT";
+        config.version = "v1";
+        config.default_timeout_ms = 5000;
+        config.max_retries = 3;
+        exchange_configs_["GRVT"] = config;
+    }
 }
 
 std::string ApiEndpointManager::asset_type_to_string(AssetType type) {

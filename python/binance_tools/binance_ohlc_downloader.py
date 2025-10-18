@@ -9,12 +9,14 @@ Note: Uses public endpoints; respects basic rate limits with small sleeps.
 import time
 import math
 import argparse
+import os
 from datetime import datetime, timezone
 from typing import List, Dict
 import requests
 import pandas as pd
 
-BASE_URL = "https://api.binance.com"
+# Load BASE_URL from environment variable with fallback
+BASE_URL = os.getenv('BINANCE_API_BASE_URL', 'https://api.binance.com')
 
 
 def ms(dt: datetime) -> int:
