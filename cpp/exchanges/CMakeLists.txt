@@ -66,6 +66,8 @@ add_library(binance_exchange STATIC
     binance/binance_oms.cpp
     binance/binance_data_fetcher.hpp
     binance/binance_data_fetcher.cpp
+    binance/binance_exchange_handler.hpp
+    binance/binance_exchange_handler.cpp
 )
 
 target_include_directories(binance_exchange PUBLIC
@@ -94,6 +96,8 @@ add_library(exchanges SHARED
     binance/binance_oms.cpp
     binance/binance_data_fetcher.hpp
     binance/binance_data_fetcher.cpp
+    binance/binance_exchange_handler.hpp
+    binance/binance_exchange_handler.cpp
     
     # Future exchanges can be added here:
     # deribit/deribit_oms.hpp
@@ -120,7 +124,7 @@ target_link_libraries(exchanges
 set_target_properties(exchanges PROPERTIES
     VERSION 1.0.0
     SOVERSION 1
-    PUBLIC_HEADER "exchange_handler.hpp;binance/binance_oms.hpp;binance/binance_data_fetcher.hpp"
+    PUBLIC_HEADER "exchange_handler.hpp;binance/binance_oms.hpp;binance/binance_data_fetcher.hpp;binance/binance_exchange_handler.hpp"
 )
 
 # Install targets
