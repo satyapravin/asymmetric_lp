@@ -1,21 +1,27 @@
-# Simplified Test CMakeLists.txt
 cmake_minimum_required(VERSION 3.16)
+project(asymmetric_tests)
 
 # Find required packages
 find_package(simdjson REQUIRED)
 
+# Add doctest
+include(FetchContent)
+FetchContent_Declare(
+  doctest
+  GIT_REPOSITORY https://github.com/doctest/doctest.git
+  GIT_TAG v2.4.11
+)
+FetchContent_MakeAvailable(doctest)
+
 # Create a minimal test executable that doesn't depend on the full system
 add_executable(run_tests
-  test_runner_standalone.cpp
-  # Test Configuration Manager (standalone)
-  config/test_config_manager_standalone.cpp
-  # Protocol Buffer Tests (standalone)
-  unit/protobuf/test_protocol_buffers_standalone.cpp
+  basic_tests.cpp
 )
 
 # Link with minimal required libraries
 target_link_libraries(run_tests PRIVATE 
   simdjson::simdjson
+  doctest::doctest
 )
 
 # Include directories
