@@ -76,22 +76,29 @@ Each test suite covers:
    - Initialize/shutdown
    - Connect/disconnect
 
-2. **Core Operations**
+2. **Authentication**
+   - Credential validation
+   - Authentication flow
+   - Token management
+   - Security testing
+
+3. **Core Operations**
    - Subscription management
    - Message sending/receiving
    - Data retrieval/processing
 
-3. **Error Handling**
+4. **Error Handling**
    - Invalid inputs
    - Connection failures
    - Network errors
+   - Authentication failures
 
-4. **Thread Safety**
+5. **Thread Safety**
    - Concurrent operations
    - Callback thread safety
    - Data race prevention
 
-5. **Integration**
+6. **Integration**
    - End-to-end workflows
    - Real-world scenarios
    - Performance testing
@@ -102,11 +109,32 @@ Each test suite covers:
 - **Integration Tests**: Use real API endpoints with test credentials
 - **Performance Tests**: Measure latency, throughput, memory usage
 
+## Authentication Requirements
+
+### Public WebSocket (No Authentication)
+- **quote_server** uses public WebSocket handlers
+- No API credentials required
+- Connects to public market data streams
+- Examples: orderbook, ticker, trades, klines
+
+### Private WebSocket (Authentication Required)
+- **trading_engine** uses private WebSocket handlers
+- Requires valid API key and secret
+- Generates listen key for authentication
+- Examples: user data, order updates, account updates
+
+### HTTP (Authentication Required)
+- **trading_engine** and **position_server** use HTTP handlers
+- Requires valid API key and secret
+- All requests must be signed
+- Examples: order placement, account info, positions
+
 ## Test Data
 
 - **Test Symbols**: BTCUSDT, ETHUSDT, ADAUSDT, DOTUSDT
 - **Test Credentials**: Use environment variables for API keys
 - **Test Scenarios**: Cover typical trading operations
+- **Authentication**: Test both valid and invalid credentials
 
 ## Future Enhancements
 

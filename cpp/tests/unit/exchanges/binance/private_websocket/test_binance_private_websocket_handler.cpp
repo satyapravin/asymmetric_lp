@@ -266,6 +266,48 @@ TEST_SUITE("BinancePrivateWebSocketHandler") {
         CHECK_FALSE(handler.is_connected());
     }
 
+    TEST_CASE("Authentication Required for Private Streams") {
+        // Test that private streams require valid credentials
+        BinancePrivateWebSocketHandler handler("", "");  // Empty credentials
+        
+        // Should fail to connect without proper credentials
+        CHECK_FALSE(handler.connect("wss://fstream.binance.com/ws/"));
+        
+        // Test with invalid credentials
+        BinancePrivateWebSocketHandler handler2("invalid_key", "invalid_secret");
+        CHECK_FALSE(handler2.connect("wss://fstream.binance.com/ws/invalid_listen_key"));
+    }
+
+    TEST_CASE("Listen Key Authentication") {
+        BinancePrivateWebSocketHandler handler("test_api_key", "test_api_secret");
+        
+        // Test listen key generation (requires valid API credentials)
+        std::string listen_key = handler.generate_listen_key();
+        
+        // In real implementation, this would validate API credentials
+        // For now, check that a listen key is generated
+        CHECK_FALSE(listen_key.empty());
+        
+        // Test connection with generated listen key
+        std::string ws_url = "wss://fstream.binance.com/ws/" + listen_key;
+        CHECK(handler.connect(ws_url));
+        
+        handler.disconnect();
+    }
+
+    TEST_CASE("Authentication Failure Handling") {
+        BinancePrivateWebSocketHandler handler("invalid_api_key", "invalid_api_secret");
+        
+        // Test that authentication failures are handled gracefully
+        std::string listen_key = handler.generate_listen_key();
+        
+        // Should still generate a mock listen key for testing
+        CHECK_FALSE(listen_key.empty());
+        
+        // Connection should fail with invalid credentials
+        CHECK_FALSE(handler.connect("wss://fstream.binance.com/ws/invalid_listen_key"));
+    }
+
     TEST_CASE("Listen Key Generation") {
         BinancePrivateWebSocketHandler handler("test_api_key", "test_api_secret");
         

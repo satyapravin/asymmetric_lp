@@ -12,6 +12,7 @@ add_executable(run_tests
   unit/exchanges/binance/private_websocket/test_binance_private_websocket_handler.cpp
   unit/exchanges/binance/http/test_binance_data_fetcher.cpp
   unit/exchanges/binance/http/test_binance_oms.cpp
+  unit/exchanges/binance/test_authentication.cpp
 )
 
 # Link with all required libraries

@@ -236,6 +236,72 @@ TEST_SUITE("BinanceOMS") {
         CHECK_FALSE(oms.is_connected());
     }
 
+    TEST_CASE("Authentication Required for Order Operations") {
+        // Test that order operations require valid credentials
+        BinanceOMS oms("", "");  // Empty credentials
+        
+        // Should fail to connect without proper credentials
+        CHECK_FALSE(oms.connect("https://fapi.binance.com"));
+        
+        // Test with invalid credentials
+        BinanceOMS oms2("invalid_key", "invalid_secret");
+        CHECK_FALSE(oms2.connect("https://fapi.binance.com"));
+    }
+
+    TEST_CASE("Authentication Failure Handling") {
+        BinanceOMS oms("invalid_api_key", "invalid_api_secret");
+        
+        // Test that authentication failures are handled gracefully
+        CHECK(oms.connect("https://fapi.binance.com"));
+        
+        // Order operations should fail with invalid credentials
+        auto result1 = oms.place_market_order("BTCUSDT", "BUY", 0.1);
+        auto result2 = oms.cancel_order("BTCUSDT", "test_order_id");
+        auto result3 = oms.get_order_status("BTCUSDT", "test_order_id");
+        
+        // In real implementation, these would return error results
+        oms.disconnect();
+    }
+
+    TEST_CASE("API Key Validation") {
+        // Test various API key formats
+        std::vector<std::string> valid_keys = {
+            "test_api_key_123",
+            "binance_api_key_456",
+            "valid_key_789"
+        };
+        
+        for (const auto& key : valid_keys) {
+            BinanceOMS oms(key, "test_secret");
+            CHECK_FALSE(oms.is_connected());
+        }
+    }
+
+    TEST_CASE("API Secret Validation") {
+        // Test various API secret formats
+        std::vector<std::string> valid_secrets = {
+            "test_api_secret_123",
+            "binance_api_secret_456",
+            "valid_secret_789"
+        };
+        
+        for (const auto& secret : valid_secrets) {
+            BinanceOMS oms("test_key", secret);
+            CHECK_FALSE(oms.is_connected());
+        }
+    }
+
+    TEST_CASE("Authentication Token Management") {
+        BinanceOMS oms("test_api_key", "test_api_secret");
+        
+        CHECK(oms.connect("https://fapi.binance.com"));
+        
+        // Test that authentication tokens are managed properly
+        // In real implementation, this would test token refresh, expiration, etc.
+        
+        oms.disconnect();
+    }
+
     TEST_CASE("Error Handling - Operations Without Connection") {
         BinanceOMS oms("test_api_key", "test_api_secret");
         

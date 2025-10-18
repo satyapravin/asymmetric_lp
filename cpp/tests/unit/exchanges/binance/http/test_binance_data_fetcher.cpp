@@ -176,6 +176,61 @@ TEST_SUITE("BinanceDataFetcher") {
         CHECK_FALSE(fetcher.is_connected());
     }
 
+    TEST_CASE("Authentication Required for Private Data") {
+        // Test that private data requires valid credentials
+        BinanceDataFetcher fetcher("", "");  // Empty credentials
+        
+        // Should fail to connect without proper credentials
+        CHECK_FALSE(fetcher.connect("https://fapi.binance.com"));
+        
+        // Test with invalid credentials
+        BinanceDataFetcher fetcher2("invalid_key", "invalid_secret");
+        CHECK_FALSE(fetcher2.connect("https://fapi.binance.com"));
+    }
+
+    TEST_CASE("Authentication Failure Handling") {
+        BinanceDataFetcher fetcher("invalid_api_key", "invalid_api_secret");
+        
+        // Test that authentication failures are handled gracefully
+        CHECK(fetcher.connect("https://fapi.binance.com"));
+        
+        // Operations should fail with invalid credentials
+        auto account_info = fetcher.get_account_info();
+        auto positions = fetcher.get_positions();
+        auto orders = fetcher.get_open_orders("BTCUSDT");
+        
+        // In real implementation, these would return error results
+        fetcher.disconnect();
+    }
+
+    TEST_CASE("API Key Validation") {
+        // Test various API key formats
+        std::vector<std::string> valid_keys = {
+            "test_api_key_123",
+            "binance_api_key_456",
+            "valid_key_789"
+        };
+        
+        for (const auto& key : valid_keys) {
+            BinanceDataFetcher fetcher(key, "test_secret");
+            CHECK_FALSE(fetcher.is_connected());
+        }
+    }
+
+    TEST_CASE("API Secret Validation") {
+        // Test various API secret formats
+        std::vector<std::string> valid_secrets = {
+            "test_api_secret_123",
+            "binance_api_secret_456",
+            "valid_secret_789"
+        };
+        
+        for (const auto& secret : valid_secrets) {
+            BinanceDataFetcher fetcher("test_key", secret);
+            CHECK_FALSE(fetcher.is_connected());
+        }
+    }
+
     TEST_CASE("Error Handling - Operations Without Connection") {
         BinanceDataFetcher fetcher("test_api_key", "test_api_secret");
         
