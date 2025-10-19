@@ -123,6 +123,8 @@ void TestConfigManager::parse_section(const std::string& section_name, const std
         config.exchange_name = "GRVT";
         config.api_key = expand_variables(entries.at("API_KEY"));
         config.api_secret = expand_variables(entries.at("API_SECRET"));
+        config.session_cookie = expand_variables(entries.at("SESSION_COOKIE"));
+        config.account_id = expand_variables(entries.at("ACCOUNT_ID"));
         config.public_ws_url = expand_variables(entries.at("PUBLIC_WS_URL"));
         config.private_ws_url = expand_variables(entries.at("PRIVATE_WS_URL"));
         config.http_url = expand_variables(entries.at("HTTP_URL"));
@@ -234,6 +236,8 @@ ExchangeTestConfig TestConfigManager::get_exchange_config(const std::string& exc
     default_config.exchange_name = exchange_name;
     default_config.api_key = "test_api_key";
     default_config.api_secret = "test_api_secret";
+    default_config.session_cookie = "test_session_cookie";
+    default_config.account_id = "test_account_id";
     default_config.public_ws_url = "wss://test.com/stream";
     default_config.private_ws_url = "wss://test.com";
     default_config.http_url = "https://test.com";

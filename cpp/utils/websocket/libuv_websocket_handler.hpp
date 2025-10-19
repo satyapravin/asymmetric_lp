@@ -61,9 +61,20 @@ private:
     void send_ping();
     void attempt_reconnect();
     void update_state(WebSocketState new_state);
+    bool parse_url(const std::string& url, std::string& host, int& port, std::string& path, bool& ssl);
+    bool perform_websocket_handshake();
+    std::string generate_websocket_key();
+    std::string base64_encode(const std::vector<uint8_t>& data);
+    void process_received_data(const std::string& data);
+    void send_pong(const std::string& payload);
+    std::vector<uint8_t> serialize_frame(const WebSocketFrame& frame);
     
     // Configuration
     std::string url_;
+    std::string host_;
+    int port_;
+    std::string path_;
+    bool ssl_;
     int ping_interval_seconds_{30};
     int timeout_seconds_{60};
     int reconnect_attempts_{5};
@@ -90,7 +101,7 @@ private:
 };
 
 // Factory implementation
-std::unique_ptr<IWebSocketHandler> WebSocketHandlerFactory::create(WebSocketHandlerFactory::Type type) {
+inline std::unique_ptr<IWebSocketHandler> WebSocketHandlerFactory::create(WebSocketHandlerFactory::Type type) {
     switch (type) {
         case WebSocketHandlerFactory::Type::LIBUV:
             return std::make_unique<LibuvWebSocketHandler>();
@@ -103,7 +114,7 @@ std::unique_ptr<IWebSocketHandler> WebSocketHandlerFactory::create(WebSocketHand
     }
 }
 
-std::unique_ptr<IWebSocketHandler> WebSocketHandlerFactory::create(const std::string& type_name) {
+inline std::unique_ptr<IWebSocketHandler> WebSocketHandlerFactory::create(const std::string& type_name) {
     if (type_name == "LIBUV" || type_name == "libuv") {
         return create(Type::LIBUV);
     } else if (type_name == "WEBSOCKETPP" || type_name == "websocketpp") {

@@ -9,6 +9,9 @@
 
 #ifdef CURL_FOUND
 #include <curl/curl.h>
+#else
+// Forward declaration for when CURL is not available
+struct CURL;
 #endif
 
 // CURL-based HTTP handler implementation

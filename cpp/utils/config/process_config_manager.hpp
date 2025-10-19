@@ -141,7 +141,7 @@ public:
 
 private:
     std::map<std::string, std::map<std::string, ConfigValue>> config_data_;
-    std::vector<std::string> validation_errors_;
+    mutable std::vector<std::string> validation_errors_;
     
     // Parsing helpers
     std::string trim(const std::string& str) const;

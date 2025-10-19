@@ -13,6 +13,8 @@ struct ExchangeTestConfig {
     std::string exchange_name;
     std::string api_key;
     std::string api_secret;
+    std::string session_cookie;  // For GRVT
+    std::string account_id;       // For GRVT
     std::string public_ws_url;
     std::string private_ws_url;
     std::string http_url;

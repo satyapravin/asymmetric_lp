@@ -108,9 +108,10 @@ endif()
 
 add_subdirectory(utils)
 add_subdirectory(exchanges)
+add_subdirectory(strategies)
 add_subdirectory(trading_engine)
 add_subdirectory(trader)
-add_subdirectory(quote_server)
+add_subdirectory(market_server)
 add_subdirectory(position_server)
 add_subdirectory(tests)
 
@@ -119,16 +120,12 @@ find_package(simdjson REQUIRED)
 # Test executables
 
 if(Protobuf_FOUND)
-  target_link_libraries(market_maker PRIVATE proto_msgs)
-  target_link_libraries(quote_server PRIVATE proto_msgs)
-  target_link_libraries(exec_handler PRIVATE proto_msgs)
+  target_link_libraries(market_server PRIVATE proto_msgs)
   target_link_libraries(position_server PRIVATE proto_msgs)
   target_link_libraries(trader PRIVATE proto_msgs)
-  target_link_libraries(production_trader PRIVATE proto_msgs)
-  target_compile_definitions(market_maker PRIVATE PROTO_ENABLED)
-  target_compile_definitions(quote_server PRIVATE PROTO_ENABLED)
-  target_compile_definitions(exec_handler PRIVATE PROTO_ENABLED)
+  target_compile_definitions(market_server PRIVATE PROTO_ENABLED)
   target_compile_definitions(position_server PRIVATE PROTO_ENABLED)
+  target_compile_definitions(trader PRIVATE PROTO_ENABLED)
 endif()
 
 

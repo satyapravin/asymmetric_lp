@@ -12,17 +12,13 @@ add_library(utils STATIC
   mds/market_data_normalizer.cpp
   mds/parser_factory.cpp
   oms/order_binary.cpp
-  oms/order_manager.cpp
-  oms/mock_exchange_oms.cpp
-  oms/exchange_oms_factory.cpp
   # Exchange-specific components moved to exchanges/ folder
   # oms/exchange_monitor.cpp  # Temporarily disabled due to atomic copy issues
   pms/position_binary.cpp
-  pms/position_feed.cpp
-  pms/position_feed_factory.cpp
   handlers/message_handler.cpp
   handlers/message_handler_manager.cpp
   config/config_manager.cpp
+  config/process_config_manager.cpp
   logging/logger.cpp
   # persistence/database.cpp  # Removed - using exchange-specific data fetchers
 )

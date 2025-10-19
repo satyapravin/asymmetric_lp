@@ -1,11 +1,6 @@
 # Trading Engine CMakeLists.txt
 cmake_minimum_required(VERSION 3.15)
 
-# Find required packages
-find_package(OpenSSL REQUIRED)
-find_package(jsoncpp REQUIRED)
-find_package(ZeroMQ REQUIRED)
-
 # Trading Engine executable
 add_executable(trading_engine
     main.cpp
@@ -21,10 +16,7 @@ target_include_directories(trading_engine PRIVATE
 target_link_libraries(trading_engine
     exchanges
     utils
-    OpenSSL::SSL
-    OpenSSL::Crypto
-    jsoncpp_lib
-    ${ZeroMQ_LIBRARIES}
+    proto_msgs
 )
 
 # Set executable properties

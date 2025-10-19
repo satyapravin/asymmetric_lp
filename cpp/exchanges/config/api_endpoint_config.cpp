@@ -28,6 +28,11 @@ bool ApiEndpointManager::load_config(const std::string& config_file) {
         return false;
     }
     
+    // Handle production config structure with "exchanges" wrapper
+    if (root.isMember("exchanges")) {
+        return load_config_from_json(root["exchanges"]);
+    }
+    
     return load_config_from_json(root);
 }
 
@@ -51,15 +56,45 @@ void ApiEndpointManager::set_exchange_config(const std::string& exchange_name, c
 }
 
 ExchangeConfig ApiEndpointManager::get_exchange_config(const std::string& exchange_name) const {
+    // Try exact match first
     auto it = exchange_configs_.find(exchange_name);
     if (it != exchange_configs_.end()) {
         return it->second;
     }
+    
+    // Try case-insensitive match
+    std::string lower_name = exchange_name;
+    std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(), ::tolower);
+    
+    for (const auto& [key, config] : exchange_configs_) {
+        std::string lower_key = key;
+        std::transform(lower_key.begin(), lower_key.end(), lower_key.begin(), ::tolower);
+        if (lower_key == lower_name) {
+            return config;
+        }
+    }
+    
     return ExchangeConfig{};
 }
 
 bool ApiEndpointManager::has_exchange(const std::string& exchange_name) const {
     return exchange_configs_.find(exchange_name) != exchange_configs_.end();
+}
+
+std::string ApiEndpointManager::get_rest_api_url(const std::string& exchange_name, 
+                                                AssetType asset_type) const {
+    auto exchange_config = get_exchange_config(exchange_name);
+    if (exchange_config.exchange_name.empty()) {
+        return "";
+    }
+    
+    auto asset_it = exchange_config.assets.find(asset_type);
+    if (asset_it == exchange_config.assets.end()) {
+        return "";
+    }
+    
+    const auto& asset_config = asset_it->second;
+    return asset_config.urls.rest_api;
 }
 
 std::string ApiEndpointManager::get_endpoint_url(const std::string& exchange_name, 
@@ -81,12 +116,12 @@ std::string ApiEndpointManager::get_endpoint_url(const std::string& exchange_nam
         return "";
     }
     
-    return build_url(asset_config.base_url, endpoint_it->second.path);
+    return build_url(asset_config.urls.rest_api, endpoint_it->second.path);
 }
 
-EndpointConfig ApiEndpointManager::get_endpoint_config(const std::string& exchange_name,
-                                                     AssetType asset_type,
-                                                     const std::string& endpoint_name) const {
+EndpointConfig ApiEndpointManager::get_endpoint_config(const std::string& exchange_name, 
+                                                       AssetType asset_type, 
+                                                       const std::string& endpoint_name) const {
     auto exchange_config = get_exchange_config(exchange_name);
     if (exchange_config.exchange_name.empty()) {
         return EndpointConfig{};
@@ -104,6 +139,71 @@ EndpointConfig ApiEndpointManager::get_endpoint_config(const std::string& exchan
     }
     
     return endpoint_it->second;
+}
+
+std::string ApiEndpointManager::get_websocket_url(const std::string& exchange_name, 
+                                                  AssetType asset_type, 
+                                                  const std::string& websocket_type) const {
+    auto exchange_config = get_exchange_config(exchange_name);
+    if (exchange_config.exchange_name.empty()) {
+        return "";
+    }
+    
+    auto asset_it = exchange_config.assets.find(asset_type);
+    if (asset_it == exchange_config.assets.end()) {
+        return "";
+    }
+    
+    const auto& asset_config = asset_it->second;
+    
+    if (websocket_type == "public") {
+        return asset_config.urls.websocket_public;
+    } else if (websocket_type == "private") {
+        return asset_config.urls.websocket_private;
+    } else if (websocket_type == "market_data") {
+        return asset_config.urls.websocket_market_data;
+    } else if (websocket_type == "user_data") {
+        return asset_config.urls.websocket_user_data;
+    }
+    
+    return "";
+}
+
+std::string ApiEndpointManager::get_websocket_channel_name(const std::string& exchange_name, 
+                                                          AssetType asset_type, 
+                                                          const std::string& channel_type) const {
+    auto exchange_config = get_exchange_config(exchange_name);
+    if (exchange_config.exchange_name.empty()) {
+        return "";
+    }
+    
+    auto asset_it = exchange_config.assets.find(asset_type);
+    if (asset_it == exchange_config.assets.end()) {
+        return "";
+    }
+    
+    const auto& asset_config = asset_it->second;
+    
+    if (channel_type == "orderbook") {
+        return asset_config.websocket_channels.orderbook;
+    } else if (channel_type == "trades") {
+        return asset_config.websocket_channels.trades;
+    } else if (channel_type == "ticker") {
+        return asset_config.websocket_channels.ticker;
+    } else if (channel_type == "user_data") {
+        return asset_config.websocket_channels.user_data;
+    }
+    
+    return "";
+}
+
+AuthConfig ApiEndpointManager::get_authentication_config(const std::string& exchange_name) const {
+    auto exchange_config = get_exchange_config(exchange_name);
+    if (exchange_config.exchange_name.empty()) {
+        return AuthConfig{};
+    }
+    
+    return exchange_config.authentication;
 }
 
 AssetConfig ApiEndpointManager::get_asset_config(const std::string& exchange_name, AssetType asset_type) const {
@@ -167,7 +267,7 @@ std::string ApiEndpointManager::build_websocket_url(const std::string& base_url,
     return url;
 }
 
-bool ApiEndpointManager::validate_config(const ExchangeConfig& config) const {
+bool ApiEndpointManager::validate_config(const ExchangeConfig& config) {
     validation_errors_.clear();
     
     if (config.exchange_name.empty()) {
@@ -179,7 +279,7 @@ bool ApiEndpointManager::validate_config(const ExchangeConfig& config) const {
     }
     
     for (const auto& [asset_type, asset_config] : config.assets) {
-        if (asset_config.base_url.empty()) {
+        if (asset_config.urls.rest_api.empty()) {
             validation_errors_.push_back("Base URL is required for asset type: " + asset_type_to_string(asset_type));
         }
         
@@ -252,11 +352,14 @@ std::string ApiEndpointManager::asset_type_to_string(AssetType type) {
 }
 
 AssetType ApiEndpointManager::string_to_asset_type(const std::string& type) {
-    if (type == "spot") return AssetType::SPOT;
-    if (type == "futures") return AssetType::FUTURES;
-    if (type == "options") return AssetType::OPTIONS;
-    if (type == "margin") return AssetType::MARGIN;
-    if (type == "perpetual") return AssetType::PERPETUAL;
+    std::string lower_type = type;
+    std::transform(lower_type.begin(), lower_type.end(), lower_type.begin(), ::tolower);
+    
+    if (lower_type == "spot") return AssetType::SPOT;
+    if (lower_type == "futures") return AssetType::FUTURES;
+    if (lower_type == "options") return AssetType::OPTIONS;
+    if (lower_type == "margin") return AssetType::MARGIN;
+    if (lower_type == "perpetual") return AssetType::PERPETUAL;
     return AssetType::SPOT; // Default
 }
 
@@ -311,13 +414,50 @@ ExchangeConfig ApiEndpointManager::parse_exchange_config(const Json::Value& json
         }
     }
     
+    // Parse authentication configuration
+    if (json.isMember("authentication")) {
+        const Json::Value& auth = json["authentication"];
+        config.authentication.api_key_header = auth.get("api_key_header", "").asString();
+        config.authentication.signature_param = auth.get("signature_param", "").asString();
+        config.authentication.timestamp_param = auth.get("timestamp_param", "").asString();
+        config.authentication.session_cookie = auth.get("session_cookie", "").asString();
+        config.authentication.account_id_header = auth.get("account_id_header", "").asString();
+        config.authentication.client_id = auth.get("client_id", "").asString();
+        config.authentication.client_secret = auth.get("client_secret", "").asString();
+        config.authentication.grant_type = auth.get("grant_type", "").asString();
+    }
+    
     return config;
 }
 
 AssetConfig ApiEndpointManager::parse_asset_config(const Json::Value& json) const {
     AssetConfig config;
-    config.base_url = json.get("base_url", "").asString();
-    config.ws_url = json.get("ws_url", "").asString();
+    
+    // Parse URLs - they can be either directly in the asset config or nested under "urls"
+    if (json.isMember("urls")) {
+        const Json::Value& urls = json["urls"];
+        config.urls.rest_api = urls.get("rest_api", "").asString();
+        config.urls.websocket_public = urls.get("websocket_public", "").asString();
+        config.urls.websocket_private = urls.get("websocket_private", "").asString();
+        config.urls.websocket_market_data = urls.get("websocket_market_data", "").asString();
+        config.urls.websocket_user_data = urls.get("websocket_user_data", "").asString();
+    } else {
+        // Fallback to direct fields for backward compatibility
+        config.urls.rest_api = json.get("rest_api", "").asString();
+        config.urls.websocket_public = json.get("websocket_public", "").asString();
+        config.urls.websocket_private = json.get("websocket_private", "").asString();
+        config.urls.websocket_market_data = json.get("websocket_market_data", "").asString();
+        config.urls.websocket_user_data = json.get("websocket_user_data", "").asString();
+    }
+    
+    // Parse websocket channels
+    if (json.isMember("websocket_channels")) {
+        const Json::Value& channels = json["websocket_channels"];
+        config.websocket_channels.orderbook = channels.get("orderbook", "").asString();
+        config.websocket_channels.trades = channels.get("trades", "").asString();
+        config.websocket_channels.ticker = channels.get("ticker", "").asString();
+        config.websocket_channels.user_data = channels.get("user_data", "").asString();
+    }
     
     // Parse endpoints
     if (json.isMember("endpoints")) {

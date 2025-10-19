@@ -14,6 +14,27 @@ struct WebSocketMessage {
     uint64_t timestamp_us{0};
 };
 
+// WebSocket frame structure for internal use
+struct WebSocketFrame {
+    bool fin{true};
+    bool rsv1{false};
+    bool rsv2{false};
+    bool rsv3{false};
+    uint8_t opcode{0};
+    bool mask{false};
+    uint64_t payload_length{0};
+    std::vector<uint8_t> masking_key;
+    std::vector<uint8_t> payload;
+    
+    // Opcode constants
+    static const uint8_t OPCODE_CONTINUATION = 0x0;
+    static const uint8_t OPCODE_TEXT = 0x1;
+    static const uint8_t OPCODE_BINARY = 0x2;
+    static const uint8_t OPCODE_CLOSE = 0x8;
+    static const uint8_t OPCODE_PING = 0x9;
+    static const uint8_t OPCODE_PONG = 0xA;
+};
+
 // WebSocket event callbacks
 using WebSocketMessageCallback = std::function<void(const WebSocketMessage& message)>;
 using WebSocketErrorCallback = std::function<void(const std::string& error)>;

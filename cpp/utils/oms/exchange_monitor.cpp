@@ -67,51 +67,20 @@ void ExchangeMonitor::record_connection_event(const std::string& exchange, bool 
   update_health_status(exchange);
 }
 
-ExchangeMetrics ExchangeMonitor::get_metrics(const std::string& exchange) const {
+ExchangeMetrics::CopyableMetrics ExchangeMonitor::get_metrics(const std::string& exchange) const {
   std::lock_guard<std::mutex> lock(metrics_mutex_);
   auto it = exchange_metrics_.find(exchange);
   if (it != exchange_metrics_.end()) {
-    // Create a copy manually since atomic members can't be copied
-    ExchangeMetrics result;
-    result.total_orders.store(it->second.total_orders.load());
-    result.successful_orders.store(it->second.successful_orders.load());
-    result.failed_orders.store(it->second.failed_orders.load());
-    result.cancelled_orders.store(it->second.cancelled_orders.load());
-    result.rejected_orders.store(it->second.rejected_orders.load());
-    result.filled_orders.store(it->second.filled_orders.load());
-    result.total_volume.store(it->second.total_volume.load());
-    result.filled_volume.store(it->second.filled_volume.load());
-    result.total_latency_us.store(it->second.total_latency_us.load());
-    result.latency_samples.store(it->second.latency_samples.load());
-    result.connection_attempts.store(it->second.connection_attempts.load());
-    result.connection_failures.store(it->second.connection_failures.load());
-    result.disconnections.store(it->second.disconnections.load());
-    result.start_time = it->second.start_time;
-    return std::move(result);
+    return ExchangeMetrics::CopyableMetrics(it->second);
   }
-  return ExchangeMetrics{};
+  return ExchangeMetrics::CopyableMetrics(ExchangeMetrics{});
 }
 
-std::map<std::string, ExchangeMetrics> ExchangeMonitor::get_all_metrics() const {
+std::map<std::string, ExchangeMetrics::CopyableMetrics> ExchangeMonitor::get_all_metrics() const {
   std::lock_guard<std::mutex> lock(metrics_mutex_);
-  std::map<std::string, ExchangeMetrics> result;
+  std::map<std::string, ExchangeMetrics::CopyableMetrics> result;
   for (const auto& [exchange, metrics] : exchange_metrics_) {
-    ExchangeMetrics copy;
-    copy.total_orders.store(metrics.total_orders.load());
-    copy.successful_orders.store(metrics.successful_orders.load());
-    copy.failed_orders.store(metrics.failed_orders.load());
-    copy.cancelled_orders.store(metrics.cancelled_orders.load());
-    copy.rejected_orders.store(metrics.rejected_orders.load());
-    copy.filled_orders.store(metrics.filled_orders.load());
-    copy.total_volume.store(metrics.total_volume.load());
-    copy.filled_volume.store(metrics.filled_volume.load());
-    copy.total_latency_us.store(metrics.total_latency_us.load());
-    copy.latency_samples.store(metrics.latency_samples.load());
-    copy.connection_attempts.store(metrics.connection_attempts.load());
-    copy.connection_failures.store(metrics.connection_failures.load());
-    copy.disconnections.store(metrics.disconnections.load());
-    copy.start_time = metrics.start_time;
-    result[exchange] = std::move(copy);
+    result[exchange] = ExchangeMetrics::CopyableMetrics(metrics);
   }
   return result;
 }
@@ -144,7 +113,7 @@ void ExchangeMonitor::print_metrics_summary() const {
   auto all_metrics = get_all_metrics();
   for (const auto& [exchange, metrics] : all_metrics) {
     std::cout << "\n[" << exchange << "]" << std::endl;
-    std::cout << "  Total Orders: " << metrics.total_orders.load() << std::endl;
+    std::cout << "  Total Orders: " << metrics.total_orders << std::endl;
     std::cout << "  Success Rate: " << std::fixed << std::setprecision(2) 
               << metrics.get_success_rate() * 100 << "%" << std::endl;
     std::cout << "  Fill Rate: " << std::fixed << std::setprecision(2) 
@@ -152,9 +121,9 @@ void ExchangeMonitor::print_metrics_summary() const {
     std::cout << "  Avg Latency: " << std::fixed << std::setprecision(2) 
               << metrics.get_avg_latency_us() / 1000.0 << " ms" << std::endl;
     std::cout << "  Total Volume: " << std::fixed << std::setprecision(2) 
-              << metrics.total_volume.load() << std::endl;
+              << metrics.total_volume << std::endl;
     std::cout << "  Filled Volume: " << std::fixed << std::setprecision(2) 
-              << metrics.filled_volume.load() << std::endl;
+              << metrics.filled_volume << std::endl;
     std::cout << "  Uptime: " << std::fixed << std::setprecision(1) 
               << metrics.get_uptime_seconds() << " seconds" << std::endl;
   }

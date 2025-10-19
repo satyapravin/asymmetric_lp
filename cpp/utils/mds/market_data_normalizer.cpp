@@ -64,11 +64,9 @@ bool BinanceParser::parse_message(const std::string& raw_msg,
     bids.clear();
     asks.clear();
     
-    // For now, create mock data
-    bids.emplace_back(2000.0, 1.0);
-    bids.emplace_back(1999.0, 2.0);
-    asks.emplace_back(2001.0, 1.0);
-    asks.emplace_back(2002.0, 2.0);
+    // TODO: Implement proper JSON array parsing for bids and asks
+    // This is a placeholder - real implementation would parse the JSON arrays
+    return false; // Return false until proper parsing is implemented
     
     return true;
   } catch (...) {
@@ -119,46 +117,4 @@ bool CoinbaseParser::parse_message(const std::string& raw_msg,
   } catch (...) {
     return false;
   }
-}
-
-// Mock parser for testing
-MockParser::MockParser(const std::string& symbol, double base_price)
-    : mock_symbol_(symbol), base_price_(base_price) {}
-
-bool MockParser::parse_message(const std::string& raw_msg, 
-                             std::string& symbol,
-                             std::vector<std::pair<double, double>>& bids,
-                             std::vector<std::pair<double, double>>& asks,
-                             uint64_t& timestamp_us) {
-  symbol = mock_symbol_;
-  
-  // Generate timestamp
-  timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
-      std::chrono::system_clock::now().time_since_epoch()).count();
-  
-  // Add some price movement
-  static std::random_device rd;
-  static std::mt19937 gen(rd());
-  static std::uniform_real_distribution<> price_dist(-0.001, 0.001);
-  
-  double current_price = base_price_ * (1.0 + price_dist(gen));
-  
-  bids.clear();
-  asks.clear();
-  
-  // Generate realistic orderbook
-  for (int i = 0; i < 10; ++i) {
-    double bid_price = current_price * (1.0 - (i + 1) * 0.0005);
-    double ask_price = current_price * (1.0 + (i + 1) * 0.0005);
-    
-    // Decreasing quantities with depth
-    double bid_qty = 10.0 / (i + 1);
-    double ask_qty = 10.0 / (i + 1);
-    
-    bids.emplace_back(bid_price, bid_qty);
-    asks.emplace_back(ask_price, ask_qty);
-  }
-  
-  sequence_++;
-  return true;
 }

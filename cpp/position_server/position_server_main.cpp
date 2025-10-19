@@ -5,14 +5,11 @@
 #include <signal.h>
 #include <atomic>
 #include <algorithm>
-#include "../utils/config/config.hpp"
+#include "../utils/config/process_config_manager.hpp"
 #include "../utils/zmq/zmq_publisher.hpp"
-#include "../utils/pms/position_binary.hpp"
-#include "../utils/pms/position_feed.hpp"
-#include "position_server_factory.hpp"
-#ifdef PROTO_ENABLED
-#include "position.pb.h"
-#endif
+#include "../exchanges/i_exchange_pms.hpp"
+#include "../exchanges/pms_factory.hpp"
+#include "../proto/position.pb.h"
 
 // Global flag for clean shutdown
 std::atomic<bool> g_running{true};
@@ -23,23 +20,13 @@ void signal_handler(int signal) {
   g_running.store(false);
 }
 
-static std::vector<char> build_mock_position_binary(const std::string& symbol,
-                                                   const std::string& exch,
-                                                   double qty,
-                                                   double avg_price) {
-  std::vector<char> buffer(PositionBinaryHelper::POSITION_SIZE);
-  
-  PositionBinaryHelper::serialize_position(symbol, exch, qty, avg_price, buffer.data());
-  return buffer;
-}
 
 int main(int argc, char** argv) {
   // Set up signal handlers
   signal(SIGINT, signal_handler);
   signal(SIGTERM, signal_handler);
   
-  // Load configuration from command line
-  AppConfig cfg;
+  // Parse command line arguments
   std::string config_file;
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -49,83 +36,67 @@ int main(int argc, char** argv) {
       config_file = arg.substr(std::string("--config=").size());
     }
   }
+  
   if (config_file.empty()) {
-    std::cerr << "Usage: position_server -c <path/to/config.ini>" << std::endl;
+    std::cerr << "=== Position Server Process ===" << std::endl;
+    std::cerr << "Usage: ./position_server -c <path/to/config.ini>" << std::endl;
+    std::cerr << "Example: ./position_server -c /etc/position_server/position_server_binance.ini" << std::endl;
     return 1;
   }
 
-  // Read configuration
-  load_from_ini(config_file, cfg);
-  
-  // Validate required configuration
-  if (cfg.exchanges_csv.empty() || cfg.pos_pub_endpoint.empty()) {
-    std::cerr << "Config missing required keys. Need EXCHANGES, POS_PUB_ENDPOINT." << std::endl;
+  // Load configuration
+  config::ProcessConfigManager config;
+  if (!config.load_config(config_file)) {
+    std::cerr << "Failed to load configuration from: " << config_file << std::endl;
     return 1;
   }
   
-  std::cout << "Starting Position Server for exchange: " << cfg.exchanges_csv << std::endl;
+  // Get exchange name and credentials
+  std::string exchange_name = config.get_string("process", "exchange_name", "binance");
+  std::string api_key = config.get_string("exchange", "api_key", "");
+  std::string api_secret = config.get_string("exchange", "api_secret", "");
   
-  // Position publisher endpoint
-  ZmqPublisher pub(cfg.pos_pub_endpoint);
-  std::cout << "Position server publishing on " << cfg.pos_pub_endpoint << std::endl;
-
-  // Create position feed based on configuration
-  std::string exchange_type = cfg.exchanges_csv;
-  std::string api_key = "";
-  std::string api_secret = "";
+  // Get ZMQ publisher endpoint
+  std::string position_pub_endpoint = config.get_string("zmq", "position_events_pub_endpoint", "tcp://127.0.0.1:6003");
   
-  // Get API credentials from exchange-specific section
-  for (const auto& sec : cfg.sections) {
-    std::string sec_upper = sec.name;
-    std::transform(sec_upper.begin(), sec_upper.end(), sec_upper.begin(), ::toupper);
-    if (sec_upper == exchange_type) {
-      for (const auto& [k, v] : sec.entries) {
-        if (k == "API_KEY") api_key = v;
-        else if (k == "API_SECRET") api_secret = v;
-      }
-    }
+  std::cout << "Starting Position Server for exchange: " << exchange_name << std::endl;
+  std::cout << "Position server publishing on " << position_pub_endpoint << std::endl;
+  
+  // Create ZMQ publisher
+  ZmqPublisher publisher(position_pub_endpoint);
+  
+  // Create exchange-specific PMS using factory
+  auto pms = PMSFactory::create_pms(exchange_name);
+  if (!pms) {
+    std::cerr << "Failed to create PMS for exchange: " << exchange_name << std::endl;
+    return 1;
   }
   
-  // Fallback to environment variables if not in config
-  if (api_key.empty() && const char* env_key = std::getenv("POSITION_API_KEY")) {
-    api_key = env_key;
-  }
-  if (api_secret.empty() && const char* env_secret = std::getenv("POSITION_API_SECRET")) {
-    api_secret = env_secret;
-  }
-  
-  auto position_feed = PositionServerFactory::create_from_string(exchange_type, api_key, api_secret);
+  // Set authentication credentials
+  pms->set_auth_credentials(api_key, api_secret);
   
   // Set up position update callback
-  position_feed->on_position_update = [&pub, &cfg](const std::string& symbol,
-                                                   const std::string& exch,
-                                                   double qty,
-                                                   double avg_price) {
-#ifdef PROTO_ENABLED
-    proto::PositionUpdate upd;
-    upd.set_exch(exch);
-    upd.set_symbol(symbol);
-    upd.set_qty(qty);
-    upd.set_avg_price(avg_price);
-    upd.set_timestamp_us(0);
-    std::string out;
-    upd.SerializeToString(&out);
-    std::string topic = "pos." + exch + "." + symbol;
-    pub.publish(topic, out);
-#else
-    auto binary_data = build_mock_position_binary(symbol, exch, qty, avg_price);
-    std::string topic = "pos." + exch + "." + symbol;
-    pub.publish(topic, std::string(binary_data.data(), binary_data.size()));
-#endif
+  pms->set_position_update_callback([&publisher, &exchange_name](const proto::PositionUpdate& position) {
+    // Serialize position update
+    std::string serialized_position;
+    if (!position.SerializeToString(&serialized_position)) {
+      std::cerr << "[POSITION_SERVER] Failed to serialize position update" << std::endl;
+      return;
+    }
     
-    std::cout << "[POSITION] " << exch << " " << symbol 
-              << " qty=" << qty << " avg_price=" << avg_price << std::endl;
-  };
+    // Create topic: pos.<exchange>.<symbol>
+    std::string topic = "pos." + exchange_name + "." + position.symbol();
+    
+    // Publish to ZMQ
+    publisher.publish(topic, serialized_position);
+    
+    std::cout << "[POSITION] " << exchange_name << " " << position.symbol() 
+              << " qty=" << position.qty() << " avg_price=" << position.avg_price() << std::endl;
+  });
   
-  // Connect to position feed
-  std::string account = "MM_ACCOUNT"; // Could be from config
-  if (!position_feed->connect(account)) {
-    std::cerr << "Failed to connect to position feed" << std::endl;
+  // Connect to exchange
+  if (!pms->connect()) {
+    std::cerr << "Failed to connect to exchange: " << exchange_name << std::endl;
     return 1;
   }
   
@@ -134,9 +105,20 @@ int main(int argc, char** argv) {
   // Keep running until signal received
   while (g_running.load()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    
+    // Check connection health
+    if (!pms->is_connected()) {
+      std::cerr << "[POSITION_SERVER] Connection lost, attempting to reconnect..." << std::endl;
+      pms->disconnect();
+      std::this_thread::sleep_for(std::chrono::seconds(5));
+      if (!pms->connect()) {
+        std::cerr << "[POSITION_SERVER] Reconnection failed" << std::endl;
+      }
+    }
   }
   
-  position_feed->disconnect();
+  // Clean shutdown
+  pms->disconnect();
   std::cout << "Position server stopped." << std::endl;
   return 0;
 }

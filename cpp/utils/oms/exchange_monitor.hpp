@@ -42,6 +42,64 @@ struct ExchangeMetrics {
     return total > 0 ? static_cast<double>(successful_orders.load()) / total : 0.0;
   }
   
+  // Create a copyable version of the metrics
+  struct CopyableMetrics {
+    uint64_t total_orders;
+    uint64_t successful_orders;
+    uint64_t failed_orders;
+    uint64_t cancelled_orders;
+    uint64_t rejected_orders;
+    uint64_t filled_orders;
+    double total_volume;
+    double filled_volume;
+    uint64_t total_latency_us;
+    uint64_t latency_samples;
+    uint64_t connection_attempts;
+    uint64_t connection_failures;
+    uint64_t disconnections;
+    std::chrono::system_clock::time_point start_time;
+    
+    CopyableMetrics() = default;
+    
+    CopyableMetrics(const ExchangeMetrics& metrics) 
+      : total_orders(metrics.total_orders.load()),
+        successful_orders(metrics.successful_orders.load()),
+        failed_orders(metrics.failed_orders.load()),
+        cancelled_orders(metrics.cancelled_orders.load()),
+        rejected_orders(metrics.rejected_orders.load()),
+        filled_orders(metrics.filled_orders.load()),
+        total_volume(metrics.total_volume.load()),
+        filled_volume(metrics.filled_volume.load()),
+        total_latency_us(metrics.total_latency_us.load()),
+        latency_samples(metrics.latency_samples.load()),
+        connection_attempts(metrics.connection_attempts.load()),
+        connection_failures(metrics.connection_failures.load()),
+        disconnections(metrics.disconnections.load()),
+        start_time(metrics.start_time) {}
+    
+    // Calculate average latency
+    double get_avg_latency_us() const {
+      return latency_samples > 0 ? static_cast<double>(total_latency_us) / latency_samples : 0.0;
+    }
+    
+    // Calculate success rate
+    double get_success_rate() const {
+      return total_orders > 0 ? static_cast<double>(successful_orders) / total_orders : 0.0;
+    }
+    
+    // Calculate fill rate
+    double get_fill_rate() const {
+      return total_orders > 0 ? static_cast<double>(filled_orders) / total_orders : 0.0;
+    }
+    
+    // Calculate uptime in seconds
+    double get_uptime_seconds() const {
+      auto now = std::chrono::system_clock::now();
+      auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - start_time);
+      return duration.count();
+    }
+  };
+  
   // Calculate fill rate
   double get_fill_rate() const {
     uint64_t total = total_orders.load();
@@ -91,8 +149,8 @@ public:
   virtual void record_connection_event(const std::string& exchange, bool success) = 0;
   
   // Metrics retrieval
-  virtual ExchangeMetrics get_metrics(const std::string& exchange) const = 0;
-  virtual std::map<std::string, ExchangeMetrics> get_all_metrics() const = 0;
+  virtual ExchangeMetrics::CopyableMetrics get_metrics(const std::string& exchange) const = 0;
+  virtual std::map<std::string, ExchangeMetrics::CopyableMetrics> get_all_metrics() const = 0;
   
   // Health monitoring
   virtual HealthInfo get_health_status(const std::string& exchange) const = 0;
@@ -124,8 +182,8 @@ public:
   void record_connection_event(const std::string& exchange, bool success) override;
   
   // Metrics retrieval
-  ExchangeMetrics get_metrics(const std::string& exchange) const override;
-  std::map<std::string, ExchangeMetrics> get_all_metrics() const override;
+  ExchangeMetrics::CopyableMetrics get_metrics(const std::string& exchange) const override;
+  std::map<std::string, ExchangeMetrics::CopyableMetrics> get_all_metrics() const override;
   
   // Health monitoring
   HealthInfo get_health_status(const std::string& exchange) const override;

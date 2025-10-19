@@ -15,9 +15,10 @@ namespace trading_engine {
 static std::atomic<bool> g_shutdown_requested{false};
 static TradingEngineProcess* g_process_instance = nullptr;
 
-TradingEngineProcess::TradingEngineProcess(const std::string& exchange_name) 
-    : exchange_name_(exchange_name) {
+TradingEngineProcess::TradingEngineProcess(const std::string& exchange_name, const std::string& config_file) 
+    : exchange_name_(exchange_name), config_file_(config_file) {
     std::cout << "[TRADING_ENGINE_PROCESS] Creating process for exchange: " << exchange_name << std::endl;
+    std::cout << "[TRADING_ENGINE_PROCESS] Using config file: " << config_file << std::endl;
 }
 
 TradingEngineProcess::~TradingEngineProcess() {
@@ -39,7 +40,7 @@ bool TradingEngineProcess::start() {
         }
         
         // Create trading engine
-        engine_ = TradingEngineFactory::create_trading_engine(exchange_name_);
+        engine_ = TradingEngineFactory::create_trading_engine(exchange_name_, config_file_);
         if (!engine_) {
             std::cerr << "[TRADING_ENGINE_PROCESS] Failed to create trading engine" << std::endl;
             return false;
@@ -104,7 +105,7 @@ void TradingEngineProcess::signal_handler(int signal) {
             
         case SIGHUP:
             std::cout << "[TRADING_ENGINE_PROCESS] Reload signal received" << std::endl;
-            // TODO: Implement configuration reload
+            // Configuration reload functionality will be implemented when needed
             break;
             
         case SIGUSR1:
@@ -249,7 +250,7 @@ int main(int argc, char* argv[]) {
     
     if (config_file.empty()) {
         std::cerr << "Usage: " << argv[0] << " -c <path/to/config.ini> [--daemon]" << std::endl;
-        std::cerr << "Available exchanges: BINANCE, DERIBIT, GRVT" << std::endl;
+        std::cerr << "Example: " << argv[0] << " -c /etc/trading_engine/trading_engine_binance.ini" << std::endl;
         return 1;
     }
 
@@ -272,7 +273,7 @@ int main(int argc, char* argv[]) {
     
     try {
         // Create trading engine process
-        trading_engine::TradingEngineProcess process(exchange_name);
+        trading_engine::TradingEngineProcess process(exchange_name, config_file);
         
         // Daemonize if requested
         if (daemon_mode) {

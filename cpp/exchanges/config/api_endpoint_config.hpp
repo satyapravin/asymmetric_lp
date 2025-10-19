@@ -48,13 +48,42 @@ struct EndpointConfig {
     std::string description;   // Human readable description
 };
 
+// URL configuration for different protocols
+struct UrlConfig {
+    std::string rest_api;              // HTTP REST API base URL
+    std::string websocket_public;      // Public WebSocket URL
+    std::string websocket_private;     // Private WebSocket URL  
+    std::string websocket_market_data; // Market data WebSocket URL
+    std::string websocket_user_data;   // User data WebSocket URL
+};
+
+// WebSocket channel mapping
+struct WebSocketChannels {
+    std::string orderbook;    // Orderbook channel name
+    std::string trades;       // Trades channel name
+    std::string ticker;       // Ticker channel name
+    std::string user_data;    // User data channel name
+};
+
+// Authentication configuration
+struct AuthConfig {
+    std::string api_key_header;       // Header name for API key
+    std::string signature_param;      // Parameter name for signature
+    std::string timestamp_param;      // Parameter name for timestamp
+    std::string session_cookie;       // Session cookie name (GRVT)
+    std::string account_id_header;    // Account ID header (GRVT)
+    std::string client_id;            // Client ID (Deribit)
+    std::string client_secret;        // Client secret (Deribit)
+    std::string grant_type;           // OAuth grant type (Deribit)
+};
+
 // Asset-specific configuration
 struct AssetConfig {
     AssetType type;
     std::string name;           // "spot", "futures", "perpetual"
-    std::string base_url;       // Base URL for this asset type
-    std::string ws_url;         // WebSocket URL for this asset type
-    std::map<std::string, EndpointConfig> endpoints;  // Endpoints for this asset type
+    UrlConfig urls;             // All URL types for this asset
+    std::map<std::string, EndpointConfig> endpoints;  // REST API endpoints
+    WebSocketChannels websocket_channels;  // WebSocket channel names
     std::map<std::string, std::string> headers;       // Default headers
     std::map<std::string, std::string> params;         // Default parameters
 };
@@ -64,6 +93,7 @@ struct ExchangeConfig {
     std::string exchange_name;
     std::string version;        // API version
     std::map<AssetType, AssetConfig> assets;  // Asset type configurations
+    AuthConfig authentication;  // Authentication configuration
     std::map<std::string, std::string> global_headers;  // Global headers
     std::map<std::string, std::string> global_params;  // Global parameters
     int default_timeout_ms{5000};
@@ -87,14 +117,17 @@ public:
     ExchangeConfig get_exchange_config(const std::string& exchange_name) const;
     bool has_exchange(const std::string& exchange_name) const;
     
-    // Endpoint resolution
-    std::string get_endpoint_url(const std::string& exchange_name, 
-                                AssetType asset_type, 
-                                const std::string& endpoint_name) const;
+    // URL resolution for different protocols
+    std::string get_rest_api_url(const std::string& exchange_name, AssetType asset_type) const;
+    std::string get_endpoint_url(const std::string& exchange_name, AssetType asset_type, const std::string& endpoint_name) const;
+    EndpointConfig get_endpoint_config(const std::string& exchange_name, AssetType asset_type, const std::string& endpoint_name) const;
+    std::string get_websocket_url(const std::string& exchange_name, AssetType asset_type, 
+                                 const std::string& websocket_type = "public") const;
+    std::string get_websocket_channel_name(const std::string& exchange_name, AssetType asset_type,
+                                          const std::string& channel_type) const;
     
-    EndpointConfig get_endpoint_config(const std::string& exchange_name,
-                                     AssetType asset_type,
-                                     const std::string& endpoint_name) const;
+    // Authentication configuration
+    AuthConfig get_authentication_config(const std::string& exchange_name) const;
     
     // Asset type management
     AssetConfig get_asset_config(const std::string& exchange_name, AssetType asset_type) const;
@@ -110,7 +143,7 @@ public:
                                    const std::map<std::string, std::string>& params = {}) const;
     
     // Configuration validation
-    bool validate_config(const ExchangeConfig& config) const;
+    bool validate_config(const ExchangeConfig& config);
     std::vector<std::string> get_validation_errors() const;
     
     // Default configurations

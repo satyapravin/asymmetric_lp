@@ -6,6 +6,13 @@ find_package(OpenSSL REQUIRED)
 find_package(jsoncpp REQUIRED)
 find_package(CURL)
 
+# Include proto headers if available
+if(TARGET proto_msgs)
+    set(PROTO_INCLUDES ${CMAKE_BINARY_DIR})
+else()
+    set(PROTO_INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/../proto)
+endif()
+
 # HTTP handlers (shared by all exchanges)
 add_library(http_handlers STATIC
     ../utils/http/i_http_handler.hpp
@@ -26,105 +33,120 @@ endif()
 add_library(websocket_handlers STATIC
     ../utils/websocket/i_websocket_handler.hpp
     ../utils/websocket/libuv_websocket_handler.hpp
+    ../utils/websocket/libuv_websocket_handler.cpp
 )
 
 target_include_directories(websocket_handlers PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../utils
 )
 
-# API endpoint configuration
-add_library(api_endpoint_config STATIC
-    config/api_endpoint_config.hpp
-    config/api_endpoint_config.cpp
-)
-
-target_include_directories(api_endpoint_config PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../utils
-)
-
-target_link_libraries(api_endpoint_config
-    jsoncpp_lib
-)
-
-target_include_directories(exchange_handler_base PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../utils
-)
-
-target_link_libraries(exchange_handler_base
-    http_handlers
-    websocket_handlers
-    OpenSSL::SSL
-    OpenSSL::Crypto
-    jsoncpp_lib
-)
-
-# Binance exchange implementation
-add_library(binance_exchange STATIC
-    binance/binance_oms.hpp
-    binance/binance_oms.cpp
-    binance/binance_data_fetcher.hpp
-    binance/binance_data_fetcher.cpp
-    binance/binance_exchange_handler.hpp
-    binance/binance_exchange_handler.cpp
-)
-
-target_include_directories(binance_exchange PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../utils
-)
-
-target_link_libraries(binance_exchange
-    exchange_handler_base
-    http_handlers
-    websocket_handlers
-    api_endpoint_config
-    OpenSSL::SSL
-    OpenSSL::Crypto
-    jsoncpp_lib
-)
+# Find libuv
+find_library(LIBUV_LIBRARY uv)
+if(LIBUV_LIBRARY)
+    target_link_libraries(websocket_handlers ${LIBUV_LIBRARY})
+endif()
 
 # Main exchanges shared library
 add_library(exchanges SHARED
-    # Base components
-    exchange_handler.hpp
-    exchange_handler.cpp
+    # Interface headers
+    i_exchange_oms.hpp
+    i_exchange_pms.hpp
+    i_exchange_data_fetcher.hpp
+    i_exchange_subscriber.hpp
+    
+    # Factory implementations
+    pms_factory.hpp
+    pms_factory.cpp
+    subscriber_factory.hpp
+    subscriber_factory.cpp
     
     # Binance implementation
-    binance/binance_oms.hpp
-    binance/binance_oms.cpp
-    binance/binance_data_fetcher.hpp
-    binance/binance_data_fetcher.cpp
-    binance/binance_exchange_handler.hpp
-    binance/binance_exchange_handler.cpp
+    binance/http/binance_data_fetcher.hpp
+    binance/http/binance_data_fetcher.cpp
+    binance/public_websocket/binance_public_websocket_handler.hpp
+    binance/public_websocket/binance_public_websocket_handler.cpp
+    binance/public_websocket/binance_subscriber.hpp
+    binance/public_websocket/binance_subscriber.cpp
+    binance/private_websocket/binance_private_websocket_handler.hpp
+    binance/private_websocket/binance_private_websocket_handler.cpp
+    binance/private_websocket/binance_oms.hpp
+    binance/private_websocket/binance_oms.cpp
+    binance/private_websocket/binance_pms.hpp
+    binance/private_websocket/binance_pms.cpp
     
-    # Future exchanges can be added here:
-    # deribit/deribit_oms.hpp
-    # deribit/deribit_oms.cpp
-    # grvt/grvt_oms.hpp
-    # grvt/grvt_oms.cpp
+    # GRVT implementation
+    grvt/http/grvt_data_fetcher.hpp
+    grvt/http/grvt_data_fetcher.cpp
+    grvt/public_websocket/grvt_public_websocket_handler.hpp
+    grvt/public_websocket/grvt_public_websocket_handler.cpp
+    grvt/public_websocket/grvt_subscriber.hpp
+    grvt/public_websocket/grvt_subscriber.cpp
+    grvt/private_websocket/grvt_private_websocket_handler.hpp
+    grvt/private_websocket/grvt_private_websocket_handler.cpp
+    grvt/private_websocket/grvt_oms.hpp
+    grvt/private_websocket/grvt_oms.cpp
+    grvt/private_websocket/grvt_pms.hpp
+    grvt/private_websocket/grvt_pms.cpp
+    
+    # Deribit implementation
+    deribit/http/deribit_data_fetcher.hpp
+    deribit/http/deribit_data_fetcher.cpp
+    deribit/public_websocket/deribit_public_websocket_handler.hpp
+    deribit/public_websocket/deribit_public_websocket_handler.cpp
+    deribit/public_websocket/deribit_subscriber.hpp
+    deribit/public_websocket/deribit_subscriber.cpp
+    deribit/private_websocket/deribit_private_websocket_handler.hpp
+    deribit/private_websocket/deribit_private_websocket_handler.cpp
+    deribit/private_websocket/deribit_oms.hpp
+    deribit/private_websocket/deribit_oms.cpp
+    deribit/private_websocket/deribit_pms.hpp
+    deribit/private_websocket/deribit_pms.cpp
 )
 
 target_include_directories(exchanges PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../utils
+    ${PROTO_INCLUDES}
 )
+
+# Add CURL include directories if found
+if(CURL_FOUND)
+    target_include_directories(exchanges PUBLIC ${CURL_INCLUDE_DIRS})
+    target_compile_definitions(exchanges PRIVATE CURL_FOUND)
+else()
+    # Fallback to manual CURL detection
+    set(CURL_INCLUDE_DIR "/home/pravin/anaconda3/include")
+    if(EXISTS ${CURL_INCLUDE_DIR})
+        target_include_directories(exchanges PUBLIC ${CURL_INCLUDE_DIR})
+        target_compile_definitions(exchanges PRIVATE CURL_FOUND)
+    endif()
+endif()
 
 target_link_libraries(exchanges
     http_handlers
     websocket_handlers
-    api_endpoint_config
     OpenSSL::SSL
     OpenSSL::Crypto
     jsoncpp_lib
 )
 
+# Link CURL if found
+if(CURL_FOUND)
+    target_link_libraries(exchanges ${CURL_LIBRARIES})
+else()
+    # Fallback: link directly to the library
+    target_link_libraries(exchanges /usr/lib/x86_64-linux-gnu/libcurl.so.4)
+endif()
+
+# Link proto if available
+if(TARGET proto_msgs)
+    target_link_libraries(exchanges proto_msgs)
+endif()
+
 # Set library properties
 set_target_properties(exchanges PROPERTIES
     VERSION 1.0.0
     SOVERSION 1
-    PUBLIC_HEADER "exchange_handler.hpp;binance/binance_oms.hpp;binance/binance_data_fetcher.hpp;binance/binance_exchange_handler.hpp"
 )
 
 # Install targets
@@ -134,5 +156,13 @@ install(TARGETS exchanges
 )
 
 install(DIRECTORY binance/ DESTINATION include/exchanges/binance
+    FILES_MATCHING PATTERN "*.hpp"
+)
+
+install(DIRECTORY grvt/ DESTINATION include/exchanges/grvt
+    FILES_MATCHING PATTERN "*.hpp"
+)
+
+install(DIRECTORY deribit/ DESTINATION include/exchanges/deribit
     FILES_MATCHING PATTERN "*.hpp"
 )

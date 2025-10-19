@@ -8,6 +8,12 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <json/json.h>
+#include "../utils/config/process_config_manager.hpp"
+
+// Include concrete OMS implementations for factory
+#include "../exchanges/binance/private_websocket/binance_oms.hpp"
+#include "../exchanges/grvt/private_websocket/grvt_oms.hpp"
+#include "../exchanges/deribit/private_websocket/deribit_oms.hpp"
 
 namespace trading_engine {
 
@@ -24,52 +30,28 @@ bool TradingEngine::initialize() {
     std::cout << "[TRADING_ENGINE] Initializing trading engine..." << std::endl;
     
     try {
-        // Initialize HTTP handler for private API calls
-        if (config_.enable_http_api) {
-            if (!initialize_http_handler()) {
-                std::cerr << "[TRADING_ENGINE] Failed to initialize HTTP handler" << std::endl;
-                return false;
-            }
-            http_connected_ = true;
-            std::cout << "[TRADING_ENGINE] HTTP handler initialized successfully" << std::endl;
+        // Initialize exchange OMS using factory pattern
+        oms_ = OMSFactory::create_oms(config_.exchange_name, config_);
+        if (!oms_) {
+            std::cerr << "[TRADING_ENGINE] Failed to create OMS for exchange: " << config_.exchange_name << std::endl;
+            return false;
         }
-        
-        // Initialize WebSocket manager for private channels
-        if (config_.enable_private_websocket) {
-            if (!initialize_websocket_manager()) {
-                std::cerr << "[TRADING_ENGINE] Failed to initialize WebSocket manager" << std::endl;
-                return false;
-            }
-            
-            if (!connect_private_websocket()) {
-                std::cerr << "[TRADING_ENGINE] Failed to connect private WebSocket" << std::endl;
-                return false;
-            }
-            
-            if (!subscribe_to_private_channels()) {
-                std::cerr << "[TRADING_ENGINE] Failed to subscribe to private channels" << std::endl;
-                return false;
-            }
-            
-            websocket_connected_ = true;
-            std::cout << "[TRADING_ENGINE] Private WebSocket connected successfully" << std::endl;
-        }
-        
-        // Initialize exchange OMS (for backward compatibility)
-        binance::BinanceConfig oms_config;
-        oms_config.api_key = config_.api_key;
-        oms_config.api_secret = config_.api_secret;
-        oms_config.asset_type = config_.asset_type;
-        oms_config.exchange_name = config_.exchange_name;
-        
-        oms_ = std::make_unique<binance::BinanceOMS>(oms_config);
         
         // Connect to exchange
-        auto connect_result = oms_->connect();
-        if (!connect_result.is_success()) {
-            std::cerr << "[TRADING_ENGINE] Failed to connect to exchange: " 
-                      << connect_result.get_error().error_message << std::endl;
+        if (!oms_->connect()) {
+            std::cerr << "[TRADING_ENGINE] Failed to connect to " << config_.exchange_name << std::endl;
             return false;
+        }
+        
+        // Set up exchange callbacks
+        oms_->set_order_status_callback([this](const proto::OrderEvent& order_event) {
+            handle_order_update(order_event.cl_ord_id(), order_event.event_type() == proto::OrderEventType::FILL ? "FILLED" : "ACKNOWLEDGED");
+        });
+        
+        // Initialize exchange subscriber (if available)
+        subscriber_ = OMSFactory::create_subscriber(config_.exchange_name, config_);
+        if (subscriber_) {
+            std::cout << "[TRADING_ENGINE] Subscriber created for " << config_.exchange_name << std::endl;
         }
         
         // Initialize ZMQ publishers
@@ -78,17 +60,8 @@ bool TradingEngine::initialize() {
         order_status_publisher_ = std::make_unique<ZmqPublisher>(config_.order_status_pub_endpoint);
         
         // Initialize ZMQ subscribers
-        trader_subscriber_ = std::make_unique<ZmqSubscriber>(config_.trader_sub_endpoint);
-        position_server_subscriber_ = std::make_unique<ZmqSubscriber>(config_.position_server_sub_endpoint);
-        
-        // Set up exchange callbacks
-        oms_->set_order_event_callback([this](const std::string& order_id, const std::string& status) {
-            handle_order_update(order_id, status);
-        });
-        
-        oms_->set_trade_event_callback([this](const std::string& trade_id, double qty, double price) {
-            handle_trade_update(trade_id, qty, price);
-        });
+        trader_subscriber_ = std::make_unique<ZmqSubscriber>(config_.trader_sub_endpoint, "trader_orders");
+        position_server_subscriber_ = std::make_unique<ZmqSubscriber>(config_.position_server_sub_endpoint, "position_updates");
         
         // Initialize rate limiting
         last_rate_reset_ = std::chrono::steady_clock::now();
@@ -116,11 +89,6 @@ void TradingEngine::run() {
     // Start processing threads
     order_processing_thread_ = std::thread(&TradingEngine::order_processing_loop, this);
     zmq_subscriber_thread_ = std::thread(&TradingEngine::zmq_subscriber_loop, this);
-    
-    // Start WebSocket message processing thread if WebSocket is enabled
-    if (config_.enable_private_websocket) {
-        websocket_message_thread_ = std::thread(&TradingEngine::websocket_message_loop, this);
-    }
     
     // Main loop
     while (running_) {
@@ -159,18 +127,14 @@ void TradingEngine::shutdown() {
         zmq_subscriber_thread_.join();
     }
     
-    if (websocket_message_thread_.joinable()) {
-        websocket_message_thread_.join();
-    }
-    
-    // Disconnect WebSocket if connected
-    if (config_.enable_private_websocket && ws_manager_) {
-        disconnect_private_websocket();
-    }
-    
     // Disconnect from exchange
     if (oms_) {
         oms_->disconnect();
+        oms_.reset();
+    }
+    
+    if (subscriber_) {
+        subscriber_.reset();
     }
     
     std::cout << "[TRADING_ENGINE] Shutdown completed" << std::endl;
@@ -223,15 +187,28 @@ void TradingEngine::order_processing_loop() {
 
 void TradingEngine::process_order_queue_item(const OrderRequest& request) {
     try {
-        // Convert to exchange order
-        Order exchange_order = convert_to_exchange_order(request);
+        bool order_sent = false;
+        std::string exchange_order_id;
         
-        // Send order to exchange
-        auto result = oms_->send_order(exchange_order);
-        
-        if (result.is_success()) {
-            std::string exchange_order_id = result.get_value();
+        // Send order to exchange using interface
+        if (oms_) {
+            std::string side = request.side == "BUY" ? "BUY" : "SELL";
+            std::string order_type = request.order_type == "MARKET" ? "MARKET" : "LIMIT";
             
+            if (order_type == "MARKET") {
+                order_sent = oms_->place_market_order(request.symbol, side, request.qty);
+            } else {
+                order_sent = oms_->place_limit_order(request.symbol, side, request.qty, request.price);
+            }
+            
+            if (order_sent) {
+                exchange_order_id = request.cl_ord_id; // Use client order ID
+            }
+        } else {
+            std::cerr << "[TRADING_ENGINE] No valid exchange OMS available" << std::endl;
+        }
+        
+        if (order_sent) {
             // Store response
             OrderResponse response = convert_to_order_response(request.request_id, request.cl_ord_id,
                                                             exchange_order_id, "ACKNOWLEDGED");
@@ -253,11 +230,8 @@ void TradingEngine::process_order_queue_item(const OrderRequest& request) {
             
         } else {
             // Order failed
-            std::cerr << "[TRADING_ENGINE] Order failed: " << request.cl_ord_id 
-                      << " - " << result.get_error().error_message << std::endl;
-            
             OrderResponse response = convert_to_order_response(request.request_id, request.cl_ord_id,
-                                                            "", "REJECTED", result.get_error().error_message);
+                                                            "", "REJECTED", "Order failed");
             publish_order_event(response);
             
             total_orders_rejected_++;
@@ -272,6 +246,48 @@ void TradingEngine::process_order_queue_item(const OrderRequest& request) {
         publish_order_event(response);
         
         total_orders_rejected_++;
+    }
+}
+
+void TradingEngine::cancel_order(const std::string& cl_ord_id) {
+    std::cout << "[TRADING_ENGINE] Canceling order: " << cl_ord_id << std::endl;
+    
+    if (oms_) {
+        // IExchangeOMS::cancel_order expects (cl_ord_id, exch_ord_id)
+        // For now, we'll use cl_ord_id for both
+        bool cancelled = oms_->cancel_order(cl_ord_id, cl_ord_id);
+        if (cancelled) {
+            std::cout << "[TRADING_ENGINE] Order cancelled successfully: " << cl_ord_id << std::endl;
+            handle_order_update(cl_ord_id, "CANCELLED");
+        } else {
+            std::cerr << "[TRADING_ENGINE] Failed to cancel order: " << cl_ord_id << std::endl;
+        }
+    } else {
+        std::cerr << "[TRADING_ENGINE] No OMS available to cancel order" << std::endl;
+    }
+}
+
+void TradingEngine::modify_order(const std::string& cl_ord_id, double new_price, double new_qty) {
+    std::cout << "[TRADING_ENGINE] Modifying order: " << cl_ord_id 
+              << " new_price=" << new_price << " new_qty=" << new_qty << std::endl;
+    
+    if (oms_) {
+        // IExchangeOMS::replace_order expects (cl_ord_id, OrderRequest)
+        // Create a new OrderRequest with the modified values
+        proto::OrderRequest new_order;
+        new_order.set_cl_ord_id(cl_ord_id);
+        new_order.set_price(new_price);
+        new_order.set_qty(new_qty);
+        
+        bool modified = oms_->replace_order(cl_ord_id, new_order);
+        if (modified) {
+            std::cout << "[TRADING_ENGINE] Order modified successfully: " << cl_ord_id << std::endl;
+            handle_order_update(cl_ord_id, "MODIFIED");
+        } else {
+            std::cerr << "[TRADING_ENGINE] Failed to modify order: " << cl_ord_id << std::endl;
+        }
+    } else {
+        std::cerr << "[TRADING_ENGINE] No OMS available to modify order" << std::endl;
     }
 }
 
@@ -343,15 +359,15 @@ void TradingEngine::zmq_subscriber_loop() {
     while (running_) {
         try {
             // Check for messages from trader
-            if (trader_subscriber_->has_message()) {
-                std::string message = trader_subscriber_->receive_message();
-                handle_trader_message(message);
+            auto message = trader_subscriber_->receive();
+            if (message.has_value()) {
+                handle_trader_message(message.value());
             }
             
             // Check for messages from position server
-            if (position_server_subscriber_->has_message()) {
-                std::string message = position_server_subscriber_->receive_message();
-                handle_position_server_message(message);
+            auto pos_message = position_server_subscriber_->receive();
+            if (pos_message.has_value()) {
+                handle_position_server_message(pos_message.value());
             }
             
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -436,25 +452,16 @@ Order TradingEngine::convert_to_exchange_order(const OrderRequest& request) {
     
     // Convert side
     if (request.side == "BUY") {
-        order.side = OrderSide::BUY;
+        order.side = Side::Buy;
     } else if (request.side == "SELL") {
-        order.side = OrderSide::SELL;
+        order.side = Side::Sell;
     }
     
     // Convert order type
-    if (request.order_type == "LIMIT") {
-        order.type = OrderType::LIMIT;
-    } else if (request.order_type == "MARKET") {
-        order.type = OrderType::MARKET;
-    }
-    
-    // Convert time in force
-    if (request.time_in_force == "GTC") {
-        order.time_in_force = TimeInForce::GTC;
-    } else if (request.time_in_force == "IOC") {
-        order.time_in_force = TimeInForce::IOC;
-    } else if (request.time_in_force == "FOK") {
-        order.time_in_force = TimeInForce::FOK;
+    if (request.order_type == "MARKET") {
+        order.is_market = true;
+    } else if (request.order_type == "LIMIT") {
+        order.is_market = false;
     }
     
     return order;
@@ -490,7 +497,7 @@ void TradingEngine::publish_order_event(const OrderResponse& response) {
         Json::StreamWriterBuilder builder;
         std::string message = Json::writeString(builder, root);
         
-        order_events_publisher_->publish(message);
+        order_events_publisher_->publish("order_events", message);
         
     } catch (const std::exception& e) {
         std::cerr << "[TRADING_ENGINE] Error publishing order event: " << e.what() << std::endl;
@@ -514,7 +521,7 @@ void TradingEngine::publish_trade_event(const TradeExecution& execution) {
         Json::StreamWriterBuilder builder;
         std::string message = Json::writeString(builder, root);
         
-        trade_events_publisher_->publish(message);
+        trade_events_publisher_->publish("trade_events", message);
         
     } catch (const std::exception& e) {
         std::cerr << "[TRADING_ENGINE] Error publishing trade event: " << e.what() << std::endl;
@@ -534,7 +541,7 @@ void TradingEngine::publish_order_status(const std::string& cl_ord_id, const std
         Json::StreamWriterBuilder builder;
         std::string message = Json::writeString(builder, root);
         
-        order_status_publisher_->publish(message);
+        order_status_publisher_->publish("order_status", message);
         
     } catch (const std::exception& e) {
         std::cerr << "[TRADING_ENGINE] Error publishing order status: " << e.what() << std::endl;
@@ -542,14 +549,19 @@ void TradingEngine::publish_order_status(const std::string& cl_ord_id, const std
 }
 
 bool TradingEngine::is_healthy() const {
-    return initialized_ && running_ && oms_ && oms_->is_connected();
+    bool exchange_connected = oms_ && oms_->is_connected();
+    
+    return initialized_ && running_ && exchange_connected;
 }
 
 std::map<std::string, std::string> TradingEngine::get_health_status() const {
     std::map<std::string, std::string> status;
     status["initialized"] = initialized_ ? "true" : "false";
     status["running"] = running_ ? "true" : "false";
-    status["exchange_connected"] = oms_ && oms_->is_connected() ? "true" : "false";
+    
+    bool exchange_connected = oms_ && oms_->is_connected();
+    
+    status["exchange_connected"] = exchange_connected ? "true" : "false";
     status["pending_orders"] = std::to_string(pending_orders_.size());
     return status;
 }
@@ -565,379 +577,59 @@ std::map<std::string, double> TradingEngine::get_performance_metrics() const {
     return metrics;
 }
 
-// HTTP API methods
-bool TradingEngine::initialize_http_handler() {
-    try {
-        // Create HTTP handler using factory
-        http_handler_ = HttpHandlerFactory::create("CURL");
-        if (!http_handler_) {
-            std::cerr << "[TRADING_ENGINE] Failed to create HTTP handler" << std::endl;
-            return false;
-        }
+// OMSFactory implementation
+std::unique_ptr<IExchangeOMS> OMSFactory::create_oms(const std::string& exchange_name, const TradingEngineConfig& config) {
+    if (exchange_name == "BINANCE") {
+        binance::BinanceConfig oms_config;
+        oms_config.api_key = config.api_key;
+        oms_config.api_secret = config.api_secret;
+        oms_config.base_url = config.http_base_url;
+        oms_config.testnet = config.testnet_mode;
         
-        // Initialize HTTP handler
-        if (!http_handler_->initialize()) {
-            std::cerr << "[TRADING_ENGINE] Failed to initialize HTTP handler" << std::endl;
-            return false;
-        }
-        
-        // Set default timeout
-        http_handler_->set_default_timeout(config_.http_timeout_ms);
-        
-        std::cout << "[TRADING_ENGINE] HTTP handler initialized successfully" << std::endl;
-        return true;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "[TRADING_ENGINE] Exception initializing HTTP handler: " << e.what() << std::endl;
-        return false;
+        return std::make_unique<binance::BinanceOMS>(oms_config);
     }
-}
-
-HttpResponse TradingEngine::make_http_request(const std::string& endpoint, const std::string& method, 
-                                            const std::string& body, bool requires_signature) {
-    if (!http_handler_) {
-        HttpResponse response;
-        response.error_message = "HTTP handler not initialized";
-        response.success = false;
-        return response;
+    else if (exchange_name == "GRVT") {
+        grvt::GrvtOMSConfig oms_config;
+        oms_config.api_key = config.api_key;
+        oms_config.session_cookie = config.api_secret;
+        oms_config.account_id = config.api_key;
+        oms_config.base_url = config.http_base_url;
+        oms_config.websocket_url = config.ws_private_url;
+        oms_config.testnet = config.testnet_mode;
+        
+        return std::make_unique<grvt::GrvtOMS>(oms_config);
+    }
+    else if (exchange_name == "DERIBIT") {
+        deribit::DeribitOMSConfig oms_config;
+        oms_config.client_id = config.api_key;
+        oms_config.client_secret = config.api_secret;
+        oms_config.base_url = config.http_base_url;
+        oms_config.websocket_url = config.ws_private_url;
+        oms_config.testnet = config.testnet_mode;
+        
+        return std::make_unique<deribit::DeribitOMS>(oms_config);
     }
     
-    HttpRequest request;
-    request.method = method;
-    request.url = config_.http_base_url + endpoint;
-    request.body = body;
-    request.timeout_ms = config_.http_timeout_ms;
-    
-    // Add default headers
-    request.headers["Content-Type"] = "application/x-www-form-urlencoded";
-    request.headers["User-Agent"] = "TradingEngine/1.0";
-    
-    // Add authentication headers if required
-    if (requires_signature) {
-        auto auth_headers = create_auth_headers(method, endpoint, body);
-        request.headers.insert(auth_headers.begin(), auth_headers.end());
-    }
-    
-    return http_handler_->make_request(request);
+    throw std::runtime_error("Unsupported exchange: " + exchange_name);
 }
 
-std::string TradingEngine::create_auth_headers(const std::string& method, const std::string& endpoint, 
-                                              const std::string& body) {
-    // Create timestamp
-    auto now = std::chrono::system_clock::now();
-    auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-    
-    // Create query string for signature
-    std::string query_string = "timestamp=" + std::to_string(timestamp);
-    if (!body.empty()) {
-        query_string += "&" + body;
-    }
-    
-    // Generate signature
-    std::string signature = generate_signature(query_string);
-    
-    // Create headers
-    std::map<std::string, std::string> headers;
-    headers["X-MBX-APIKEY"] = config_.api_key;
-    headers["timestamp"] = std::to_string(timestamp);
-    headers["signature"] = signature;
-    
-    return query_string;
-}
-
-std::string TradingEngine::generate_signature(const std::string& data) {
-    // Simple HMAC-SHA256 implementation (in production, use proper crypto library)
-    // This is a placeholder - implement proper HMAC-SHA256
-    return "placeholder_signature";
-}
-
-std::string TradingEngine::create_order_payload(const OrderRequest& request) {
-    std::ostringstream payload;
-    payload << "symbol=" << request.symbol
-            << "&side=" << request.side
-            << "&type=" << request.order_type
-            << "&quantity=" << request.qty
-            << "&price=" << request.price
-            << "&timeInForce=" << request.time_in_force
-            << "&newClientOrderId=" << request.cl_ord_id;
-    
-    return payload.str();
-}
-
-// WebSocket methods
-bool TradingEngine::initialize_websocket_manager() {
-    try {
-        ws_manager_ = std::make_unique<binance::BinanceWebSocketManager>();
-        ws_manager_->initialize(config_.api_key, config_.api_secret);
-        
-        // Set up callbacks
-        setup_websocket_callbacks();
-        
-        std::cout << "[TRADING_ENGINE] WebSocket manager initialized successfully" << std::endl;
-        return true;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "[TRADING_ENGINE] Exception initializing WebSocket manager: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-void TradingEngine::setup_websocket_callbacks() {
-    if (!ws_manager_) return;
-    
-    // Set up order event callback
-    ws_manager_->set_order_callback([this](const std::string& order_id, const std::string& status) {
-        handle_order_update(order_id, status);
-    });
-    
-    // Set up trade event callback
-    ws_manager_->set_trade_callback([this](const std::string& trade_id, double qty, double price) {
-        handle_trade_update(trade_id, qty, price);
-    });
-}
-
-bool TradingEngine::connect_private_websocket() {
-    if (!ws_manager_) {
-        std::cerr << "[TRADING_ENGINE] WebSocket manager not initialized" << std::endl;
-        return false;
-    }
-    
-    try {
-        if (!ws_manager_->connect_all()) {
-            std::cerr << "[TRADING_ENGINE] Failed to connect WebSocket streams" << std::endl;
-            return false;
-        }
-        
-        std::cout << "[TRADING_ENGINE] Private WebSocket connected successfully" << std::endl;
-        return true;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "[TRADING_ENGINE] Exception connecting WebSocket: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-void TradingEngine::disconnect_private_websocket() {
-    if (ws_manager_) {
-        ws_manager_->disconnect_all();
-        std::cout << "[TRADING_ENGINE] Private WebSocket disconnected" << std::endl;
-    }
-}
-
-bool TradingEngine::subscribe_to_private_channels() {
-    if (!ws_manager_) {
-        std::cerr << "[TRADING_ENGINE] WebSocket manager not initialized" << std::endl;
-        return false;
-    }
-    
-    try {
-        // Subscribe to user data stream
-        if (!ws_manager_->subscribe_to_user_data()) {
-            std::cerr << "[TRADING_ENGINE] Failed to subscribe to user data stream" << std::endl;
-            return false;
-        }
-        
-        std::cout << "[TRADING_ENGINE] Subscribed to private channels successfully" << std::endl;
-        return true;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "[TRADING_ENGINE] Exception subscribing to private channels: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-bool TradingEngine::is_private_websocket_connected() const {
-    return ws_manager_ && ws_manager_->is_connected();
-}
-
-void TradingEngine::websocket_message_loop() {
-    std::cout << "[TRADING_ENGINE] WebSocket message processing thread started" << std::endl;
-    
-    while (running_) {
-        try {
-            // Process WebSocket messages
-            // The actual message processing is handled by the WebSocket manager callbacks
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            
-        } catch (const std::exception& e) {
-            std::cerr << "[TRADING_ENGINE] WebSocket message processing error: " << e.what() << std::endl;
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-    }
-    
-    std::cout << "[TRADING_ENGINE] WebSocket message processing thread stopped" << std::endl;
-}
-
-// HTTP API operations
-bool TradingEngine::send_order_via_http(const OrderRequest& request) {
-    try {
-        std::string payload = create_order_payload(request);
-        HttpResponse response = make_http_request("/fapi/v1/order", "POST", payload, true);
-        
-        if (!response.success) {
-            std::cerr << "[TRADING_ENGINE] HTTP order failed: " << response.error_message << std::endl;
-            return false;
-        }
-        
-        // Parse response and handle order
-        // Implementation depends on exchange response format
-        std::cout << "[TRADING_ENGINE] Order sent via HTTP successfully" << std::endl;
-        return true;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "[TRADING_ENGINE] Exception sending order via HTTP: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-bool TradingEngine::cancel_order_via_http(const std::string& cl_ord_id) {
-    try {
-        std::string payload = "origClientOrderId=" + cl_ord_id;
-        HttpResponse response = make_http_request("/fapi/v1/order", "DELETE", payload, true);
-        
-        if (!response.success) {
-            std::cerr << "[TRADING_ENGINE] HTTP cancel failed: " << response.error_message << std::endl;
-            return false;
-        }
-        
-        std::cout << "[TRADING_ENGINE] Order cancelled via HTTP successfully" << std::endl;
-        return true;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "[TRADING_ENGINE] Exception cancelling order via HTTP: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-bool TradingEngine::modify_order_via_http(const std::string& cl_ord_id, double new_price, double new_qty) {
-    try {
-        std::ostringstream payload;
-        payload << "origClientOrderId=" << cl_ord_id
-                << "&price=" << new_price
-                << "&quantity=" << new_qty;
-        
-        HttpResponse response = make_http_request("/fapi/v1/order", "PUT", payload.str(), true);
-        
-        if (!response.success) {
-            std::cerr << "[TRADING_ENGINE] HTTP modify failed: " << response.error_message << std::endl;
-            return false;
-        }
-        
-        std::cout << "[TRADING_ENGINE] Order modified via HTTP successfully" << std::endl;
-        return true;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "[TRADING_ENGINE] Exception modifying order via HTTP: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-bool TradingEngine::query_order_via_http(const std::string& cl_ord_id) {
-    try {
-        std::string payload = "origClientOrderId=" + cl_ord_id;
-        HttpResponse response = make_http_request("/fapi/v1/order", "GET", payload, true);
-        
-        if (!response.success) {
-            std::cerr << "[TRADING_ENGINE] HTTP query failed: " << response.error_message << std::endl;
-            return false;
-        }
-        
-        std::cout << "[TRADING_ENGINE] Order queried via HTTP successfully" << std::endl;
-        return true;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "[TRADING_ENGINE] Exception querying order via HTTP: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-bool TradingEngine::query_account_via_http() {
-    try {
-        HttpResponse response = make_http_request("/fapi/v2/account", "GET", "", true);
-        
-        if (!response.success) {
-            std::cerr << "[TRADING_ENGINE] HTTP account query failed: " << response.error_message << std::endl;
-            return false;
-        }
-        
-        // Publish account update
-        publish_account_update(response.body);
-        
-        std::cout << "[TRADING_ENGINE] Account queried via HTTP successfully" << std::endl;
-        return true;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "[TRADING_ENGINE] Exception querying account via HTTP: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-// Additional event handlers
-void TradingEngine::handle_account_update(const std::string& account_data) {
-    std::cout << "[TRADING_ENGINE] Account update received" << std::endl;
-    publish_account_update(account_data);
-}
-
-void TradingEngine::handle_balance_update(const std::string& balance_data) {
-    std::cout << "[TRADING_ENGINE] Balance update received" << std::endl;
-    publish_balance_update(balance_data);
-}
-
-void TradingEngine::publish_account_update(const std::string& account_data) {
-    try {
-        Json::Value root;
-        root["type"] = "ACCOUNT_UPDATE";
-        root["exchange"] = config_.exchange_name;
-        root["data"] = account_data;
-        root["timestamp_us"] = static_cast<Json::UInt64>(
-            std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count());
-        
-        Json::StreamWriterBuilder builder;
-        std::string message = Json::writeString(builder, root);
-        
-        // Publish to appropriate ZMQ endpoint
-        // This would go to position server or other interested parties
-        std::cout << "[TRADING_ENGINE] Published account update" << std::endl;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "[TRADING_ENGINE] Error publishing account update: " << e.what() << std::endl;
-    }
-}
-
-void TradingEngine::publish_balance_update(const std::string& balance_data) {
-    try {
-        Json::Value root;
-        root["type"] = "BALANCE_UPDATE";
-        root["exchange"] = config_.exchange_name;
-        root["data"] = balance_data;
-        root["timestamp_us"] = static_cast<Json::UInt64>(
-            std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count());
-        
-        Json::StreamWriterBuilder builder;
-        std::string message = Json::writeString(builder, root);
-        
-        // Publish to appropriate ZMQ endpoint
-        std::cout << "[TRADING_ENGINE] Published balance update" << std::endl;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "[TRADING_ENGINE] Error publishing balance update: " << e.what() << std::endl;
-    }
+std::unique_ptr<IExchangeSubscriber> OMSFactory::create_subscriber(const std::string& exchange_name, const TradingEngineConfig& config) {
+    // Subscriber functionality will be implemented when IExchangeSubscriber interface is available
+    return nullptr;
 }
 
 // TradingEngineFactory implementation
-std::unique_ptr<TradingEngine> TradingEngineFactory::create_trading_engine(const std::string& exchange_name) {
-    TradingEngineConfig config = load_config(exchange_name);
+std::unique_ptr<TradingEngine> TradingEngineFactory::create_trading_engine(const std::string& exchange_name, const std::string& config_file) {
+    TradingEngineConfig config = load_config(exchange_name, config_file);
     return std::make_unique<TradingEngine>(config);
 }
 
-TradingEngineConfig TradingEngineFactory::load_config(const std::string& exchange_name) {
+TradingEngineConfig TradingEngineFactory::load_config(const std::string& exchange_name, const std::string& config_file) {
     TradingEngineConfig config;
     
-    // Load from config.ini
-    ConfigManager config_manager;
-    config_manager.load_config("config/config.ini");
+    // Load from provided config file
+    config::ProcessConfigManager config_manager;
+    config_manager.load_config(config_file);
     
     std::string section = "TRADING_ENGINE_" + exchange_name;
     
@@ -975,22 +667,11 @@ TradingEngineConfig TradingEngineFactory::load_config(const std::string& exchang
     config.retry_failed_orders = config_manager.get_bool(section, "RETRY_FAILED_ORDERS", true);
     config.max_order_retries = config_manager.get_int(section, "MAX_ORDER_RETRIES", 3);
     
-    // HTTP API settings
+    // Exchange-specific settings (handled by exchange interfaces)
     config.http_base_url = config_manager.get_string("HTTP_API", "HTTP_BASE_URL", "");
-    config.http_timeout_ms = config_manager.get_int("HTTP_API", "HTTP_TIMEOUT_MS", 5000);
-    config.http_max_retries = config_manager.get_int("HTTP_API", "HTTP_MAX_RETRIES", 3);
-    config.http_retry_delay_ms = config_manager.get_int("HTTP_API", "HTTP_RETRY_DELAY_MS", 1000);
-    config.enable_http_api = config_manager.get_bool("HTTP_API", "ENABLE_HTTP_API", true);
-    
-    // WebSocket settings
     config.ws_private_url = config_manager.get_string("WEBSOCKET", "WS_PRIVATE_URL", "");
-    config.ws_private_backup_url = config_manager.get_string("WEBSOCKET", "WS_PRIVATE_BACKUP_URL", "");
-    config.ws_reconnect_interval = config_manager.get_int("WEBSOCKET", "WS_RECONNECT_INTERVAL", 5000);
-    config.ws_ping_interval = config_manager.get_int("WEBSOCKET", "WS_PING_INTERVAL", 30000);
-    config.ws_pong_timeout = config_manager.get_int("WEBSOCKET", "WS_PONG_TIMEOUT_MS", 10000);
-    config.ws_max_reconnect_attempts = config_manager.get_int("WEBSOCKET", "WS_MAX_RECONNECT_ATTEMPTS", 10);
-    config.ws_connection_timeout = config_manager.get_int("WEBSOCKET", "WS_CONNECTION_TIMEOUT_MS", 10000);
     config.enable_private_websocket = config_manager.get_bool("WEBSOCKET", "ENABLE_PRIVATE_WEBSOCKET", true);
+    config.enable_http_api = config_manager.get_bool("HTTP_API", "ENABLE_HTTP_API", true);
     
     // Private channels
     std::string channels_str = config_manager.get_string("WEBSOCKET", "PRIVATE_CHANNELS", "order_update,account_update");

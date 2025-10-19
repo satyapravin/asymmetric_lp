@@ -39,6 +39,7 @@ message OrderEvent {
   double fill_price = 6;
   string text       = 7;
   uint64 timestamp_us = 8;
+  string exch_order_id = 9;  // Exchange-assigned order ID
 }
 
 

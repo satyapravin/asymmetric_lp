@@ -41,14 +41,12 @@ void MessageHandler::stop() {
 
 void MessageHandler::process_messages() {
   while (running_.load()) {
-    auto msg = subscriber_->receive();
+    auto msg = subscriber_->receive_blocking(100); // 100ms timeout
     if (msg) {
       if (data_callback_) {
         data_callback_(name_, *msg);
       }
-    } else {
-      // No message received, sleep briefly to avoid busy waiting
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
+    // No message received, continue loop (timeout handled by receive_blocking)
   }
 }

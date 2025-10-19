@@ -1,5 +1,7 @@
 # Trading Engine Documentation
 
+⚠️ **Status**: Architecture complete, production testing required
+
 ## Overview
 
 The Trading Engine is a critical component of the multi-process trading system, responsible for executing orders and managing private data streams for each exchange. It provides dual connectivity through HTTP API and WebSocket for comprehensive trading operations.
@@ -454,4 +456,4 @@ tail -f logs/trading_engine_binance.log | grep "METRICS"
 - **Backup Procedures**: Implement backup and recovery procedures
 - **Documentation**: Maintain up-to-date documentation
 
-This trading engine provides a robust, scalable foundation for executing trades and managing private data streams with comprehensive error handling, monitoring, and security features.
+This trading engine provides a robust, scalable foundation for executing trades and managing private data streams with comprehensive error handling, monitoring, and security features. However, production testing is required before live deployment.
