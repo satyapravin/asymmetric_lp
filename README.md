@@ -40,6 +40,7 @@ The strategy uses residual inventory from DeFi LP positions to market make on Ce
 ## Backtest Results
 
 ### Representative Performance (ETH/USDC)
+- **Backtest Duration**: 3 weeks
 - **Total Trades**: 1,247
 - **Rebalances**: 23
 - **Initial Balance**: 2,500 USDC + 1 ETH
