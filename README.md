@@ -18,8 +18,8 @@ The strategy uses residual inventory from DeFi LP positions to market make on Ce
 | Component | Status | Notes |
 |-----------|--------|-------|
 | DeFi LP (Python) | ✅ Production-ready | Complete implementation with backtesting |
-| **C++ Servers** | ⚠️ **Untested** | Architecture complete but not production tested |
-| **Trader Process** | 🔄 **Work in Progress** | Strategy framework implemented, needs integration |
+| **C++ Servers** | 🔄 **UAT Pending** | Architecture complete, comprehensive test suite, sanitizer support added |
+| **Trader Process** | 🔄 **UAT Pending** | Strategy framework implemented, integration testing complete |
 
 ## Architecture
 
