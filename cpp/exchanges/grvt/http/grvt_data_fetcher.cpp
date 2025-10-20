@@ -48,21 +48,6 @@ std::vector<proto::OrderEvent> GrvtDataFetcher::get_open_orders() {
     return parse_orders(response);
 }
 
-std::vector<proto::OrderEvent> GrvtDataFetcher::get_order_history() {
-    if (!is_authenticated()) {
-        std::cerr << "[GRVT_DATA_FETCHER] Not authenticated" << std::endl;
-        return {};
-    }
-    
-    std::string response = make_request("orders", R"({"status":"all"})");
-    if (response.empty()) {
-        std::cerr << "[GRVT_DATA_FETCHER] Failed to fetch order history" << std::endl;
-        return {};
-    }
-    
-    return parse_orders(response);
-}
-
 std::vector<proto::PositionUpdate> GrvtDataFetcher::get_positions() {
     if (!is_authenticated()) {
         std::cerr << "[GRVT_DATA_FETCHER] Not authenticated" << std::endl;
@@ -76,6 +61,23 @@ std::vector<proto::PositionUpdate> GrvtDataFetcher::get_positions() {
     }
     
     return parse_positions(response);
+}
+
+std::vector<proto::AccountBalance> GrvtDataFetcher::get_balances() {
+    if (!is_authenticated()) {
+        std::cerr << "[GRVT_DATA_FETCHER] Not authenticated" << std::endl;
+        return {};
+    }
+    
+    // Use sub-account summary endpoint for balances
+    std::string params = R"({"sub_account_id":")" + config_.account_id + R"("})";
+    std::string response = make_request("sub_account_summary", params);
+    if (response.empty()) {
+        std::cerr << "[GRVT_DATA_FETCHER] Failed to fetch balances" << std::endl;
+        return {};
+    }
+    
+    return parse_balances(response);
 }
 
 std::string GrvtDataFetcher::make_request(const std::string& method, const std::string& params) {
@@ -193,6 +195,41 @@ std::vector<proto::PositionUpdate> GrvtDataFetcher::parse_positions(const std::s
     }
     
     return positions;
+}
+
+std::vector<proto::AccountBalance> GrvtDataFetcher::parse_balances(const std::string& json_response) {
+    std::vector<proto::AccountBalance> balances;
+    
+    Json::Value root;
+    Json::Reader reader;
+    
+    if (!reader.parse(json_response, root)) {
+        std::cerr << "[GRVT_DATA_FETCHER] Failed to parse balances JSON" << std::endl;
+        return balances;
+    }
+    
+    const Json::Value& result = root["result"];
+    if (result.isMember("spot_balances") && result["spot_balances"].isArray()) {
+        const Json::Value& spot_balances = result["spot_balances"];
+        
+        for (const auto& balance_data : spot_balances) {
+            double balance_amount = balance_data["balance"].asDouble();
+            if (balance_amount < 1e-8) continue; // Skip zero balances
+            
+            proto::AccountBalance balance;
+            balance.set_exch("GRVT");
+            balance.set_instrument(balance_data["currency"].asString());
+            balance.set_balance(balance_amount);
+            balance.set_available(balance_data["available"].asDouble());
+            balance.set_locked(balance_data["locked"].asDouble());
+            balance.set_timestamp_us(std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+            
+            balances.push_back(balance);
+        }
+    }
+    
+    return balances;
 }
 
 size_t GrvtDataFetcher::DataFetcherWriteCallback(void* contents, size_t size, size_t nmemb, std::string* data) {

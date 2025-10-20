@@ -1,95 +1,107 @@
 #include "binance_public_websocket_handler.hpp"
+#include "../../websocket/websocket_transport.hpp"
+#include "../../../proto/market_data.pb.h"
 #include <iostream>
 #include <chrono>
 #include <thread>
 #include <algorithm>
+#include <json/json.h>
 
 namespace binance {
 
 BinancePublicWebSocketHandler::BinancePublicWebSocketHandler() {
-    std::cout << "[BINANCE] Initializing Binance Public WebSocket Handler" << std::endl;
+    std::cout << "[BINANCE] Initializing Binance Public WebSocket Handler with transport abstraction" << std::endl;
+    
+    // Create transport using factory
+    transport_ = websocket_transport::WebSocketTransportFactory::create();
+    
+    // Set up transport callbacks
+    transport_->set_message_callback([this](const websocket_transport::WebSocketMessage& message) {
+        handle_websocket_message(message);
+    });
+    
+    transport_->set_error_callback([this](int error_code, const std::string& error_message) {
+        handle_connection_error(error_code, error_message);
+    });
+    
+    transport_->set_connect_callback([this](bool connected) {
+        handle_connection_status(connected);
+    });
+    
+    std::cout << "[BINANCE] Transport abstraction initialization complete" << std::endl;
+}
+
+BinancePublicWebSocketHandler::BinancePublicWebSocketHandler(std::unique_ptr<websocket_transport::IWebSocketTransport> transport) {
+    std::cout << "[BINANCE] Initializing Binance Public WebSocket Handler with injected transport" << std::endl;
+    
+    // Use injected transport
+    transport_ = std::move(transport);
+    
+    // Set up transport callbacks
+    transport_->set_message_callback([this](const websocket_transport::WebSocketMessage& message) {
+        handle_websocket_message(message);
+    });
+    
+    transport_->set_error_callback([this](int error_code, const std::string& error_message) {
+        handle_connection_error(error_code, error_message);
+    });
+    
+    transport_->set_connect_callback([this](bool connected) {
+        handle_connection_status(connected);
+    });
+    
+    std::cout << "[BINANCE] Injected transport initialization complete" << std::endl;
 }
 
 BinancePublicWebSocketHandler::~BinancePublicWebSocketHandler() {
     std::cout << "[BINANCE] Destroying Binance Public WebSocket Handler" << std::endl;
     disconnect();
+    shutdown();
 }
 
 bool BinancePublicWebSocketHandler::connect(const std::string& url) {
     std::cout << "[BINANCE] Connecting to public WebSocket: " << url << std::endl;
     
-    websocket_url_ = url;
-    state_.store(WebSocketState::CONNECTING);
-    
-    // Start connection thread
-    connection_thread_running_.store(true);
-    connection_thread_ = std::thread(&BinancePublicWebSocketHandler::connection_loop, this);
-    
-    // Wait for connection to establish
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    
-    if (connected_.load()) {
-        state_.store(WebSocketState::CONNECTED);
-        if (connect_callback_) {
-            connect_callback_(true);
-        }
-        std::cout << "[BINANCE] Connected successfully" << std::endl;
-        return true;
-    } else {
-        state_.store(WebSocketState::ERROR);
-        if (connect_callback_) {
-            connect_callback_(false);
-        }
-        std::cerr << "[BINANCE] Failed to connect" << std::endl;
+    if (!transport_) {
+        std::cerr << "[BINANCE] Transport not initialized" << std::endl;
         return false;
     }
+    
+    return transport_->connect(url);
 }
 
 void BinancePublicWebSocketHandler::disconnect() {
     std::cout << "[BINANCE] Disconnecting from public WebSocket" << std::endl;
     
-    connected_.store(false);
-    state_.store(WebSocketState::DISCONNECTING);
-    should_stop_.store(true);
-    
-    // Stop connection thread
-    connection_thread_running_.store(false);
-    if (connection_thread_.joinable()) {
-        connection_thread_.join();
+    if (transport_) {
+        transport_->disconnect();
     }
-    
-    state_.store(WebSocketState::DISCONNECTED);
-    std::cout << "[BINANCE] Disconnected" << std::endl;
 }
 
 bool BinancePublicWebSocketHandler::is_connected() const {
-    return connected_.load();
+    return transport_ ? transport_->is_connected() : false;
 }
 
 WebSocketState BinancePublicWebSocketHandler::get_state() const {
-    return state_.load();
+    return transport_ ? static_cast<WebSocketState>(transport_->get_state()) : WebSocketState::DISCONNECTED;
 }
 
 bool BinancePublicWebSocketHandler::send_message(const std::string& message, bool binary) {
-    if (!is_connected()) {
-        std::cerr << "[BINANCE] Cannot send message: not connected" << std::endl;
+    if (!transport_) {
+        std::cerr << "[BINANCE] Transport not initialized" << std::endl;
         return false;
     }
     
-    std::cout << "[BINANCE] Sending message: " << message << std::endl;
-    // In a real implementation, you would send the message via WebSocket
-    return true;
+    return transport_->send_message(message, binary);
 }
 
 bool BinancePublicWebSocketHandler::send_binary(const std::vector<uint8_t>& data) {
-    if (!is_connected()) {
-        std::cerr << "[BINANCE] Cannot send binary data: not connected" << std::endl;
+    if (!transport_) {
+        std::cerr << "[BINANCE] Transport not initialized" << std::endl;
         return false;
     }
     
-    std::cout << "[BINANCE] Sending binary data: " << data.size() << " bytes" << std::endl;
-    // In a real implementation, you would send the binary data via WebSocket
-    return true;
+    return transport_->send_binary(data);
 }
 
 void BinancePublicWebSocketHandler::set_message_callback(WebSocketMessageCallback callback) {
@@ -108,33 +120,51 @@ void BinancePublicWebSocketHandler::set_connect_callback(WebSocketConnectCallbac
 }
 
 void BinancePublicWebSocketHandler::set_ping_interval(int seconds) {
-    ping_interval_.store(seconds);
-    std::cout << "[BINANCE] Ping interval set to: " << seconds << " seconds" << std::endl;
+    if (transport_) {
+        transport_->set_ping_interval(seconds);
+    }
 }
 
 void BinancePublicWebSocketHandler::set_timeout(int seconds) {
-    timeout_.store(seconds);
-    std::cout << "[BINANCE] Timeout set to: " << seconds << " seconds" << std::endl;
+    if (transport_) {
+        transport_->set_timeout(seconds);
+    }
 }
 
 void BinancePublicWebSocketHandler::set_reconnect_attempts(int attempts) {
-    reconnect_attempts_.store(attempts);
-    std::cout << "[BINANCE] Reconnect attempts set to: " << attempts << std::endl;
+    if (transport_) {
+        transport_->set_reconnect_attempts(attempts);
+    }
 }
 
 void BinancePublicWebSocketHandler::set_reconnect_delay(int seconds) {
-    reconnect_delay_.store(seconds);
-    std::cout << "[BINANCE] Reconnect delay set to: " << seconds << " seconds" << std::endl;
+    if (transport_) {
+        transport_->set_reconnect_delay(seconds);
+    }
+}
+
+void BinancePublicWebSocketHandler::set_auth_credentials(const std::string& api_key, const std::string& secret) {
+    // Public streams don't require authentication
+    std::cout << "[BINANCE] Public WebSocket doesn't require authentication" << std::endl;
 }
 
 bool BinancePublicWebSocketHandler::initialize() {
     std::cout << "[BINANCE] Initializing public WebSocket handler" << std::endl;
-    return true;
+    
+    if (!transport_) {
+        std::cerr << "[BINANCE] Transport not initialized" << std::endl;
+        return false;
+    }
+    
+    return transport_->initialize();
 }
 
 void BinancePublicWebSocketHandler::shutdown() {
     std::cout << "[BINANCE] Shutting down public WebSocket handler" << std::endl;
-    disconnect();
+    
+    if (transport_) {
+        transport_->shutdown();
+    }
 }
 
 bool BinancePublicWebSocketHandler::subscribe_to_channel(const std::string& channel) {
@@ -146,8 +176,22 @@ bool BinancePublicWebSocketHandler::subscribe_to_channel(const std::string& chan
     std::lock_guard<std::mutex> lock(channels_mutex_);
     subscribed_channels_.push_back(channel);
     
+    // Send subscription message
+    Json::Value subscribe_msg;
+    subscribe_msg["method"] = "SUBSCRIBE";
+    subscribe_msg["params"] = Json::Value(Json::arrayValue);
+    subscribe_msg["params"].append(channel);
+    subscribe_msg["id"] = 1;
+    
+    Json::StreamWriterBuilder builder;
+    std::string message = Json::writeString(builder, subscribe_msg);
+    
+    if (send_message(message)) {
     std::cout << "[BINANCE] Subscribed to channel: " << channel << std::endl;
     return true;
+    }
+    
+    return false;
 }
 
 bool BinancePublicWebSocketHandler::unsubscribe_from_channel(const std::string& channel) {
@@ -160,8 +204,21 @@ bool BinancePublicWebSocketHandler::unsubscribe_from_channel(const std::string& 
     auto it = std::find(subscribed_channels_.begin(), subscribed_channels_.end(), channel);
     if (it != subscribed_channels_.end()) {
         subscribed_channels_.erase(it);
+        
+        // Send unsubscription message
+        Json::Value unsubscribe_msg;
+        unsubscribe_msg["method"] = "UNSUBSCRIBE";
+        unsubscribe_msg["params"] = Json::Value(Json::arrayValue);
+        unsubscribe_msg["params"].append(channel);
+        unsubscribe_msg["id"] = 1;
+        
+        Json::StreamWriterBuilder builder;
+        std::string message = Json::writeString(builder, unsubscribe_msg);
+        
+        if (send_message(message)) {
         std::cout << "[BINANCE] Unsubscribed from channel: " << channel << std::endl;
         return true;
+        }
     }
     
     std::cerr << "[BINANCE] Channel not found: " << channel << std::endl;
@@ -171,11 +228,6 @@ bool BinancePublicWebSocketHandler::unsubscribe_from_channel(const std::string& 
 std::vector<std::string> BinancePublicWebSocketHandler::get_subscribed_channels() const {
     std::lock_guard<std::mutex> lock(channels_mutex_);
     return subscribed_channels_;
-}
-
-void BinancePublicWebSocketHandler::set_auth_credentials(const std::string& api_key, const std::string& secret) {
-    // Public streams don't require authentication
-    std::cout << "[BINANCE] Public WebSocket doesn't require authentication" << std::endl;
 }
 
 bool BinancePublicWebSocketHandler::subscribe_to_orderbook(const std::string& symbol) {
@@ -193,44 +245,132 @@ bool BinancePublicWebSocketHandler::subscribe_to_ticker(const std::string& symbo
     return subscribe_to_channel(channel);
 }
 
-void BinancePublicWebSocketHandler::handle_message(const std::string& message) {
-    handle_websocket_message(message);
-}
 
-void BinancePublicWebSocketHandler::connection_loop() {
-    std::cout << "[BINANCE] Starting connection loop" << std::endl;
+void BinancePublicWebSocketHandler::handle_websocket_message(const websocket_transport::WebSocketMessage& message) {
+    std::cout << "[BINANCE] Received message: " << message.data << std::endl;
     
-    // Simulate connection establishment
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    connected_.store(true);
+    // Parse and handle Binance message
+    parse_binance_message(message.data);
     
-    // Keep connection alive
-    while (connection_thread_running_.load() && !should_stop_.load()) {
-        std::this_thread::sleep_for(std::chrono::seconds(ping_interval_.load()));
-        
-        if (connection_thread_running_.load()) {
-            // Send ping
-            std::cout << "[BINANCE] Sending ping" << std::endl;
-        }
-    }
-    
-    connected_.store(false);
-    std::cout << "[BINANCE] Connection loop stopped" << std::endl;
-}
-
-void BinancePublicWebSocketHandler::handle_websocket_message(const std::string& message) {
+    // Call user callback
     if (message_callback_) {
         WebSocketMessage ws_message;
-        ws_message.data = message;
-        ws_message.is_binary = false;
-        ws_message.timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
-        ws_message.channel = "public";
+        ws_message.data = message.data;
+        ws_message.is_binary = message.is_binary;
+        ws_message.timestamp_us = message.timestamp_us;
+        ws_message.channel = message.channel;
         
         message_callback_(ws_message);
     }
+}
+
+void BinancePublicWebSocketHandler::handle_connection_error(int error_code, const std::string& error_message) {
+    std::cerr << "[BINANCE] Connection error: " << error_code << " - " << error_message << std::endl;
     
-    std::cout << "[BINANCE] Received message: " << message << std::endl;
+    if (error_callback_) {
+        error_callback_(error_message);
+    }
+}
+
+void BinancePublicWebSocketHandler::handle_connection_status(bool connected) {
+    std::cout << "[BINANCE] Connection status: " << (connected ? "connected" : "disconnected") << std::endl;
+    
+    if (connect_callback_) {
+        connect_callback_(connected);
+    }
+}
+
+void BinancePublicWebSocketHandler::parse_binance_message(const std::string& message) {
+    try {
+        Json::Value root;
+        Json::Reader reader;
+        
+        if (!reader.parse(message, root)) {
+            std::cerr << "[BINANCE] Failed to parse JSON message" << std::endl;
+            return;
+        }
+        
+        // Handle different message types
+        if (root.isMember("stream")) {
+            std::string stream = root["stream"].asString();
+            Json::Value data = root["data"];
+            
+            if (stream.find("@depth") != std::string::npos) {
+                handle_orderbook_update(data);
+            } else if (stream.find("@trade") != std::string::npos) {
+                handle_trade_update(data);
+            } else if (stream.find("@ticker") != std::string::npos) {
+                handle_ticker_update(data);
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[BINANCE] Error parsing message: " << e.what() << std::endl;
+    }
+}
+
+void BinancePublicWebSocketHandler::handle_orderbook_update(const Json::Value& data) {
+    // Parse orderbook update and call appropriate callbacks
+    std::cout << "[BINANCE] Orderbook update received" << std::endl;
+    
+    try {
+        // Extract symbol
+        std::string symbol = data["s"].asString();
+        uint64_t timestamp = data["E"].asUInt64();
+        
+        // Create OrderBookSnapshot
+        proto::OrderBookSnapshot orderbook;
+        orderbook.set_symbol(symbol);
+        orderbook.set_exch("binance");
+        orderbook.set_timestamp_us(timestamp);
+        
+        // Parse ALL bids
+        if (data.isMember("b") && data["b"].isArray()) {
+            for (const auto& bid : data["b"]) {
+                if (bid.isArray() && bid.size() >= 2) {
+                    auto* level = orderbook.add_bids();
+                    level->set_price(std::stod(bid[0].asString()));
+                    level->set_qty(std::stod(bid[1].asString()));
+                }
+            }
+        }
+        
+        // Parse ALL asks
+        if (data.isMember("a") && data["a"].isArray()) {
+            for (const auto& ask : data["a"]) {
+                if (ask.isArray() && ask.size() >= 2) {
+                    auto* level = orderbook.add_asks();
+                    level->set_price(std::stod(ask[0].asString()));
+                    level->set_qty(std::stod(ask[1].asString()));
+                }
+            }
+        }
+        
+        std::cout << "[BINANCE] Parsed orderbook: " << symbol 
+                  << " bids: " << orderbook.bids_size() 
+                  << " asks: " << orderbook.asks_size() << std::endl;
+        
+        // TODO: Call appropriate callback to forward orderbook to strategy
+        // This would need to be connected to the strategy container
+        
+    } catch (const std::exception& e) {
+        std::cerr << "[BINANCE] Error parsing orderbook update: " << e.what() << std::endl;
+    }
+}
+
+void BinancePublicWebSocketHandler::handle_trade_update(const Json::Value& data) {
+    // Parse trade update and call appropriate callbacks
+    std::cout << "[BINANCE] Trade update received" << std::endl;
+    
+    // TODO: Implement trade parsing and normalization
+    // This would extract price, quantity, timestamp, etc.
+}
+
+void BinancePublicWebSocketHandler::handle_ticker_update(const Json::Value& data) {
+    // Parse ticker update and call appropriate callbacks
+    std::cout << "[BINANCE] Ticker update received" << std::endl;
+    
+    // TODO: Implement ticker parsing and normalization
+    // This would extract price, volume, 24h change, etc.
 }
 
 } // namespace binance

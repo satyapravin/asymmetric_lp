@@ -49,23 +49,6 @@ std::vector<proto::OrderEvent> BinanceDataFetcher::get_open_orders() {
     return parse_orders(response);
 }
 
-std::vector<proto::OrderEvent> BinanceDataFetcher::get_order_history() {
-    if (!is_authenticated()) {
-        std::cerr << "[BINANCE_DATA_FETCHER] Not authenticated" << std::endl;
-        return {};
-    }
-    
-    std::string endpoint = "/fapi/v2/allOrders";
-    std::string response = make_request(endpoint);
-    
-    if (response.empty()) {
-        std::cerr << "[BINANCE_DATA_FETCHER] Empty response for order history" << std::endl;
-        return {};
-    }
-    
-    return parse_orders(response);
-}
-
 std::vector<proto::PositionUpdate> BinanceDataFetcher::get_positions() {
     if (!is_authenticated()) {
         std::cerr << "[BINANCE_DATA_FETCHER] Not authenticated" << std::endl;
@@ -81,6 +64,23 @@ std::vector<proto::PositionUpdate> BinanceDataFetcher::get_positions() {
     }
     
     return parse_positions(response);
+}
+
+std::vector<proto::AccountBalance> BinanceDataFetcher::get_balances() {
+    if (!is_authenticated()) {
+        std::cerr << "[BINANCE_DATA_FETCHER] Not authenticated" << std::endl;
+        return {};
+    }
+    
+    std::string endpoint = "/fapi/v2/balance";
+    std::string response = make_request(endpoint);
+    
+    if (response.empty()) {
+        std::cerr << "[BINANCE_DATA_FETCHER] Empty response for balances" << std::endl;
+        return {};
+    }
+    
+    return parse_balances(response);
 }
 
 std::string BinanceDataFetcher::make_request(const std::string& endpoint, const std::string& params) {
@@ -228,6 +228,38 @@ std::vector<proto::PositionUpdate> BinanceDataFetcher::parse_positions(const std
     }
     
     return positions;
+}
+
+std::vector<proto::AccountBalance> BinanceDataFetcher::parse_balances(const std::string& json_response) {
+    std::vector<proto::AccountBalance> balances;
+    
+    Json::Value root;
+    Json::Reader reader;
+    
+    if (!reader.parse(json_response, root)) {
+        std::cerr << "[BINANCE_DATA_FETCHER] Failed to parse JSON: " << reader.getFormattedErrorMessages() << std::endl;
+        return balances;
+    }
+    
+    if (root.isArray()) {
+        for (const auto& balance_json : root) {
+            double balance_amount = std::stod(balance_json["balance"].asString());
+            if (balance_amount < 1e-8) continue; // Skip zero balances
+            
+            proto::AccountBalance balance;
+            balance.set_exch("BINANCE");
+            balance.set_instrument(balance_json["asset"].asString());
+            balance.set_balance(balance_amount);
+            balance.set_available(std::stod(balance_json["availableBalance"].asString()));
+            balance.set_locked(balance_amount - balance.available());
+            balance.set_timestamp_us(std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+            
+            balances.push_back(balance);
+        }
+    }
+    
+    return balances;
 }
 
 size_t BinanceDataFetcher::DataFetcherWriteCallback(void* contents, size_t size, size_t nmemb, std::string* data) {

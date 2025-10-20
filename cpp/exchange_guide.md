@@ -113,8 +113,6 @@ public:
     
     // Order information
     virtual Result<std::vector<Order>> get_open_orders() = 0;
-    virtual Result<std::vector<Order>> get_order_history(
-        const std::string& symbol = "") = 0;
 };
 ```
 
@@ -151,7 +149,7 @@ public:
     
     // Event handling
     virtual void set_orderbook_callback(
-        std::function<void(const OrderBookSnapshot&)> callback) = 0;
+        std::function<void(const proto::OrderBookSnapshot&)> callback) = 0;
         
     virtual void set_trade_callback(
         std::function<void(const Trade&)> callback) = 0;
@@ -320,11 +318,11 @@ public:
 private:
     std::string base_url_;
     std::unique_ptr<WebSocketClient> ws_client_;
-    std::function<void(const OrderBookSnapshot&)> orderbook_callback_;
+    std::function<void(const proto::OrderBookSnapshot&)> orderbook_callback_;
     
     void handle_websocket_message(const std::string& message);
     void parse_orderbook_message(const nlohmann::json& data);
-    OrderBookSnapshot normalize_orderbook(const nlohmann::json& raw_data);
+    proto::OrderBookSnapshot normalize_orderbook(const nlohmann::json& raw_data);
 };
 ```
 

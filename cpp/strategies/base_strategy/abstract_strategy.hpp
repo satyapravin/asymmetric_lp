@@ -7,14 +7,20 @@
 #include <vector>
 #include <chrono>
 #include <mutex>
+#include <optional>
+#include "../trader/mini_pms.hpp"  // Contains full PositionInfo and AccountBalanceInfo definitions
 #include "../proto/order.pb.h"
 #include "../proto/market_data.pb.h"
 #include "../proto/position.pb.h"
+#include "../proto/acc_balance.pb.h"
 
 // Forward declarations for ZMQ adapters
 class ZmqOMSAdapter;
 class ZmqMDSAdapter;
 class ZmqPMSAdapter;
+
+// Forward declaration for position info
+// PositionInfo and AccountBalanceInfo are now fully defined in mini_pms.hpp
 
 /**
  * Abstract Strategy Base Class
@@ -28,11 +34,12 @@ public:
     // Strategy lifecycle
     virtual ~AbstractStrategy() = default;
     
-    // Pure virtual methods that must be implemented by concrete strategies
-    virtual void on_market_data(const proto::OrderBookSnapshot& orderbook) = 0;
-    virtual void on_order_event(const proto::OrderEvent& order_event) = 0;
-    virtual void on_position_update(const proto::PositionUpdate& position) = 0;
-    virtual void on_trade_execution(const proto::Trade& trade) = 0;
+        // Pure virtual methods that must be implemented by concrete strategies
+        virtual void on_market_data(const proto::OrderBookSnapshot& orderbook) = 0;
+        virtual void on_order_event(const proto::OrderEvent& order_event) = 0;
+        virtual void on_position_update(const proto::PositionUpdate& position) = 0;
+        virtual void on_trade_execution(const proto::Trade& trade) = 0;
+        virtual void on_account_balance_update(const proto::AccountBalanceUpdate& balance_update) = 0;
     
     // Optional virtual methods with default implementations
     virtual void on_startup() {}
@@ -59,6 +66,22 @@ public:
     virtual void set_max_position_size(double max_size) { max_position_size_ = max_size; }
     virtual void set_max_order_size(double max_size) { max_order_size_ = max_size; }
     virtual void set_max_daily_loss(double max_loss) { max_daily_loss_ = max_loss; }
+    
+        // Position queries (Strategy queries positions via Container)
+        // Note: These methods will be implemented by StrategyContainer
+        virtual std::optional<trader::PositionInfo> get_position(const std::string& exchange,
+                                                                const std::string& symbol) const = 0;
+        virtual std::vector<trader::PositionInfo> get_all_positions() const = 0;
+        virtual std::vector<trader::PositionInfo> get_positions_by_exchange(const std::string& exchange) const = 0;
+        virtual std::vector<trader::PositionInfo> get_positions_by_symbol(const std::string& symbol) const = 0;
+
+        // Account balance queries (Strategy queries balances via Container)
+        // Note: These methods will be implemented by StrategyContainer
+        virtual std::optional<trader::AccountBalanceInfo> get_account_balance(const std::string& exchange,
+                                                                             const std::string& instrument) const = 0;
+        virtual std::vector<trader::AccountBalanceInfo> get_all_account_balances() const = 0;
+        virtual std::vector<trader::AccountBalanceInfo> get_account_balances_by_exchange(const std::string& exchange) const = 0;
+        virtual std::vector<trader::AccountBalanceInfo> get_account_balances_by_instrument(const std::string& instrument) const = 0;
     
     // Performance metrics
     struct StrategyMetrics {

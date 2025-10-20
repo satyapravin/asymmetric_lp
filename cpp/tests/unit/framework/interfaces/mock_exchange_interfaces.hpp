@@ -246,20 +246,6 @@ public:
         return account_info_;
     }
 
-    std::vector<proto::OrderRequest> get_order_history(const std::string& symbol, int limit) override {
-        std::vector<proto::OrderRequest> history;
-        // Return subset of open_orders_ as history
-        for (const auto& order : open_orders_) {
-            if (symbol.empty() || order.symbol() == symbol) {
-                history.push_back(order);
-                if (limit > 0 && history.size() >= static_cast<size_t>(limit)) {
-                    break;
-                }
-            }
-        }
-        return history;
-    }
-
     // Test helper methods
     void set_open_orders(const std::vector<proto::OrderRequest>& orders) {
         open_orders_ = orders;

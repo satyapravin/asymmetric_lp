@@ -106,25 +106,35 @@ if(NOT ZeroMQ_FOUND)
   add_definitions(-DMOCK_ZMQ)
 endif()
 
+# Build core libraries first
 add_subdirectory(utils)
 add_subdirectory(exchanges)
 add_subdirectory(strategies)
+
+# Build server libraries
 add_subdirectory(trading_engine)
-add_subdirectory(trader)
 add_subdirectory(market_server)
 add_subdirectory(position_server)
+
+# Build trader (uses server libraries)
+add_subdirectory(trader)
+
+# Build tests (uses all libraries)
 add_subdirectory(tests)
 
 # Add test executables
 find_package(simdjson REQUIRED)
-# Test executables
 
+# Link protobuf to all components that need it
 if(Protobuf_FOUND)
-  target_link_libraries(market_server PRIVATE proto_msgs)
-  target_link_libraries(position_server PRIVATE proto_msgs)
-  target_link_libraries(trader PRIVATE proto_msgs)
+  # Compile definitions
+  target_compile_definitions(trading_engine_lib PRIVATE PROTO_ENABLED)
+  target_compile_definitions(market_server_lib PRIVATE PROTO_ENABLED)
+  target_compile_definitions(position_server_lib PRIVATE PROTO_ENABLED)
+  target_compile_definitions(trading_engine PRIVATE PROTO_ENABLED)
   target_compile_definitions(market_server PRIVATE PROTO_ENABLED)
   target_compile_definitions(position_server PRIVATE PROTO_ENABLED)
+  target_compile_definitions(trader_lib PRIVATE PROTO_ENABLED)
   target_compile_definitions(trader PRIVATE PROTO_ENABLED)
 endif()
 

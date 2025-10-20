@@ -72,7 +72,6 @@ std::string rest_url = config_manager.get_rest_api_url("BINANCE", AssetType::FUT
 // - get_open_orders()     - Get current open orders
 // - get_positions()        - Get current positions  
 // - get_account()          - Get account information
-// - get_order_history()    - Get historical orders
 ```
 
 #### For WebSocket (OMS, PMS, Subscriber - READ/WRITE):

@@ -1,4 +1,5 @@
 #pragma once
+#include "../../websocket/i_websocket_transport.hpp"
 #include "../../websocket/i_exchange_websocket_handler.hpp"
 #include <string>
 #include <vector>
@@ -11,6 +12,7 @@
 #include <condition_variable>
 #include <functional>
 #include <cstdint>
+#include <json/json.h>
 
 namespace binance {
 
@@ -39,10 +41,11 @@ using BinanceOrderbookCallback = std::function<void(const std::string& symbol, c
 using BinanceTickerCallback = std::function<void(const std::string& symbol, double price, double volume)>;
 using BinanceTradeCallback = std::function<void(const std::string& symbol, double price, double qty)>;
 
-// Binance Public WebSocket Handler (Market Data)
+// Binance Public WebSocket Handler (Market Data) - Uses transport abstraction
 class BinancePublicWebSocketHandler : public IExchangeWebSocketHandler {
 public:
     BinancePublicWebSocketHandler();
+    explicit BinancePublicWebSocketHandler(std::unique_ptr<websocket_transport::IWebSocketTransport> transport);
     ~BinancePublicWebSocketHandler();
 
     // IWebSocketHandler interface
@@ -61,46 +64,51 @@ public:
     void set_reconnect_delay(int seconds) override;
     bool initialize() override;
     void shutdown() override;
+    WebSocketType get_type() const override { return WebSocketType::PUBLIC_MARKET_DATA; }
+    std::string get_channel() const override { return "public"; }
+
+    // IExchangeWebSocketHandler interface
+    std::string get_exchange_name() const override { return "BINANCE"; }
     bool subscribe_to_channel(const std::string& channel) override;
     bool unsubscribe_from_channel(const std::string& channel) override;
     std::vector<std::string> get_subscribed_channels() const override;
     void set_auth_credentials(const std::string& api_key, const std::string& secret) override;
     bool is_authenticated() const override { return true; } // Public streams don't require explicit auth
-    WebSocketType get_type() const override { return WebSocketType::PUBLIC_MARKET_DATA; }
-    std::string get_exchange_name() const override { return "BINANCE"; }
-    std::string get_channel() const override { return "public"; }
 
-    // Binance-specific public subscriptions
+    // Binance-specific subscriptions
     bool subscribe_to_orderbook(const std::string& symbol);
     bool subscribe_to_trades(const std::string& symbol);
     bool subscribe_to_ticker(const std::string& symbol);
 
-    // Message handling
-    void handle_message(const std::string& message);
+    // Transport configuration
+    void set_transport_type(const std::string& transport_type);
+    void configure_mock_transport(const std::string& test_data_directory, 
+                                int simulation_delay_ms = 10,
+                                int connection_delay_ms = 50);
 
 private:
-    std::atomic<bool> connected_{false};
-    std::atomic<WebSocketState> state_{WebSocketState::DISCONNECTED};
+    // Transport abstraction
+    std::unique_ptr<websocket_transport::IWebSocketTransport> transport_;
+    
+    // Channel management
+    std::vector<std::string> subscribed_channels_;
+    mutable std::mutex channels_mutex_;
+    
+    // Callbacks
     WebSocketMessageCallback message_callback_;
     WebSocketErrorCallback error_callback_;
     WebSocketConnectCallback connect_callback_;
-    std::vector<std::string> subscribed_channels_;
-    mutable std::mutex channels_mutex_;
-    std::atomic<bool> should_stop_{false};
     
-    // WebSocket connection management
-    std::string websocket_url_;
-    std::atomic<int> ping_interval_{30};
-    std::atomic<int> timeout_{30};
-    std::atomic<int> reconnect_attempts_{5};
-    std::atomic<int> reconnect_delay_{5};
+    // Internal methods
+    void handle_websocket_message(const websocket_transport::WebSocketMessage& message);
+    void handle_connection_error(int error_code, const std::string& error_message);
+    void handle_connection_status(bool connected);
     
-    // Connection thread
-    std::thread connection_thread_;
-    std::atomic<bool> connection_thread_running_{false};
-    
-    void connection_loop();
-    void handle_websocket_message(const std::string& message);
+    // Message parsing
+    void parse_binance_message(const std::string& message);
+    void handle_orderbook_update(const Json::Value& data);
+    void handle_trade_update(const Json::Value& data);
+    void handle_ticker_update(const Json::Value& data);
 };
 
 } // namespace binance

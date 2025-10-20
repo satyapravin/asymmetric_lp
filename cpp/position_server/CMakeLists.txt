@@ -1,7 +1,25 @@
 # Position Server CMakeLists.txt
 cmake_minimum_required(VERSION 3.15)
 
-# Position Server executable
+# Position Server Library (includes both lib and service)
+add_library(position_server_lib STATIC
+    position_server_service.cpp
+    position_server_lib.cpp
+)
+
+target_include_directories(position_server_lib PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../utils
+    ${CMAKE_CURRENT_SOURCE_DIR}/../exchanges
+)
+
+target_link_libraries(position_server_lib PUBLIC
+    exchanges
+    utils
+    proto_msgs
+)
+
+# Position Server Executable (uses the library)
 add_executable(position_server
     position_server_main.cpp
 )
@@ -12,7 +30,8 @@ target_include_directories(position_server PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../exchanges
 )
 
-target_link_libraries(position_server PRIVATE
+target_link_libraries(position_server
+    position_server_lib
     exchanges
     utils
     proto_msgs
@@ -24,8 +43,9 @@ set_target_properties(position_server PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
-# Install executable
-install(TARGETS position_server
+# Install library and executable
+install(TARGETS position_server_lib position_server
+    LIBRARY DESTINATION lib
     RUNTIME DESTINATION bin
 )
 

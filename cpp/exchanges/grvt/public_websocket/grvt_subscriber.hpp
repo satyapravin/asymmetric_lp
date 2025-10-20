@@ -28,6 +28,8 @@ public:
     bool connect() override;
     void disconnect() override;
     bool is_connected() const override;
+    void start() override;
+    void stop() override;
     
     // Market data subscriptions (via WebSocket)
     bool subscribe_orderbook(const std::string& symbol, int top_n, int frequency_ms) override;
@@ -37,6 +39,10 @@ public:
     // Real-time callbacks
     void set_orderbook_callback(OrderbookCallback callback) override;
     void set_trade_callback(TradeCallback callback) override;
+    void set_error_callback(std::function<void(const std::string&)> callback) override;
+    
+    // Testing interface - inject custom WebSocket transport
+    void set_websocket_transport(std::unique_ptr<websocket_transport::IWebSocketTransport> transport) override;
 
 private:
     GrvtSubscriberConfig config_;

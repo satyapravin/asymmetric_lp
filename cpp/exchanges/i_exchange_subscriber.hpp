@@ -1,5 +1,6 @@
 #pragma once
 #include "../proto/market_data.pb.h"
+#include "websocket/i_websocket_transport.hpp"
 #include <functional>
 
 // Callback types for market data
@@ -28,6 +29,8 @@ public:
     virtual bool connect() = 0;
     virtual void disconnect() = 0;
     virtual bool is_connected() const = 0;
+    virtual void start() = 0;
+    virtual void stop() = 0;
     
     // Market data subscriptions (via WebSocket)
     virtual bool subscribe_orderbook(const std::string& symbol, int top_n, int frequency_ms) = 0;
@@ -37,4 +40,8 @@ public:
     // Real-time callbacks
     virtual void set_orderbook_callback(OrderbookCallback callback) = 0;
     virtual void set_trade_callback(TradeCallback callback) = 0;
+    virtual void set_error_callback(std::function<void(const std::string&)> callback) = 0;
+    
+    // Testing interface - inject custom WebSocket transport
+    virtual void set_websocket_transport(std::unique_ptr<websocket_transport::IWebSocketTransport> transport) = 0;
 };

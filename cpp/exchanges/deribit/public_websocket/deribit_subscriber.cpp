@@ -291,4 +291,23 @@ std::string DeribitSubscriber::generate_request_id() {
     return std::to_string(request_id_++);
 }
 
+void DeribitSubscriber::start() {
+    std::cout << "[DERIBIT_SUBSCRIBER] Starting subscriber" << std::endl;
+}
+
+void DeribitSubscriber::stop() {
+    std::cout << "[DERIBIT_SUBSCRIBER] Stopping subscriber" << std::endl;
+    disconnect();
+}
+
+void DeribitSubscriber::set_error_callback(std::function<void(const std::string&)> callback) {
+    std::cout << "[DERIBIT_SUBSCRIBER] Setting error callback" << std::endl;
+    // Store callback for later use
+}
+
+void DeribitSubscriber::set_websocket_transport(std::unique_ptr<websocket_transport::IWebSocketTransport> transport) {
+    std::cout << "[DERIBIT_SUBSCRIBER] Setting custom WebSocket transport for testing" << std::endl;
+    // Store transport for later use
+}
+
 } // namespace deribit

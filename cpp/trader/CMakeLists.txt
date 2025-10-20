@@ -1,24 +1,61 @@
 find_package(simdjson REQUIRED)
 
-# Create static library for trader components (ZMQ proxies + strategy container + mini OMS)
+# Trader Library (core trading logic)
 add_library(trader_lib STATIC
-  zmq_oms_adapter.cpp
-  strategy_container.cpp
-  mini_oms.cpp
+    trader_lib.cpp
+    zmq_oms_adapter.cpp
+    strategy_container.cpp
+    mini_oms.cpp
+    mini_pms.cpp
 )
 
-target_link_libraries(trader_lib PRIVATE utils simdjson::simdjson base_strategy)
-
-target_include_directories(trader_lib PRIVATE 
-  ${ZeroMQ_INCLUDE_DIRS}
-  ${CMAKE_CURRENT_SOURCE_DIR}
+target_include_directories(trader_lib PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../utils
+    ${CMAKE_CURRENT_SOURCE_DIR}/../exchanges
+    ${CMAKE_CURRENT_SOURCE_DIR}/../strategies/base_strategy
+    ${CMAKE_CURRENT_SOURCE_DIR}/../strategies/mm_strategy
+    ${ZeroMQ_INCLUDE_DIRS}
 )
 
-# Single trader executable
+target_link_libraries(trader_lib PUBLIC
+    utils
+    exchanges
+    base_strategy
+    simdjson::simdjson
+    proto_msgs
+)
+
+# Trader Executable (uses the library)
 add_executable(trader
-  trader_main.cpp
+    trader_main.cpp
 )
 
-target_link_libraries(trader PRIVATE utils trader_lib proto_msgs base_strategy)
+target_include_directories(trader PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../utils
+    ${CMAKE_CURRENT_SOURCE_DIR}/../exchanges
+    ${CMAKE_CURRENT_SOURCE_DIR}/../strategies/base_strategy
+    ${CMAKE_CURRENT_SOURCE_DIR}/../strategies/mm_strategy
+    ${ZeroMQ_INCLUDE_DIRS}
+)
 
-target_include_directories(trader PRIVATE ${ZeroMQ_INCLUDE_DIRS})
+target_link_libraries(trader
+    trader_lib
+    utils
+    exchanges
+    base_strategy
+    proto_msgs
+)
+
+# Set executable properties
+set_target_properties(trader PROPERTIES
+    OUTPUT_NAME "trader"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+# Install library and executable
+install(TARGETS trader_lib trader
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin
+)

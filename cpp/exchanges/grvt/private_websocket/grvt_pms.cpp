@@ -28,6 +28,10 @@ bool GrvtPMS::connect() {
         websocket_running_ = true;
         websocket_thread_ = std::thread(&GrvtPMS::websocket_loop, this);
         
+        // Start balance polling thread
+        polling_running_ = true;
+        polling_thread_ = std::thread(&GrvtPMS::polling_loop, this);
+        
         // Authenticate
         if (!authenticate_websocket()) {
             std::cerr << "[GRVT_PMS] Authentication failed" << std::endl;
@@ -50,12 +54,18 @@ void GrvtPMS::disconnect() {
     std::cout << "[GRVT_PMS] Disconnecting..." << std::endl;
     
     websocket_running_ = false;
-    connected_ = false;
-    authenticated_ = false;
+    polling_running_ = false;
     
     if (websocket_thread_.joinable()) {
         websocket_thread_.join();
     }
+    
+    if (polling_thread_.joinable()) {
+        polling_thread_.join();
+    }
+    
+    connected_ = false;
+    authenticated_ = false;
     
     std::cout << "[GRVT_PMS] Disconnected" << std::endl;
 }
@@ -76,6 +86,11 @@ bool GrvtPMS::is_authenticated() const {
 
 void GrvtPMS::set_position_update_callback(PositionUpdateCallback callback) {
     position_update_callback_ = callback;
+}
+
+void GrvtPMS::set_account_balance_update_callback(AccountBalanceUpdateCallback callback) {
+    account_balance_update_callback_ = callback;
+    std::cout << "[GRVT_PMS] Account balance update callback set" << std::endl;
 }
 
 void GrvtPMS::websocket_loop() {
@@ -161,20 +176,35 @@ void GrvtPMS::handle_position_update(const Json::Value& position_data) {
 void GrvtPMS::handle_account_update(const Json::Value& account_data) {
     std::cout << "[GRVT_PMS] Account update: " << account_data.toStyledString() << std::endl;
     
-    // Create a position update for account-level information
-    proto::PositionUpdate account_position;
-    account_position.set_exch("GRVT");
-    account_position.set_symbol("ACCOUNT");
-    account_position.set_qty(0.0);
-    account_position.set_avg_price(0.0);
-    // Note: mark_price and unrealized_pnl not available in proto::PositionUpdate
-    // account_position.set_mark_price(0.0);
-    // account_position.set_unrealized_pnl(account_data["totalUnrealizedPnl"].asDouble());
-    account_position.set_timestamp_us(account_data["updateTime"].asUInt64() * 1000);
+    // Note: Balance updates are now handled via REST API polling, not WebSocket
+    // This method only handles position updates from WebSocket
+}
+
+void GrvtPMS::handle_balance_update(const Json::Value& balance_data) {
+    proto::AccountBalanceUpdate balance_update;
     
-    if (position_update_callback_) {
-        position_update_callback_(account_position);
+    // GRVT REST API returns spot_balances array
+    if (balance_data.isMember("spot_balances") && balance_data["spot_balances"].isArray()) {
+        const Json::Value& spot_balances = balance_data["spot_balances"];
+        
+        for (const auto& balance : spot_balances) {
+            proto::AccountBalance* acc_balance = balance_update.add_balances();
+            
+            acc_balance->set_exch("GRVT");
+            acc_balance->set_instrument(balance["currency"].asString());
+            acc_balance->set_balance(balance["balance"].asDouble());
+            acc_balance->set_available(balance["available"].asDouble());
+            acc_balance->set_locked(balance["locked"].asDouble());
+            acc_balance->set_timestamp_us(std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        }
     }
+    
+    if (account_balance_update_callback_) {
+        account_balance_update_callback_(balance_update);
+    }
+    
+    std::cout << "[GRVT_PMS] Balance update: " << balance_update.balances_size() << " balances" << std::endl;
 }
 
 bool GrvtPMS::authenticate_websocket() {
@@ -207,6 +237,100 @@ std::string GrvtPMS::create_auth_message() {
 
 std::string GrvtPMS::generate_request_id() {
     return std::to_string(request_id_++);
+}
+
+// Balance polling methods
+void GrvtPMS::polling_loop() {
+    std::cout << "[GRVT_PMS] Balance polling loop started" << std::endl;
+    
+    while (polling_running_.load()) {
+        try {
+            poll_account_balances();
+            
+            // Sleep for the configured interval
+            std::this_thread::sleep_for(std::chrono::seconds(config_.polling_interval_seconds));
+            
+        } catch (const std::exception& e) {
+            std::cerr << "[GRVT_PMS] Polling error: " << e.what() << std::endl;
+            std::this_thread::sleep_for(std::chrono::seconds(5)); // Wait 5 seconds on error
+        }
+    }
+    
+    std::cout << "[GRVT_PMS] Balance polling loop stopped" << std::endl;
+}
+
+void GrvtPMS::poll_account_balances() {
+    if (!connected_.load() || config_.sub_account_id.empty()) {
+        return;
+    }
+    
+    std::string request = create_balance_request();
+    std::cout << "[GRVT_PMS] Polling account balances: " << request << std::endl;
+    
+    // Mock REST API response for now
+    // In real implementation, this would make HTTP request to GRVT API
+    std::string mock_response = R"({
+        "result": {
+            "sub_account_id": ")" + config_.sub_account_id + R"(",
+            "spot_balances": [
+                {
+                    "currency": "USDT",
+                    "balance": 1000.0,
+                    "available": 950.0,
+                    "locked": 50.0
+                },
+                {
+                    "currency": "BTC",
+                    "balance": 0.1,
+                    "available": 0.08,
+                    "locked": 0.02
+                }
+            ]
+        }
+    })";
+    
+    parse_balance_response(mock_response);
+}
+
+std::string GrvtPMS::create_balance_request() {
+    Json::Value root;
+    root["jsonrpc"] = "2.0";
+    root["id"] = generate_request_id();
+    root["method"] = "private/get_sub_account_summary";
+    
+    Json::Value params;
+    params["sub_account_id"] = config_.sub_account_id;
+    
+    root["params"] = params;
+    
+    Json::StreamWriterBuilder builder;
+    return Json::writeString(builder, root);
+}
+
+bool GrvtPMS::parse_balance_response(const std::string& response) {
+    try {
+        Json::Value root;
+        Json::Reader reader;
+        
+        if (!reader.parse(response, root)) {
+            std::cerr << "[GRVT_PMS] Failed to parse balance response" << std::endl;
+            return false;
+        }
+        
+        if (root.isMember("result")) {
+            handle_balance_update(root["result"]);
+            return true;
+        } else if (root.isMember("error")) {
+            std::cerr << "[GRVT_PMS] API error: " << root["error"].toStyledString() << std::endl;
+            return false;
+        }
+        
+    } catch (const std::exception& e) {
+        std::cerr << "[GRVT_PMS] Error parsing balance response: " << e.what() << std::endl;
+        return false;
+    }
+    
+    return false;
 }
 
 } // namespace grvt

@@ -1,6 +1,7 @@
 #pragma once
 #include "../proto/order.pb.h"
 #include "../proto/position.pb.h"
+#include "../proto/acc_balance.pb.h"
 
 /**
  * IExchangeDataFetcher - HTTP Data Fetcher Interface
@@ -26,6 +27,6 @@ public:
     
     // Startup state recovery (HTTP only)
     virtual std::vector<proto::OrderEvent> get_open_orders() = 0;
-    virtual std::vector<proto::OrderEvent> get_order_history() = 0;
     virtual std::vector<proto::PositionUpdate> get_positions() = 0;
+    virtual std::vector<proto::AccountBalance> get_balances() = 0;
 };

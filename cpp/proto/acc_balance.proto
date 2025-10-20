@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package proto;
+
+message AccountBalance {
+  string exch       = 1;  // Exchange name (e.g., "BINANCE", "DERIBIT", "GRVT")
+  string instrument = 2;  // Instrument/symbol (e.g., "BTC", "USDT", "ETH")
+  double balance    = 3;  // Current balance amount
+  double available  = 4;  // Available balance (not locked in orders)
+  double locked     = 5;  // Locked balance (in open orders)
+  uint64 timestamp_us = 6; // Timestamp in microseconds
+}
+
+message AccountBalanceUpdate {
+  repeated AccountBalance balances = 1; // Multiple balances in one update
+  uint64 timestamp_us = 2; // Update timestamp
+}

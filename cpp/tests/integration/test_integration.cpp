@@ -1,8 +1,8 @@
 #include "doctest.h"
-#include "../../position_server/position_server_factory.hpp"
-#include "../../utils/oms/exchange_oms_factory.hpp"
-#include "../../trader/market_making_strategy.hpp"
-#include "../../trader/models/glft_target.hpp"
+#include "../../exchanges/pms_factory.hpp"
+#include "../../exchanges/oms_factory.hpp"
+#include "../../strategies/mm_strategy/market_making_strategy.hpp"
+#include "../../strategies/mm_strategy/models/glft_target.hpp"
 #include "../../utils/oms/order.hpp"
 #include "../../utils/oms/types.hpp"
 #include <memory>

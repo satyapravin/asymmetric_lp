@@ -4,15 +4,10 @@
 #include <thread>
 
 // Include all test files
-#include "unit/position_server/test_position_server_factory.cpp"
-#include "unit/utils/test_exchange_oms_factory.cpp"
-#include "unit/utils/test_mock_exchange_oms.cpp"
-#include "unit/utils/test_oms.cpp"
-#include "unit/trader/test_market_making_strategy.cpp"
-#include "unit/utils/test_zmq.cpp"
+#include "unit/websockets/test_binance_mock_transport.cpp"
 
 // Integration tests
-#include "integration/test_integration.cpp"
+#include "integration/test_full_chain_integration.cpp"
 
 // Add timeout to prevent hanging
 int main(int argc, char** argv) {

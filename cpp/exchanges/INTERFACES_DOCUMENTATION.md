@@ -30,7 +30,7 @@ The exchange system is split into 4 specialized interfaces, each used by differe
 **Used by**: Trader process during startup/crash recovery
 **Key Methods**:
 - `get_account_info()`, `get_positions()`, `get_balances()` - Current state
-- `get_open_orders()`, `get_order_history()` - Order history
+- `get_open_orders()` - Current open orders
 - `set_auth_credentials()` - HTTP authentication
 
 **Flow**: Trader → HTTP → Exchange (one-time during startup)

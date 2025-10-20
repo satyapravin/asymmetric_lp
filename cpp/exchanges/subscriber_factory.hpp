@@ -21,6 +21,11 @@ class SubscriberFactory {
 public:
     // Create subscriber instance for specific exchange
     static std::unique_ptr<IExchangeSubscriber> create_subscriber(const std::string& exchange_name);
+    
+    // Alias for compatibility
+    static std::unique_ptr<IExchangeSubscriber> create(const std::string& exchange_name) {
+        return create_subscriber(exchange_name);
+    }
 
 private:
     // Helper to convert exchange name to lowercase

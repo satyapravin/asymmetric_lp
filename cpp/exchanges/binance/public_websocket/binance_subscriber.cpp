@@ -23,18 +23,23 @@ bool BinanceSubscriber::connect() {
         return true;
     }
     
+    if (!custom_transport_) {
+        std::cerr << "[BINANCE_SUBSCRIBER] No WebSocket transport injected!" << std::endl;
+        return false;
+    }
+    
     try {
-        // Initialize WebSocket connection (mock implementation)
-        websocket_running_ = true;
-        websocket_thread_ = std::thread(&BinanceSubscriber::websocket_loop, this);
-        
-        connected_ = true;
-        
-        std::cout << "[BINANCE_SUBSCRIBER] Connected successfully" << std::endl;
-        return true;
-        
+        // Use injected transport
+        if (custom_transport_->connect(config_.websocket_url)) {
+            connected_.store(true);
+            std::cout << "[BINANCE_SUBSCRIBER] Connected successfully using injected transport" << std::endl;
+            return true;
+        } else {
+            std::cerr << "[BINANCE_SUBSCRIBER] Failed to connect using injected transport" << std::endl;
+            return false;
+        }
     } catch (const std::exception& e) {
-        std::cerr << "[BINANCE_SUBSCRIBER] Connection failed: " << e.what() << std::endl;
+        std::cerr << "[BINANCE_SUBSCRIBER] Connection error: " << e.what() << std::endl;
         return false;
     }
 }
@@ -42,12 +47,11 @@ bool BinanceSubscriber::connect() {
 void BinanceSubscriber::disconnect() {
     std::cout << "[BINANCE_SUBSCRIBER] Disconnecting..." << std::endl;
     
-    websocket_running_ = false;
-    connected_ = false;
-    
-    if (websocket_thread_.joinable()) {
-        websocket_thread_.join();
+    if (custom_transport_) {
+        custom_transport_->disconnect();
     }
+    
+    connected_.store(false);
     
     std::cout << "[BINANCE_SUBSCRIBER] Disconnected" << std::endl;
 }
@@ -204,9 +208,9 @@ void BinanceSubscriber::handle_websocket_message(const std::string& message) {
 
 void BinanceSubscriber::handle_orderbook_update(const Json::Value& orderbook_data) {
     proto::OrderBookSnapshot orderbook;
-    orderbook.set_exch("BINANCE");
+    orderbook.set_exch("binance");
     orderbook.set_symbol(orderbook_data["s"].asString());
-    orderbook.set_timestamp_us(orderbook_data["E"].asUInt64() * 1000); // Convert to microseconds
+    orderbook.set_timestamp_us(orderbook_data["E"].asUInt64()); // Keep as milliseconds
     
     // Parse bids
     const Json::Value& bids = orderbook_data["b"];
@@ -302,6 +306,59 @@ std::string BinanceSubscriber::convert_symbol_to_binance(const std::string& symb
     std::string binance_symbol = symbol;
     std::transform(binance_symbol.begin(), binance_symbol.end(), binance_symbol.begin(), ::tolower);
     return binance_symbol;
+}
+
+void BinanceSubscriber::set_websocket_transport(std::unique_ptr<websocket_transport::IWebSocketTransport> transport) {
+    std::cout << "[BINANCE_SUBSCRIBER] Setting custom WebSocket transport for testing" << std::endl;
+    custom_transport_ = std::move(transport);
+}
+
+void BinanceSubscriber::start() {
+    std::cout << "[BINANCE_SUBSCRIBER] Starting subscriber" << std::endl;
+    
+    if (!custom_transport_) {
+        std::cerr << "[BINANCE_SUBSCRIBER] No WebSocket transport injected!" << std::endl;
+        return;
+    }
+    
+    // Set up message callback to handle incoming messages
+    custom_transport_->set_message_callback([this](const websocket_transport::WebSocketMessage& message) {
+        std::cout << "[BINANCE_SUBSCRIBER] Received message: " << message.data << std::endl;
+        
+        // Parse the message and call appropriate handlers
+        Json::Value root;
+        Json::Reader reader;
+        
+        if (reader.parse(message.data, root)) {
+            if (root.isMember("stream") && root.isMember("data")) {
+                // This is a stream message
+                const Json::Value& data = root["data"];
+                if (data.isMember("e")) {
+                    std::string event_type = data["e"].asString();
+                    if (event_type == "depthUpdate") {
+                        handle_orderbook_update(data);
+                    } else if (event_type == "trade") {
+                        handle_trade_update(data);
+                    }
+                }
+            }
+        }
+    });
+    
+    // Connect if not already connected
+    if (!connected_.load()) {
+        connect();
+    }
+}
+
+void BinanceSubscriber::stop() {
+    std::cout << "[BINANCE_SUBSCRIBER] Stopping subscriber" << std::endl;
+    disconnect();
+}
+
+void BinanceSubscriber::set_error_callback(std::function<void(const std::string&)> callback) {
+    std::cout << "[BINANCE_SUBSCRIBER] Setting error callback" << std::endl;
+    error_callback_ = callback;
 }
 
 } // namespace binance

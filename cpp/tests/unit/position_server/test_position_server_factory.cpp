@@ -1,7 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest.h"
-#include "../position_server/position_server_factory.hpp"
-#include "../utils/pms/position_feed.hpp"
+#include "../../position_server/position_server_factory.hpp"
+#include "../../utils/pms/position_feed.hpp"
 #include <memory>
 #include <string>
 

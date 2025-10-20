@@ -74,10 +74,6 @@ bool BinancePMS::is_authenticated() const {
     return authenticated_.load();
 }
 
-void BinancePMS::set_position_update_callback(PositionUpdateCallback callback) {
-    position_update_callback_ = callback;
-}
-
 void BinancePMS::websocket_loop() {
     std::cout << "[BINANCE_PMS] WebSocket loop started" << std::endl;
     
@@ -171,26 +167,37 @@ void BinancePMS::handle_position_update(const Json::Value& position_data) {
 void BinancePMS::handle_account_update(const Json::Value& account_data) {
     std::cout << "[BINANCE_PMS] Account update: " << account_data.toStyledString() << std::endl;
     
-    // Create a position update for account-level information
+    // Handle balance updates
     if (account_data.isMember("B")) {
         const Json::Value& balances = account_data["B"];
         if (balances.isArray() && !balances.empty()) {
-            proto::PositionUpdate account_position;
-            account_position.set_exch("BINANCE");
-            account_position.set_symbol("ACCOUNT");
-            account_position.set_qty(0.0);
-            account_position.set_avg_price(0.0);
-            // Note: mark_price and unrealized_pnl not available in proto::PositionUpdate
-            // account_position.set_mark_price(0.0);
-            // account_position.set_unrealized_pnl(0.0); // Calculate from balances if needed
-            account_position.set_timestamp_us(std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count());
-            
-            if (position_update_callback_) {
-                position_update_callback_(account_position);
-            }
+            handle_balance_update(balances);
         }
     }
+}
+
+void BinancePMS::handle_balance_update(const Json::Value& balance_data) {
+    proto::AccountBalanceUpdate balance_update;
+    
+    if (balance_data.isArray()) {
+        for (const auto& balance : balance_data) {
+            proto::AccountBalance* acc_balance = balance_update.add_balances();
+            
+            acc_balance->set_exch("BINANCE");
+            acc_balance->set_instrument(balance["a"].asString()); // Asset
+            acc_balance->set_balance(std::stod(balance["wb"].asString())); // Wallet balance
+            acc_balance->set_available(std::stod(balance["cw"].asString())); // Cross wallet balance (available)
+            acc_balance->set_locked(std::stod(balance["wb"].asString()) - std::stod(balance["cw"].asString())); // Calculated locked
+            acc_balance->set_timestamp_us(std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        }
+    }
+    
+    if (account_balance_update_callback_) {
+        account_balance_update_callback_(balance_update);
+    }
+    
+    std::cout << "[BINANCE_PMS] Balance update: " << balance_update.balances_size() << " balances" << std::endl;
 }
 
 bool BinancePMS::authenticate_websocket() {
@@ -220,6 +227,16 @@ std::string BinancePMS::create_auth_message() {
 
 std::string BinancePMS::generate_request_id() {
     return std::to_string(request_id_++);
+}
+
+void BinancePMS::set_position_update_callback(PositionUpdateCallback callback) {
+    position_update_callback_ = callback;
+    std::cout << "[BINANCE_PMS] Position update callback set" << std::endl;
+}
+
+void BinancePMS::set_account_balance_update_callback(AccountBalanceUpdateCallback callback) {
+    account_balance_update_callback_ = callback;
+    std::cout << "[BINANCE_PMS] Account balance update callback set" << std::endl;
 }
 
 } // namespace binance

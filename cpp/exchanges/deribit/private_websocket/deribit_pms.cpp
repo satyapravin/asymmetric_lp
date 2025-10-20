@@ -78,6 +78,11 @@ void DeribitPMS::set_position_update_callback(PositionUpdateCallback callback) {
     position_update_callback_ = callback;
 }
 
+void DeribitPMS::set_account_balance_update_callback(AccountBalanceUpdateCallback callback) {
+    account_balance_update_callback_ = callback;
+    std::cout << "[DERIBIT_PMS] Account balance update callback set" << std::endl;
+}
+
 void DeribitPMS::websocket_loop() {
     std::cout << "[DERIBIT_PMS] WebSocket loop started" << std::endl;
     
@@ -122,9 +127,14 @@ void DeribitPMS::handle_websocket_message(const std::string& message) {
         if (root.isMember("method")) {
             std::string method = root["method"].asString();
             
-            if (method == "user.portfolio" && root.isMember("params")) {
+            if (method == "portfolio" && root.isMember("params")) {
+                // Portfolio channel provides balance updates
+                handle_account_update(root["params"]);
+            } else if (method == "user.portfolio" && root.isMember("params")) {
+                // Legacy portfolio method
                 handle_position_update(root["params"]);
             } else if (method == "user.changes" && root.isMember("params")) {
+                // Account changes
                 handle_account_update(root["params"]);
             }
         }
@@ -161,20 +171,65 @@ void DeribitPMS::handle_position_update(const Json::Value& position_data) {
 void DeribitPMS::handle_account_update(const Json::Value& account_data) {
     std::cout << "[DERIBIT_PMS] Account update: " << account_data.toStyledString() << std::endl;
     
-    // Create a position update for account-level information
-    proto::PositionUpdate account_position;
-    account_position.set_exch("DERIBIT");
-    account_position.set_symbol("ACCOUNT");
-    account_position.set_qty(0.0);
-    account_position.set_avg_price(0.0);
-    // Note: mark_price and unrealized_pnl not available in proto::PositionUpdate
-    // account_position.set_mark_price(0.0);
-    // account_position.set_unrealized_pnl(account_data["total_unrealized_pnl"].asDouble());
-    account_position.set_timestamp_us(account_data["timestamp"].asUInt64() * 1000);
-    
-    if (position_update_callback_) {
-        position_update_callback_(account_position);
+    // Handle portfolio/balance updates from Deribit portfolio channel
+    if (account_data.isMember("portfolio")) {
+        const Json::Value& portfolio = account_data["portfolio"];
+        handle_balance_update(portfolio);
     }
+    
+    // Handle position updates if present
+    if (account_data.isMember("positions")) {
+        const Json::Value& positions = account_data["positions"];
+        if (positions.isArray()) {
+            for (const auto& pos_data : positions) {
+                handle_position_update(pos_data);
+            }
+        }
+    }
+}
+
+void DeribitPMS::handle_balance_update(const Json::Value& portfolio_data) {
+    proto::AccountBalanceUpdate balance_update;
+    
+    // Deribit portfolio contains balance information for different currencies
+    // The portfolio object contains fields like "BTC", "ETH", "USDT", etc.
+    for (const auto& currency : portfolio_data.getMemberNames()) {
+        const Json::Value& currency_data = portfolio_data[currency];
+        
+        proto::AccountBalance* acc_balance = balance_update.add_balances();
+        
+        acc_balance->set_exch("DERIBIT");
+        acc_balance->set_instrument(currency);
+        
+        // Deribit portfolio structure: each currency has balance, available, etc.
+        if (currency_data.isMember("balance")) {
+            acc_balance->set_balance(currency_data["balance"].asDouble());
+        } else {
+            acc_balance->set_balance(0.0);
+        }
+        
+        if (currency_data.isMember("available")) {
+            acc_balance->set_available(currency_data["available"].asDouble());
+        } else {
+            acc_balance->set_available(0.0);
+        }
+        
+        if (currency_data.isMember("locked")) {
+            acc_balance->set_locked(currency_data["locked"].asDouble());
+        } else {
+            // Calculate locked as balance - available if not provided
+            acc_balance->set_locked(acc_balance->balance() - acc_balance->available());
+        }
+        
+        acc_balance->set_timestamp_us(std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+    }
+    
+    if (account_balance_update_callback_) {
+        account_balance_update_callback_(balance_update);
+    }
+    
+    std::cout << "[DERIBIT_PMS] Balance update: " << balance_update.balances_size() << " balances" << std::endl;
 }
 
 bool DeribitPMS::authenticate_websocket() {
@@ -184,6 +239,14 @@ bool DeribitPMS::authenticate_websocket() {
     // Mock authentication response
     std::string mock_auth_response = R"({"jsonrpc":"2.0","id":)" + std::to_string(request_id_++) + R"(,"result":{"access_token":"mock_token","expires_in":3600}})";
     handle_websocket_message(mock_auth_response);
+    
+    // Subscribe to portfolio channel for balance updates
+    std::string portfolio_subscription = create_portfolio_subscription();
+    std::cout << "[DERIBIT_PMS] Subscribing to portfolio channel: " << portfolio_subscription << std::endl;
+    
+    // Mock portfolio subscription response
+    std::string mock_portfolio_response = R"({"jsonrpc":"2.0","id":)" + std::to_string(request_id_++) + R"(,"result":["portfolio"])";
+    handle_websocket_message(mock_portfolio_response);
     
     return true;
 }
@@ -198,6 +261,21 @@ std::string DeribitPMS::create_auth_message() {
     params["grant_type"] = "client_credentials";
     params["client_id"] = config_.client_id;
     params["client_secret"] = config_.client_secret;
+    
+    root["params"] = params;
+    
+    Json::StreamWriterBuilder builder;
+    return Json::writeString(builder, root);
+}
+
+std::string DeribitPMS::create_portfolio_subscription() {
+    Json::Value root;
+    root["jsonrpc"] = "2.0";
+    root["id"] = generate_request_id();
+    root["method"] = "private/subscribe";
+    
+    Json::Value params(Json::arrayValue);
+    params.append("portfolio");
     
     root["params"] = params;
     

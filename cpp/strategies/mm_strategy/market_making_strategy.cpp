@@ -92,6 +92,14 @@ void MarketMakingStrategy::on_trade_execution(const proto::Trade& trade) {
               << " " << trade.qty() << " @ " << trade.price() << std::endl;
 }
 
+void MarketMakingStrategy::on_account_balance_update(const proto::AccountBalanceUpdate& balance_update) {
+    if (!running_.load()) {
+        return;
+    }
+    std::cout << "[MARKET_MAKING] Account Balance Update: " << balance_update.balances_size() << " balances" << std::endl;
+    // Update internal balance tracking or risk management
+}
+
 // Order management methods removed - Strategy calls Container instead
 
 OrderStateInfo MarketMakingStrategy::get_order_state(const std::string& cl_ord_id) {
@@ -112,6 +120,70 @@ std::vector<OrderStateInfo> MarketMakingStrategy::get_all_orders() {
     // Note: Strategy doesn't track orders - Mini OMS does
     // This method is kept for compatibility but should not be used
     return std::vector<OrderStateInfo>();
+}
+
+// Position queries (delegated to Mini PMS via Container)
+// Note: These methods will be implemented by StrategyContainer
+// Strategy doesn't directly access Mini PMS - it goes through Container
+std::optional<trader::PositionInfo> MarketMakingStrategy::get_position(const std::string& exchange, 
+                                                                     const std::string& symbol) const {
+    // Note: Strategy doesn't directly access Mini PMS
+    // This method should be implemented by StrategyContainer
+    // For now, return empty optional
+    return std::nullopt;
+}
+
+std::vector<trader::PositionInfo> MarketMakingStrategy::get_all_positions() const {
+    // Note: Strategy doesn't directly access Mini PMS
+    // This method should be implemented by StrategyContainer
+    // For now, return empty vector
+    return std::vector<trader::PositionInfo>();
+}
+
+std::vector<trader::PositionInfo> MarketMakingStrategy::get_positions_by_exchange(const std::string& exchange) const {
+    // Note: Strategy doesn't directly access Mini PMS
+    // This method should be implemented by StrategyContainer
+    // For now, return empty vector
+    return std::vector<trader::PositionInfo>();
+}
+
+std::vector<trader::PositionInfo> MarketMakingStrategy::get_positions_by_symbol(const std::string& symbol) const {
+    // Note: Strategy doesn't directly access Mini PMS
+    // This method should be implemented by StrategyContainer
+    // For now, return empty vector
+    return std::vector<trader::PositionInfo>();
+}
+
+// Account balance queries (delegated to Mini PMS via Container)
+// Note: These methods will be implemented by StrategyContainer
+// Strategy doesn't directly access Mini PMS - it goes through Container
+std::optional<trader::AccountBalanceInfo> MarketMakingStrategy::get_account_balance(const std::string& exchange,
+                                                                                    const std::string& instrument) const {
+    // Note: Strategy doesn't directly access Mini PMS
+    // This method should be implemented by StrategyContainer
+    // For now, return empty optional
+    return std::nullopt;
+}
+
+std::vector<trader::AccountBalanceInfo> MarketMakingStrategy::get_all_account_balances() const {
+    // Note: Strategy doesn't directly access Mini PMS
+    // This method should be implemented by StrategyContainer
+    // For now, return empty vector
+    return std::vector<trader::AccountBalanceInfo>();
+}
+
+std::vector<trader::AccountBalanceInfo> MarketMakingStrategy::get_account_balances_by_exchange(const std::string& exchange) const {
+    // Note: Strategy doesn't directly access Mini PMS
+    // This method should be implemented by StrategyContainer
+    // For now, return empty vector
+    return std::vector<trader::AccountBalanceInfo>();
+}
+
+std::vector<trader::AccountBalanceInfo> MarketMakingStrategy::get_account_balances_by_instrument(const std::string& instrument) const {
+    // Note: Strategy doesn't directly access Mini PMS
+    // This method should be implemented by StrategyContainer
+    // For now, return empty vector
+    return std::vector<trader::AccountBalanceInfo>();
 }
 
 void MarketMakingStrategy::process_orderbook(const proto::OrderBookSnapshot& orderbook) {

@@ -47,21 +47,6 @@ std::vector<proto::OrderEvent> DeribitDataFetcher::get_open_orders() {
     return parse_orders(response);
 }
 
-std::vector<proto::OrderEvent> DeribitDataFetcher::get_order_history() {
-    if (!is_authenticated()) {
-        std::cerr << "[DERIBIT_DATA_FETCHER] Not authenticated" << std::endl;
-        return {};
-    }
-    
-    std::string response = make_request("private/get_order_history_by_currency", R"({"currency":"BTC","kind":"future"})");
-    if (response.empty()) {
-        std::cerr << "[DERIBIT_DATA_FETCHER] Failed to fetch order history" << std::endl;
-        return {};
-    }
-    
-    return parse_orders(response);
-}
-
 std::vector<proto::PositionUpdate> DeribitDataFetcher::get_positions() {
     if (!is_authenticated()) {
         std::cerr << "[DERIBIT_DATA_FETCHER] Not authenticated" << std::endl;
@@ -75,6 +60,21 @@ std::vector<proto::PositionUpdate> DeribitDataFetcher::get_positions() {
     }
     
     return parse_positions(response);
+}
+
+std::vector<proto::AccountBalance> DeribitDataFetcher::get_balances() {
+    if (!is_authenticated()) {
+        std::cerr << "[DERIBIT_DATA_FETCHER] Not authenticated" << std::endl;
+        return {};
+    }
+    
+    std::string response = make_request("private/get_account_summary", R"({"currency":"BTC"})");
+    if (response.empty()) {
+        std::cerr << "[DERIBIT_DATA_FETCHER] Failed to fetch balances" << std::endl;
+        return {};
+    }
+    
+    return parse_balances(response);
 }
 
 std::string DeribitDataFetcher::make_request(const std::string& method, const std::string& params) {
@@ -198,6 +198,40 @@ std::vector<proto::PositionUpdate> DeribitDataFetcher::parse_positions(const std
     }
     
     return positions;
+}
+
+std::vector<proto::AccountBalance> DeribitDataFetcher::parse_balances(const std::string& json_response) {
+    std::vector<proto::AccountBalance> balances;
+    
+    Json::Value root;
+    Json::Reader reader;
+    
+    if (!reader.parse(json_response, root)) {
+        std::cerr << "[DERIBIT_DATA_FETCHER] Failed to parse balances JSON" << std::endl;
+        return balances;
+    }
+    
+    const Json::Value& result = root["result"];
+    if (result.isObject()) {
+        // Deribit account summary contains balance information
+        std::string currency = result["currency"].asString();
+        double balance = result["balance"].asDouble();
+        
+        if (balance > 1e-8) { // Only include non-zero balances
+            proto::AccountBalance account_balance;
+            account_balance.set_exch("DERIBIT");
+            account_balance.set_instrument(currency);
+            account_balance.set_balance(balance);
+            account_balance.set_available(result["available_funds"].asDouble());
+            account_balance.set_locked(balance - account_balance.available());
+            account_balance.set_timestamp_us(std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+            
+            balances.push_back(account_balance);
+        }
+    }
+    
+    return balances;
 }
 
 size_t DeribitDataFetcher::DataFetcherWriteCallback(void* contents, size_t size, size_t nmemb, std::string* data) {

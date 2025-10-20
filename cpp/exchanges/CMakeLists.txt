@@ -29,7 +29,39 @@ if(CURL_FOUND)
     target_compile_definitions(http_handlers PRIVATE CURL_FOUND)
 endif()
 
-# WebSocket handlers (shared by all exchanges)
+# WebSocket transport abstraction
+add_library(websocket_transport STATIC
+    websocket/i_websocket_transport.hpp
+    websocket/libuv_websocket_transport.hpp
+    websocket/libuv_websocket_transport.cpp
+    websocket/websocket_transport.hpp
+    websocket/websocket_transport.cpp
+    websocket/i_exchange_websocket_handler.hpp
+)
+
+target_include_directories(websocket_transport PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../utils
+)
+
+# Set position independent code for static library
+set_target_properties(websocket_transport PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+# Link with real libuv and websockets
+find_library(LIBUV_LIBRARY uv)
+find_library(WEBSOCKETS_LIBRARY websockets)
+
+if(NOT LIBUV_LIBRARY)
+    message(FATAL_ERROR "libuv library not found - required for WebSocket transport")
+endif()
+
+if(NOT WEBSOCKETS_LIBRARY)
+    message(FATAL_ERROR "websockets library not found - required for WebSocket transport")
+endif()
+
+target_link_libraries(websocket_transport ${LIBUV_LIBRARY} ${WEBSOCKETS_LIBRARY})
+
+# WebSocket handlers (legacy - can be removed later)
 add_library(websocket_handlers STATIC
     ../utils/websocket/i_websocket_handler.hpp
     ../utils/websocket/libuv_websocket_handler.hpp
@@ -39,12 +71,6 @@ add_library(websocket_handlers STATIC
 target_include_directories(websocket_handlers PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../utils
 )
-
-# Find libuv
-find_library(LIBUV_LIBRARY uv)
-if(LIBUV_LIBRARY)
-    target_link_libraries(websocket_handlers ${LIBUV_LIBRARY})
-endif()
 
 # Main exchanges shared library
 add_library(exchanges SHARED
@@ -59,6 +85,8 @@ add_library(exchanges SHARED
     pms_factory.cpp
     subscriber_factory.hpp
     subscriber_factory.cpp
+    oms_factory.hpp
+    oms_factory.cpp
     
     # Binance implementation
     binance/http/binance_data_fetcher.hpp
@@ -124,6 +152,7 @@ endif()
 
 target_link_libraries(exchanges
     http_handlers
+    websocket_transport
     websocket_handlers
     OpenSSL::SSL
     OpenSSL::Crypto

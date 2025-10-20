@@ -31,11 +31,12 @@ public:
   void set_symbol(const std::string& symbol) override { symbol_ = symbol; }
   void set_exchange(const std::string& exchange) override { exchange_ = exchange; }
   
-  // Event handlers
-  void on_market_data(const proto::OrderBookSnapshot& orderbook) override;
-  void on_order_event(const proto::OrderEvent& order_event) override;
-  void on_position_update(const proto::PositionUpdate& position) override;
-  void on_trade_execution(const proto::Trade& trade) override;
+      // Event handlers
+      void on_market_data(const proto::OrderBookSnapshot& orderbook) override;
+      void on_order_event(const proto::OrderEvent& order_event) override;
+      void on_position_update(const proto::PositionUpdate& position) override;
+      void on_trade_execution(const proto::Trade& trade) override;
+      void on_account_balance_update(const proto::AccountBalanceUpdate& balance_update) override;
   
   // Order management (Strategy calls Container)
   // Note: Strategy doesn't implement order management - it calls the container
@@ -51,6 +52,20 @@ public:
   OrderStateInfo get_order_state(const std::string& cl_ord_id);
   std::vector<OrderStateInfo> get_active_orders();
   std::vector<OrderStateInfo> get_all_orders();
+  
+      // Position queries (delegated to Mini PMS via Container)
+      std::optional<trader::PositionInfo> get_position(const std::string& exchange,
+                                                      const std::string& symbol) const override;
+      std::vector<trader::PositionInfo> get_all_positions() const override;
+      std::vector<trader::PositionInfo> get_positions_by_exchange(const std::string& exchange) const override;
+      std::vector<trader::PositionInfo> get_positions_by_symbol(const std::string& symbol) const override;
+
+      // Account balance queries (delegated to Mini PMS via Container)
+      std::optional<trader::AccountBalanceInfo> get_account_balance(const std::string& exchange,
+                                                                   const std::string& instrument) const override;
+      std::vector<trader::AccountBalanceInfo> get_all_account_balances() const override;
+      std::vector<trader::AccountBalanceInfo> get_account_balances_by_exchange(const std::string& exchange) const override;
+      std::vector<trader::AccountBalanceInfo> get_account_balances_by_instrument(const std::string& instrument) const override;
   
   // Statistics
   struct Statistics {

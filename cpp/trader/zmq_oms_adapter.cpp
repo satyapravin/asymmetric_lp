@@ -4,7 +4,7 @@
 #include "../proto/order.pb.h"
 #endif
 
-ZMQOMS::ZMQOMS(const std::string& order_pub_endpoint,
+ZmqOMSAdapter::ZmqOMSAdapter(const std::string& order_pub_endpoint,
                const std::string& order_topic,
                const std::string& event_sub_endpoint,
                const std::string& event_topic)
@@ -13,9 +13,9 @@ ZMQOMS::ZMQOMS(const std::string& order_pub_endpoint,
   event_subscriber_ = std::make_unique<ZmqSubscriber>(event_sub_endpoint, event_topic);
 }
 
-ZMQOMS::~ZMQOMS() = default;
+ZmqOMSAdapter::~ZmqOMSAdapter() = default;
 
-bool ZMQOMS::send_order(const std::string& cl_ord_id,
+bool ZmqOMSAdapter::send_order(const std::string& cl_ord_id,
                        const std::string& exch,
                        const std::string& symbol,
                        uint32_t side,
@@ -41,21 +41,21 @@ bool ZMQOMS::send_order(const std::string& cl_ord_id,
 #endif
 }
 
-bool ZMQOMS::cancel_order(const std::string& cl_ord_id,
+bool ZmqOMSAdapter::cancel_order(const std::string& cl_ord_id,
                           const std::string& exch) {
   // For now, just log the cancel request
-  std::cout << "[ZMQOMS] Cancel order: " << cl_ord_id << " on " << exch << std::endl;
+  std::cout << "[ZmqOMSAdapter] Cancel order: " << cl_ord_id << " on " << exch << std::endl;
   return true;
 }
 
-void ZMQOMS::poll_events() {
+void ZmqOMSAdapter::poll_events() {
   auto msg = event_subscriber_->receive();
   if (msg) {
     process_event_message(*msg);
   }
 }
 
-void ZMQOMS::process_event_message(const std::string& msg) {
+void ZmqOMSAdapter::process_event_message(const std::string& msg) {
   if (msg.size() == OrderBinaryHelper::ORDER_EVENT_SIZE) {
     std::string cl_ord_id, exch, symbol, text;
     uint32_t event_type;

@@ -8,7 +8,7 @@
 #include "../utils/zmq/zmq_subscriber.hpp"
 
 // Order Management System that publishes orders via ZMQ and receives events
-class ZMQOMS {
+class ZmqOMSAdapter {
 public:
   using OrderEventCallback = std::function<void(const std::string& cl_ord_id,
                                                const std::string& exch,
@@ -18,12 +18,12 @@ public:
                                                double fill_price,
                                                const std::string& text)>;
   
-  ZMQOMS(const std::string& order_pub_endpoint,
+  ZmqOMSAdapter(const std::string& order_pub_endpoint,
          const std::string& order_topic,
          const std::string& event_sub_endpoint,
          const std::string& event_topic);
   
-  ~ZMQOMS();
+  ~ZmqOMSAdapter();
   
   void set_event_callback(OrderEventCallback callback) {
     event_callback_ = callback;

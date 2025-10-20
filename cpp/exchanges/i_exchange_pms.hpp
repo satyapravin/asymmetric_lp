@@ -1,9 +1,11 @@
 #pragma once
 #include "../proto/position.pb.h"
+#include "../proto/acc_balance.pb.h"
 #include <functional>
 
 // Callback types for real-time updates
 using PositionUpdateCallback = std::function<void(const proto::PositionUpdate& position)>;
+using AccountBalanceUpdateCallback = std::function<void(const proto::AccountBalanceUpdate& balance_update)>;
 
 /**
  * IExchangePMS - Position Management System Interface
@@ -34,4 +36,5 @@ public:
     
     // Real-time callbacks only (no query methods)
     virtual void set_position_update_callback(PositionUpdateCallback callback) = 0;
+    virtual void set_account_balance_update_callback(AccountBalanceUpdateCallback callback) = 0;
 };

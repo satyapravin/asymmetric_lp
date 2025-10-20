@@ -1,0 +1,296 @@
+#include "doctest.h"
+#include "../mocks/mock_websocket_transport.hpp"
+#include "../../market_server/market_server_lib.hpp"
+#include "../../trader/trader_lib.hpp"
+#include "../../trader/zmq_mds_adapter.hpp"
+#include "../../strategies/base_strategy/abstract_strategy.hpp"
+#include "../../proto/market_data.pb.h"
+#include "../../proto/order.pb.h"
+#include "../../proto/position.pb.h"
+#include "../../proto/acc_balance.pb.h"
+#include <iostream>
+#include <memory>
+#include <thread>
+#include <chrono>
+#include <atomic>
+
+namespace integration_test {
+
+// Test strategy that tracks received messages
+class TestStrategy : public AbstractStrategy {
+public:
+    std::atomic<int> market_data_count{0};
+    std::atomic<int> order_updates_count{0};
+    std::atomic<int> position_updates_count{0};
+    std::atomic<int> balance_updates_count{0};
+    std::atomic<bool> connected_{false};
+    
+    // Store last received orderbook for verification
+    proto::OrderBookSnapshot last_received_orderbook_;
+
+    TestStrategy() : AbstractStrategy("TestStrategy") {}
+
+    void start() override {
+        std::cout << "[TEST_STRATEGY] Starting..." << std::endl;
+        running_.store(true);
+    }
+
+    void stop() override {
+        std::cout << "[TEST_STRATEGY] Stopping..." << std::endl;
+        running_.store(false);
+    }
+
+    void on_market_data(const proto::OrderBookSnapshot& orderbook) override {
+        market_data_count++;
+        std::cout << "[TEST_STRATEGY] ✅ RECEIVED MARKET DATA: " << orderbook.symbol()
+                  << " bids: " << orderbook.bids_size() << " asks: " << orderbook.asks_size() 
+                  << " (count: " << market_data_count.load() << ")" << std::endl;
+        
+        // Store the received data for verification
+        last_received_orderbook_ = orderbook;
+    }
+
+    void on_trade_execution(const proto::Trade& trade) override {
+        std::cout << "[TEST_STRATEGY] Trade execution: " << trade.symbol() << " @ " << trade.price() << std::endl;
+    }
+
+    void on_order_event(const proto::OrderEvent& order_event) override {
+        order_updates_count++;
+        std::cout << "[TEST_STRATEGY] Order event: " << order_event.cl_ord_id() << std::endl;
+    }
+
+    void on_position_update(const proto::PositionUpdate& position_update) override {
+        position_updates_count++;
+        std::cout << "[TEST_STRATEGY] Position update: " << position_update.symbol() << std::endl;
+    }
+
+    void on_account_balance_update(const proto::AccountBalanceUpdate& balance_update) override {
+        balance_updates_count++;
+        if (balance_update.balances_size() > 0) {
+            std::cout << "[TEST_STRATEGY] Balance update: " << balance_update.balances(0).instrument() << std::endl;
+        }
+    }
+
+    void on_connection_status(bool connected) {
+        connected_ = connected;
+        std::cout << "[TEST_STRATEGY] Connection status: " << (connected ? "CONNECTED" : "DISCONNECTED") << std::endl;
+    }
+
+    // Query methods (return empty for test)
+    std::optional<trader::PositionInfo> get_position(const std::string& exchange, const std::string& symbol) const override {
+        return std::nullopt;
+    }
+    std::vector<trader::PositionInfo> get_all_positions() const override { return {}; }
+    std::vector<trader::PositionInfo> get_positions_by_exchange(const std::string& exchange) const override { return {}; }
+    std::vector<trader::PositionInfo> get_positions_by_symbol(const std::string& symbol) const override { return {}; }
+
+    std::optional<trader::AccountBalanceInfo> get_account_balance(const std::string& exchange, const std::string& asset) const override {
+        return std::nullopt;
+    }
+    std::vector<trader::AccountBalanceInfo> get_all_account_balances() const override { return {}; }
+    std::vector<trader::AccountBalanceInfo> get_account_balances_by_exchange(const std::string& exchange) const override { return {}; }
+    std::vector<trader::AccountBalanceInfo> get_account_balances_by_instrument(const std::string& instrument) const override { return {}; }
+
+    // Order methods (return dummy for test)
+    std::string send_order(const proto::OrderRequest& order_request) {
+        std::cout << "[TEST_STRATEGY] Sending order: " << order_request.cl_ord_id() << std::endl;
+        return order_request.cl_ord_id();
+    }
+    bool cancel_order(const std::string& client_order_id) {
+        std::cout << "[TEST_STRATEGY] Cancelling order: " << client_order_id << std::endl;
+        return true;
+    }
+    std::optional<proto::OrderEvent> get_order_status(const std::string& client_order_id) const {
+        return std::nullopt;
+    }
+    std::vector<proto::OrderEvent> get_open_orders() const {
+        return {};
+    }
+};
+
+} // namespace integration_test
+
+TEST_CASE("Full Chain Integration Test: Mock WebSocket → Market Server → Strategy") {
+    std::cout << "\n=== FULL CHAIN INTEGRATION TEST ===" << std::endl;
+    std::cout << "Flow: Mock WebSocket → Market Server → 0MQ → MDS Adapter → Strategy Container → Test Strategy" << std::endl;
+
+    // Step 1: Create mock WebSocket transport
+    std::cout << "\n[STEP 1] Creating mock WebSocket transport..." << std::endl;
+    auto mock_transport = std::make_unique<MockWebSocketTransport>();
+    mock_transport->set_test_data_directory("data/binance/websocket");
+    REQUIRE(mock_transport != nullptr);
+    
+    // Store reference to mock transport before moving it
+    auto* mock_ws = TestWebSocketTransportFactory::cast_to_mock(mock_transport.get());
+
+    // Step 2: Create Market Server
+    std::cout << "\n[STEP 2] Creating Market Server..." << std::endl;
+    auto market_server = std::make_unique<market_server::MarketServerLib>();
+    REQUIRE(market_server != nullptr);
+
+    // Step 3: Create test strategy
+    std::cout << "\n[STEP 3] Creating test strategy..." << std::endl;
+    auto test_strategy = std::make_unique<integration_test::TestStrategy>();
+    REQUIRE(test_strategy != nullptr);
+
+    // Step 4: Create trader library (like in production)
+    std::cout << "\n[STEP 4] Creating trader library..." << std::endl;
+    auto trader_lib = std::make_unique<trader::TraderLib>();
+    REQUIRE(trader_lib != nullptr);
+    
+    // Configure trader library
+    trader_lib->set_symbol("BTCUSDT");
+    trader_lib->set_exchange("binance");
+    trader_lib->initialize("test_config.ini");
+    
+    // Set up MDS adapter for trader
+    std::string mds_endpoint = "tcp://127.0.0.1:5555";
+    auto mds_adapter = std::make_shared<ZmqMDSAdapter>(mds_endpoint, "market_data", "binance");
+    trader_lib->set_mds_adapter(mds_adapter);
+    
+    // Set the strategy in trader (this will set up the MDS adapter callback)
+    trader_lib->set_strategy(std::shared_ptr<integration_test::TestStrategy>(test_strategy.release()));
+    
+    // Start trader library
+    trader_lib->start();
+
+    // Step 5: Set up the chain
+    std::cout << "\n[STEP 5] Setting up the data flow chain..." << std::endl;
+    
+    // Initialize Market Server (this will set up 0MQ publishing)
+    market_server->initialize("test_config.ini");
+    
+    // Inject the mock WebSocket transport into Market Server
+    market_server->set_websocket_transport(std::move(mock_transport));
+    
+    market_server->start();
+
+    // Step 6: Connect and simulate data flow
+    std::cout << "\n[STEP 6] Connecting and simulating data flow..." << std::endl;
+    
+    // Start the simulation loop to process queued messages
+    mock_ws->start_event_loop();
+    
+    // Use the mock WebSocket to simulate receiving the message
+    REQUIRE(mock_ws != nullptr);
+    mock_ws->simulate_orderbook_message("BTCUSDT");
+    
+    std::cout << "[SIMULATION] Mock WebSocket sent orderbook message" << std::endl;
+    
+    // Wait for processing
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    
+    // Step 7: Verify the full chain worked
+    std::cout << "\n[STEP 7] Verifying full chain..." << std::endl;
+    
+    // Wait for the strategy to receive the market data
+    std::cout << "[VERIFICATION] Waiting for strategy to receive market data..." << std::endl;
+    int max_wait_attempts = 50; // 5 seconds total
+    int wait_attempt = 0;
+    bool strategy_received_data = false;
+    
+    while (wait_attempt < max_wait_attempts && !strategy_received_data) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        wait_attempt++;
+        
+        // Get the strategy from the trader library to check counters
+        auto strategy = trader_lib->get_strategy();
+        if (strategy) {
+            // Cast to TestStrategy to access counters
+            auto test_strategy_ptr = std::dynamic_pointer_cast<integration_test::TestStrategy>(strategy);
+            if (test_strategy_ptr && test_strategy_ptr->market_data_count.load() > 0) {
+                strategy_received_data = true;
+                std::cout << "[VERIFICATION] ✅ Strategy received market data after " << (wait_attempt * 100) << "ms" << std::endl;
+                std::cout << "[VERIFICATION] Market data count: " << test_strategy_ptr->market_data_count.load() << std::endl;
+            }
+        }
+        
+        if (wait_attempt % 10 == 0) { // Log every second
+            std::cout << "[VERIFICATION] Still waiting... (" << wait_attempt * 100 << "ms)" << std::endl;
+        }
+    }
+    
+    // Assertions to verify the full chain worked
+    std::cout << "[VERIFICATION] Trader library is running: " << trader_lib->is_running() << std::endl;
+    std::cout << "[VERIFICATION] Strategy received data: " << strategy_received_data << std::endl;
+    
+    // Critical assertions
+    CHECK(trader_lib->is_running() == true);
+    CHECK(strategy_received_data == true);
+    
+    if (!strategy_received_data) {
+        std::cerr << "[ERROR] Strategy did not receive market data within 5 seconds!" << std::endl;
+    }
+    
+    // Verify the parsed data matches the JSON file exactly
+    std::cout << "\n[DATA_VERIFICATION] Verifying parsed data matches JSON file..." << std::endl;
+    auto strategy = trader_lib->get_strategy();
+    auto test_strategy_ptr = std::dynamic_pointer_cast<integration_test::TestStrategy>(strategy);
+    
+    if (test_strategy_ptr && test_strategy_ptr->market_data_count.load() > 0) {
+        const auto& orderbook = test_strategy_ptr->last_received_orderbook_;
+        
+        // Verify symbol
+        std::cout << "[DATA_VERIFICATION] Symbol: " << orderbook.symbol() << " (expected: BTCUSDT)" << std::endl;
+        CHECK(orderbook.symbol() == "BTCUSDT");
+        
+        // Verify exchange
+        std::cout << "[DATA_VERIFICATION] Exchange: " << orderbook.exch() << " (expected: binance)" << std::endl;
+        CHECK(orderbook.exch() == "binance");
+        
+        // Verify timestamp
+        std::cout << "[DATA_VERIFICATION] Timestamp: " << orderbook.timestamp_us() << " (expected: 1640995200000)" << std::endl;
+        CHECK(orderbook.timestamp_us() == 1640995200000);
+        
+        // Verify bids count (now supports multiple levels)
+        std::cout << "[DATA_VERIFICATION] Bids count: " << orderbook.bids_size() << " (expected: 2)" << std::endl;
+        CHECK(orderbook.bids_size() == 2);
+        
+        // Verify asks count (now supports multiple levels)
+        std::cout << "[DATA_VERIFICATION] Asks count: " << orderbook.asks_size() << " (expected: 2)" << std::endl;
+        CHECK(orderbook.asks_size() == 2);
+        
+        // Verify bid prices and quantities (from JSON: [49999.0, 0.1], [49998.0, 0.2])
+        if (orderbook.bids_size() >= 2) {
+            std::cout << "[DATA_VERIFICATION] Bid 0: price=" << orderbook.bids(0).price() 
+                      << " qty=" << orderbook.bids(0).qty() << " (expected: 49999.0, 0.1)" << std::endl;
+            CHECK(std::abs(orderbook.bids(0).price() - 49999.0) < 0.0001);
+            CHECK(std::abs(orderbook.bids(0).qty() - 0.1) < 0.0001);
+            
+            std::cout << "[DATA_VERIFICATION] Bid 1: price=" << orderbook.bids(1).price() 
+                      << " qty=" << orderbook.bids(1).qty() << " (expected: 49998.0, 0.2)" << std::endl;
+            CHECK(std::abs(orderbook.bids(1).price() - 49998.0) < 0.0001);
+            CHECK(std::abs(orderbook.bids(1).qty() - 0.2) < 0.0001);
+        }
+        
+        // Verify ask prices and quantities (from JSON: [50001.0, 0.15], [50002.0, 0.25])
+        if (orderbook.asks_size() >= 2) {
+            std::cout << "[DATA_VERIFICATION] Ask 0: price=" << orderbook.asks(0).price() 
+                      << " qty=" << orderbook.asks(0).qty() << " (expected: 50001.0, 0.15)" << std::endl;
+            CHECK(std::abs(orderbook.asks(0).price() - 50001.0) < 0.0001);
+            CHECK(std::abs(orderbook.asks(0).qty() - 0.15) < 0.0001);
+            
+            std::cout << "[DATA_VERIFICATION] Ask 1: price=" << orderbook.asks(1).price() 
+                      << " qty=" << orderbook.asks(1).qty() << " (expected: 50002.0, 0.25)" << std::endl;
+            CHECK(std::abs(orderbook.asks(1).price() - 50002.0) < 0.0001);
+            CHECK(std::abs(orderbook.asks(1).qty() - 0.25) < 0.0001);
+        }
+        
+        std::cout << "[DATA_VERIFICATION] ✅ All data verification assertions passed!" << std::endl;
+    } else {
+        std::cerr << "[ERROR] Could not access strategy data for verification!" << std::endl;
+        CHECK(false); // Fail the test
+    }
+    
+    // Step 8: Cleanup
+    std::cout << "\n[STEP 8] Cleaning up..." << std::endl;
+    mock_ws->stop_event_loop();
+    
+    // Stop Trader Library
+    trader_lib->stop();
+    
+    // Stop Market Server
+    market_server->stop();
+    
+    std::cout << "\n=== FULL CHAIN INTEGRATION TEST COMPLETED ===" << std::endl;
+}

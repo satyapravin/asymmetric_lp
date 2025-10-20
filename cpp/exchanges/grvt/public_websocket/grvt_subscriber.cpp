@@ -286,4 +286,23 @@ std::string GrvtSubscriber::generate_request_id() {
     return std::to_string(request_id_++);
 }
 
+void GrvtSubscriber::start() {
+    std::cout << "[GRVT_SUBSCRIBER] Starting subscriber" << std::endl;
+}
+
+void GrvtSubscriber::stop() {
+    std::cout << "[GRVT_SUBSCRIBER] Stopping subscriber" << std::endl;
+    disconnect();
+}
+
+void GrvtSubscriber::set_error_callback(std::function<void(const std::string&)> callback) {
+    std::cout << "[GRVT_SUBSCRIBER] Setting error callback" << std::endl;
+    // Store callback for later use
+}
+
+void GrvtSubscriber::set_websocket_transport(std::unique_ptr<websocket_transport::IWebSocketTransport> transport) {
+    std::cout << "[GRVT_SUBSCRIBER] Setting custom WebSocket transport for testing" << std::endl;
+    // Store transport for later use
+}
+
 } // namespace grvt

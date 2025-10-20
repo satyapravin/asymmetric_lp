@@ -8,168 +8,167 @@
  * Holds a single strategy instance and delegates all events to it.
  * Uses Mini OMS for order state management and ZMQ adapter routing.
  */
-class StrategyContainer : public IStrategyContainer {
-public:
-    StrategyContainer() {
-        mini_oms_ = std::make_unique<MiniOMS>();
-    }
-    
-    ~StrategyContainer() = default;
-    
-    // Set the strategy instance
-    void set_strategy(std::shared_ptr<AbstractStrategy> strategy) {
-        strategy_ = strategy;
-        // Strategy doesn't know about adapters - it delegates to container
-    }
-    
-    // IStrategyContainer interface implementation
-    void start() override {
-        if (mini_oms_) {
-            mini_oms_->start();
-        }
-        if (strategy_) {
-            strategy_->start();
-        }
-    }
-    
-    void stop() override {
-        if (strategy_) {
-            strategy_->stop();
-        }
-        if (mini_oms_) {
-            mini_oms_->stop();
-        }
-    }
-    
-    bool is_running() const override {
-        return strategy_ ? strategy_->is_running() : false;
-    }
-    
-    void on_market_data(const proto::OrderBookSnapshot& orderbook) override {
-        if (strategy_) {
-            strategy_->on_market_data(orderbook);
-        }
-    }
-    
-    void on_order_event(const proto::OrderEvent& order_event) override {
-        // Update Mini OMS state first
-        if (mini_oms_) {
-            mini_oms_->on_order_event(order_event);
-        }
-        
-        // Then notify strategy
-        if (strategy_) {
-            strategy_->on_order_event(order_event);
-        }
-    }
-    
-    void on_position_update(const proto::PositionUpdate& position) override {
-        if (strategy_) {
-            strategy_->on_position_update(position);
-        }
-    }
-    
-    void on_trade_execution(const proto::Trade& trade) override {
-        // Update Mini OMS state first
-        if (mini_oms_) {
-            mini_oms_->on_trade_execution(trade);
-        }
-        
-        // Then notify strategy
-        if (strategy_) {
-            strategy_->on_trade_execution(trade);
-        }
-    }
-    
-    void set_symbol(const std::string& symbol) override {
-        if (strategy_) {
-            strategy_->set_symbol(symbol);
-        }
-    }
-    
-    void set_exchange(const std::string& exchange) override {
-        if (strategy_) {
-            strategy_->set_exchange(exchange);
-        }
-    }
-    
-    const std::string& get_name() const override {
-        static const std::string empty_name = "";
-        return strategy_ ? strategy_->get_name() : empty_name;
-    }
-    
-    void set_oms_adapter(std::shared_ptr<ZmqOMSAdapter> adapter) override {
-        oms_adapter_ = adapter;
-        if (mini_oms_) {
-            mini_oms_->set_oms_adapter(adapter);
-        }
-    }
-    
-    void set_mds_adapter(std::shared_ptr<ZmqMDSAdapter> adapter) override {
-        mds_adapter_ = adapter;
-        if (mini_oms_) {
-            mini_oms_->set_mds_adapter(adapter);
-        }
-    }
-    
-    void set_pms_adapter(std::shared_ptr<ZmqPMSAdapter> adapter) override {
-        pms_adapter_ = adapter;
-        if (mini_oms_) {
-            mini_oms_->set_pms_adapter(adapter);
-        }
-    }
-    
-    // Order management methods (Strategy calls Container, Container uses Mini OMS)
-    bool send_order(const std::string& cl_ord_id,
-                   const std::string& symbol,
-                   proto::Side side,
-                   proto::OrderType type,
-                   double qty,
-                   double price = 0.0) {
-        if (!strategy_ || !strategy_->is_running()) {
-            return false;
-        }
-        
-        // Strategy calls Container, Container uses Mini OMS
-        return mini_oms_->send_order(cl_ord_id, symbol, side, type, qty, price);
-    }
-    
-    bool cancel_order(const std::string& cl_ord_id) {
-        if (!strategy_ || !strategy_->is_running()) {
-            return false;
-        }
-        
-        // Strategy calls Container, Container uses Mini OMS
-        return mini_oms_->cancel_order(cl_ord_id);
-    }
-    
-    bool modify_order(const std::string& cl_ord_id, double new_price, double new_qty) {
-        if (!strategy_ || !strategy_->is_running()) {
-            return false;
-        }
-        
-        // Strategy calls Container, Container uses Mini OMS
-        return mini_oms_->modify_order(cl_ord_id, new_price, new_qty);
-    }
-    
-    // Mini OMS access for order state queries
-    MiniOMS* get_mini_oms() const {
-        return mini_oms_.get();
-    }
-    
-    // Additional methods
-    bool has_strategy() const {
-        return strategy_ != nullptr;
-    }
-    
-    std::shared_ptr<AbstractStrategy> get_strategy() const {
-        return strategy_;
-    }
 
-private:
-    std::shared_ptr<AbstractStrategy> strategy_;
-    std::shared_ptr<ZmqOMSAdapter> oms_adapter_;
-    std::shared_ptr<ZmqMDSAdapter> mds_adapter_;
-    std::shared_ptr<ZmqPMSAdapter> pms_adapter_;
-    std::unique_ptr<MiniOMS> mini_oms_;
-};
+StrategyContainer::StrategyContainer() {
+    mini_oms_ = std::make_unique<MiniOMS>();
+    mini_pms_ = std::make_unique<trader::MiniPMS>();
+}
+
+StrategyContainer::~StrategyContainer() = default;
+
+// Set the strategy instance
+void StrategyContainer::set_strategy(std::shared_ptr<AbstractStrategy> strategy) {
+    strategy_ = strategy;
+    // Strategy doesn't know about adapters - it delegates to container
+}
+
+// IStrategyContainer interface implementation
+void StrategyContainer::start() {
+    if (mini_oms_) {
+        mini_oms_->start();
+    }
+    if (mini_pms_) {
+        mini_pms_->start();
+    }
+    running_.store(true);
+    std::cout << "[STRATEGY_CONTAINER] Started" << std::endl;
+}
+
+void StrategyContainer::stop() {
+    running_.store(false);
+    if (mini_oms_) {
+        mini_oms_->stop();
+    }
+    if (mini_pms_) {
+        mini_pms_->stop();
+    }
+    std::cout << "[STRATEGY_CONTAINER] Stopped" << std::endl;
+}
+
+bool StrategyContainer::is_running() const {
+    return running_.load();
+}
+
+// Event handlers - delegate to strategy
+void StrategyContainer::on_market_data(const proto::OrderBookSnapshot& orderbook) {
+    if (strategy_) {
+        strategy_->on_market_data(orderbook);
+    }
+}
+
+void StrategyContainer::on_order_event(const proto::OrderEvent& order_event) {
+    if (strategy_) {
+        strategy_->on_order_event(order_event);
+    }
+}
+
+void StrategyContainer::on_position_update(const proto::PositionUpdate& position) {
+    if (strategy_) {
+        strategy_->on_position_update(position);
+    }
+}
+
+void StrategyContainer::on_trade_execution(const proto::Trade& trade) {
+    if (strategy_) {
+        strategy_->on_trade_execution(trade);
+    }
+}
+
+void StrategyContainer::on_account_balance_update(const proto::AccountBalanceUpdate& balance_update) {
+    if (strategy_) {
+        strategy_->on_account_balance_update(balance_update);
+    }
+}
+
+// Configuration
+void StrategyContainer::set_symbol(const std::string& symbol) {
+    symbol_ = symbol;
+    if (strategy_) {
+        strategy_->set_symbol(symbol);
+    }
+}
+
+void StrategyContainer::set_exchange(const std::string& exchange) {
+    exchange_ = exchange;
+    if (strategy_) {
+        strategy_->set_exchange(exchange);
+    }
+}
+
+const std::string& StrategyContainer::get_name() const {
+    if (strategy_) {
+        return strategy_->get_name();
+    }
+    return name_;
+}
+
+// ZMQ adapter setup
+void StrategyContainer::set_oms_adapter(std::shared_ptr<ZmqOMSAdapter> adapter) {
+    oms_adapter_ = adapter;
+}
+
+void StrategyContainer::set_mds_adapter(std::shared_ptr<ZmqMDSAdapter> adapter) {
+    mds_adapter_ = adapter;
+}
+
+void StrategyContainer::set_pms_adapter(std::shared_ptr<ZmqPMSAdapter> adapter) {
+    pms_adapter_ = adapter;
+}
+
+// Position queries - delegate to Mini PMS
+std::optional<trader::PositionInfo> StrategyContainer::get_position(const std::string& exchange, const std::string& symbol) const {
+    if (mini_pms_) {
+        return mini_pms_->get_position(exchange, symbol);
+    }
+    return std::nullopt;
+}
+
+std::vector<trader::PositionInfo> StrategyContainer::get_all_positions() const {
+    if (mini_pms_) {
+        return mini_pms_->get_all_positions();
+    }
+    return {};
+}
+
+std::vector<trader::PositionInfo> StrategyContainer::get_positions_by_exchange(const std::string& exchange) const {
+    if (mini_pms_) {
+        return mini_pms_->get_positions_by_exchange(exchange);
+    }
+    return {};
+}
+
+std::vector<trader::PositionInfo> StrategyContainer::get_positions_by_symbol(const std::string& symbol) const {
+    if (mini_pms_) {
+        return mini_pms_->get_positions_by_symbol(symbol);
+    }
+    return {};
+}
+
+// Account balance queries - delegate to Mini PMS
+std::optional<trader::AccountBalanceInfo> StrategyContainer::get_account_balance(const std::string& exchange, const std::string& instrument) const {
+    if (mini_pms_) {
+        return mini_pms_->get_account_balance(exchange, instrument);
+    }
+    return std::nullopt;
+}
+
+std::vector<trader::AccountBalanceInfo> StrategyContainer::get_all_account_balances() const {
+    if (mini_pms_) {
+        return mini_pms_->get_all_account_balances();
+    }
+    return {};
+}
+
+std::vector<trader::AccountBalanceInfo> StrategyContainer::get_account_balances_by_exchange(const std::string& exchange) const {
+    if (mini_pms_) {
+        return mini_pms_->get_account_balances_by_exchange(exchange);
+    }
+    return {};
+}
+
+std::vector<trader::AccountBalanceInfo> StrategyContainer::get_account_balances_by_instrument(const std::string& instrument) const {
+    if (mini_pms_) {
+        return mini_pms_->get_account_balances_by_instrument(instrument);
+    }
+    return {};
+}
