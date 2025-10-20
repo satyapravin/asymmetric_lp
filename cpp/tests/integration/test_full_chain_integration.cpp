@@ -116,12 +116,12 @@ TEST_CASE("Full Chain Integration Test: Mock WebSocket → Market Server → Str
 
     // Step 1: Create mock WebSocket transport
     std::cout << "\n[STEP 1] Creating mock WebSocket transport..." << std::endl;
-    auto mock_transport = std::make_unique<MockWebSocketTransport>();
+    auto mock_transport = std::make_unique<test_utils::MockWebSocketTransport>();
     mock_transport->set_test_data_directory("data/binance/websocket");
     REQUIRE(mock_transport != nullptr);
     
     // Store reference to mock transport before moving it
-    auto* mock_ws = TestWebSocketTransportFactory::cast_to_mock(mock_transport.get());
+    auto* mock_ws = mock_transport.get();
 
     // Step 2: Create Market Server
     std::cout << "\n[STEP 2] Creating Market Server..." << std::endl;
@@ -141,39 +141,36 @@ TEST_CASE("Full Chain Integration Test: Mock WebSocket → Market Server → Str
     // Configure trader library
     trader_lib->set_symbol("BTCUSDT");
     trader_lib->set_exchange("binance");
-    trader_lib->initialize("test_config.ini");
+    trader_lib->initialize("../tests/test_config.ini");
     
-    // Set up MDS adapter for trader
-    std::string mds_endpoint = "tcp://127.0.0.1:5555";
-    auto mds_adapter = std::make_shared<ZmqMDSAdapter>(mds_endpoint, "market_data", "binance");
-    trader_lib->set_mds_adapter(mds_adapter);
+    // TraderLib::initialize() configures all adapters internally
     
-    // Set the strategy in trader (this will set up the MDS adapter callback)
-    trader_lib->set_strategy(std::shared_ptr<integration_test::TestStrategy>(test_strategy.release()));
-    
-    // Start trader library
-    trader_lib->start();
-
-    // Step 5: Set up the chain
+    // Step 5: Set up the chain (start publisher before trader subscribes)
     std::cout << "\n[STEP 5] Setting up the data flow chain..." << std::endl;
-    
     // Initialize Market Server (this will set up 0MQ publishing)
-    market_server->initialize("test_config.ini");
-    
+    market_server->initialize("../tests/test_config.ini");
     // Inject the mock WebSocket transport into Market Server
     market_server->set_websocket_transport(std::move(mock_transport));
-    
     market_server->start();
+    // Give publisher time to bind
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    // Set the strategy in trader (this will set up the MDS adapter callback)
+    trader_lib->set_strategy(std::shared_ptr<integration_test::TestStrategy>(test_strategy.release()));
+    // Start trader library after publisher is up
+    trader_lib->start();
 
     // Step 6: Connect and simulate data flow
     std::cout << "\n[STEP 6] Connecting and simulating data flow..." << std::endl;
     
     // Start the simulation loop to process queued messages
     mock_ws->start_event_loop();
+    mock_ws->simulate_connection_success();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
     
-    // Use the mock WebSocket to simulate receiving the message
+    // Use the mock WebSocket to replay snapshot message (we use snapshots, not streams)
     REQUIRE(mock_ws != nullptr);
-    mock_ws->simulate_orderbook_message("BTCUSDT");
+    mock_ws->load_and_replay_json_file("../tests/data/binance/websocket/orderbook_snapshot_message.json");
     
     std::cout << "[SIMULATION] Mock WebSocket sent orderbook message" << std::endl;
     
@@ -242,13 +239,13 @@ TEST_CASE("Full Chain Integration Test: Mock WebSocket → Market Server → Str
         std::cout << "[DATA_VERIFICATION] Timestamp: " << orderbook.timestamp_us() << " (expected: 1640995200000)" << std::endl;
         CHECK(orderbook.timestamp_us() == 1640995200000);
         
-        // Verify bids count (now supports multiple levels)
-        std::cout << "[DATA_VERIFICATION] Bids count: " << orderbook.bids_size() << " (expected: 2)" << std::endl;
-        CHECK(orderbook.bids_size() == 2);
+        // Verify bids count (depth20 snapshot uses 4 levels in fixture)
+        std::cout << "[DATA_VERIFICATION] Bids count: " << orderbook.bids_size() << " (expected: 4)" << std::endl;
+        CHECK(orderbook.bids_size() == 4);
         
-        // Verify asks count (now supports multiple levels)
-        std::cout << "[DATA_VERIFICATION] Asks count: " << orderbook.asks_size() << " (expected: 2)" << std::endl;
-        CHECK(orderbook.asks_size() == 2);
+        // Verify asks count (depth20 snapshot uses 4 levels in fixture)
+        std::cout << "[DATA_VERIFICATION] Asks count: " << orderbook.asks_size() << " (expected: 4)" << std::endl;
+        CHECK(orderbook.asks_size() == 4);
         
         // Verify bid prices and quantities (from JSON: [49999.0, 0.1], [49998.0, 0.2])
         if (orderbook.bids_size() >= 2) {
@@ -291,6 +288,9 @@ TEST_CASE("Full Chain Integration Test: Mock WebSocket → Market Server → Str
     
     // Stop Market Server
     market_server->stop();
+    
+    // Give threads a moment to join cleanly
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     
     std::cout << "\n=== FULL CHAIN INTEGRATION TEST COMPLETED ===" << std::endl;
 }

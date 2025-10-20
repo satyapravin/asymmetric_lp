@@ -1,71 +1,54 @@
 #include "mock_websocket_handler.hpp"
 #include <iostream>
-#include <fstream>
-#include <filesystem>
 #include <chrono>
 #include <thread>
 
 MockWebSocketHandler::MockWebSocketHandler(const std::string& test_data_dir) 
-    : test_data_dir_(test_data_dir) {
+    : test_data_dir_(test_data_dir), running_(false) {
 }
 
 MockWebSocketHandler::~MockWebSocketHandler() {
-    disconnect();
+    shutdown();
 }
 
 bool MockWebSocketHandler::connect(const std::string& url) {
     if (connection_failure_enabled_) {
-        if (error_callback_) {
-            error_callback_("Connection failure simulation");
-        }
         return false;
     }
     
-    // Simulate connection delay
-    if (connection_delay_.count() > 0) {
-        std::this_thread::sleep_for(connection_delay_);
-    }
+    std::this_thread::sleep_for(connection_delay_);
+    connected_.store(true);
     
-    connected_ = true;
-    running_ = true;
-    
-    // Start message processing thread
-    message_thread_ = std::thread(&MockWebSocketHandler::message_loop, this);
-    
-    // Notify connection callback
-    if (connection_callback_) {
-        connection_callback_(true);
+    if (connect_callback_) {
+        connect_callback_(true);
     }
     
     return true;
 }
 
 void MockWebSocketHandler::disconnect() {
-    if (!connected_) return;
+    connected_.store(false);
     
-    connected_ = false;
-    running_ = false;
-    
-    if (message_thread_.joinable()) {
-        message_thread_.join();
-    }
-    
-    // Clear message queue
-    while (!message_queue_.empty()) {
-        message_queue_.pop();
-    }
-    
-    // Notify connection callback
-    if (connection_callback_) {
-        connection_callback_(false);
+    if (connect_callback_) {
+        connect_callback_(false);
     }
 }
 
-bool MockWebSocketHandler::send_message(const std::string& message) {
-    if (!connected_) return false;
+bool MockWebSocketHandler::send_message(const std::string& message, bool binary) {
+    if (!connected_.load()) {
+        return false;
+    }
     
-    // For testing, we just log the sent message
-    std::cout << "[MOCK_WS] Sent: " << message << std::endl;
+    std::cout << "[MOCK_WS] Sending message: " << message << std::endl;
+    return true;
+}
+
+bool MockWebSocketHandler::send_binary(const std::vector<uint8_t>& data) {
+    if (!connected_.load()) {
+        return false;
+    }
+    
+    std::cout << "[MOCK_WS] Sending binary data: " << data.size() << " bytes" << std::endl;
     return true;
 }
 
@@ -73,61 +56,81 @@ void MockWebSocketHandler::set_message_callback(WebSocketMessageCallback callbac
     message_callback_ = callback;
 }
 
-void MockWebSocketHandler::set_connection_callback(WebSocketConnectionCallback callback) {
-    connection_callback_ = callback;
+void MockWebSocketHandler::set_connect_callback(WebSocketConnectCallback callback) {
+    connect_callback_ = callback;
 }
 
 void MockWebSocketHandler::set_error_callback(WebSocketErrorCallback callback) {
     error_callback_ = callback;
 }
 
+void MockWebSocketHandler::set_ping_interval(int seconds) {
+    // Mock implementation
+}
+
+void MockWebSocketHandler::set_timeout(int seconds) {
+    // Mock implementation
+}
+
+void MockWebSocketHandler::set_reconnect_attempts(int attempts) {
+    // Mock implementation
+}
+
+void MockWebSocketHandler::set_reconnect_delay(int seconds) {
+    // Mock implementation
+}
+
+bool MockWebSocketHandler::initialize() {
+    return true;
+}
+
+void MockWebSocketHandler::shutdown() {
+    running_.store(false);
+    if (message_thread_.joinable()) {
+        message_thread_.join();
+    }
+}
+
+WebSocketState MockWebSocketHandler::get_state() const {
+    return connected_.load() ? WebSocketState::CONNECTED 
+                             : WebSocketState::DISCONNECTED;
+}
+
 void MockWebSocketHandler::simulate_message(const std::string& message) {
-    if (!connected_) return;
-    
-    message_queue_.push(message);
+    if (message_callback_) {
+        WebSocketMessage ws_message;
+        ws_message.data = message;
+        ws_message.is_binary = false;
+        ws_message.timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        ws_message.channel = "";
+        
+        message_callback_(ws_message);
+    }
 }
 
 void MockWebSocketHandler::simulate_message_from_file(const std::string& filename) {
-    if (!connected_) return;
-    
-    std::string file_path = test_data_dir_ + "/" + filename;
-    std::string message = load_message_from_file(file_path);
-    
+    std::string message = load_message_from_file(filename);
     if (!message.empty()) {
-        message_queue_.push(message);
+        simulate_message(message);
     }
 }
 
 void MockWebSocketHandler::simulate_connection_event(bool connected) {
-    if (connection_callback_) {
-        connection_callback_(connected);
+    connected_.store(connected);
+    if (connect_callback_) {
+        connect_callback_(connected);
     }
 }
 
 void MockWebSocketHandler::simulate_error(const std::string& error) {
     if (error_callback_) {
-        error_callback_(error);
+        error_callback_(-1, error);
     }
 }
 
 void MockWebSocketHandler::message_loop() {
     while (running_.load()) {
-        if (!message_queue_.empty()) {
-            std::string message = message_queue_.front();
-            message_queue_.pop();
-            
-            // Simulate message delay
-            if (message_delay_.count() > 0) {
-                std::this_thread::sleep_for(message_delay_);
-            }
-            
-            // Call message callback
-            if (message_callback_) {
-                message_callback_(message);
-            }
-        }
-        
-        // Small sleep to prevent busy waiting
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 }
@@ -135,13 +138,11 @@ void MockWebSocketHandler::message_loop() {
 std::string MockWebSocketHandler::load_message_from_file(const std::string& file_path) {
     std::ifstream file(file_path);
     if (!file.is_open()) {
-        std::cerr << "[MOCK_WS] Failed to open file: " << file_path << std::endl;
+        std::cerr << "[MOCK_WS] Could not open file: " << file_path << std::endl;
         return "";
     }
     
     std::string content((std::istreambuf_iterator<char>(file)),
-                       std::istreambuf_iterator<char>());
-    file.close();
-    
+                        std::istreambuf_iterator<char>());
     return content;
 }

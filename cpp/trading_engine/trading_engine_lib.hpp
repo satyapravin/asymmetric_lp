@@ -14,6 +14,7 @@
 #include "../utils/zmq/zmq_publisher.hpp"
 #include "../utils/config/process_config_manager.hpp"
 #include "../utils/oms/order_state.hpp"
+#include "../exchanges/websocket/i_websocket_transport.hpp"
 #include "../proto/order.pb.h"
 
 namespace trading_engine {
@@ -46,6 +47,7 @@ public:
     void set_exchange(const std::string& exchange) { exchange_name_ = exchange; }
     void set_zmq_subscriber(std::shared_ptr<ZmqSubscriber> subscriber) { subscriber_ = subscriber; }
     void set_zmq_publisher(std::shared_ptr<ZmqPublisher> publisher) { publisher_ = publisher; }
+    void set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport);
 
     // Event callbacks
     using OrderEventCallback = std::function<void(const proto::OrderEvent&)>;

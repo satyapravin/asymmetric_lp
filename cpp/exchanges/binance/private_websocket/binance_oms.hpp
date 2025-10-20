@@ -54,12 +54,16 @@ public:
 
     // Real-time callbacks
     void set_order_status_callback(OrderStatusCallback callback) override;
+    
+    // WebSocket transport injection for testing
+    void set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport) override;
 
 private:
     BinanceConfig config_;
     std::atomic<bool> connected_;
     std::atomic<bool> authenticated_;
     OrderStatusCallback order_callback_;
+    std::shared_ptr<websocket_transport::IWebSocketTransport> custom_transport_;
     
     // HTTP client for API calls
     std::string make_request(const std::string& endpoint, const std::string& method = "GET", 

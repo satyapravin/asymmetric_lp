@@ -45,6 +45,7 @@ target_link_libraries(trader
     utils
     exchanges
     base_strategy
+    market_making_strategy
     proto_msgs
 )
 

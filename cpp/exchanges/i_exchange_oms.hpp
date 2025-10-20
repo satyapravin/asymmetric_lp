@@ -1,6 +1,8 @@
 #pragma once
 #include "../proto/order.pb.h"
+#include "websocket/i_websocket_transport.hpp"
 #include <functional>
+#include <memory>
 
 // Callback types for real-time updates
 using OrderStatusCallback = std::function<void(const proto::OrderEvent& order_event)>;
@@ -43,4 +45,7 @@ public:
     
     // Real-time callbacks
     virtual void set_order_status_callback(OrderStatusCallback callback) = 0;
+    
+    // WebSocket transport injection for testing
+    virtual void set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport) = 0;
 };

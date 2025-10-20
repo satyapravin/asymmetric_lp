@@ -356,4 +356,8 @@ std::string DeribitOMS::map_order_type_to_deribit(const std::string& order_type)
     return order_type;
 }
 
+void DeribitOMS::set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport) {
+    // Mock implementation for testing - not used in production
+}
+
 } // namespace deribit

@@ -16,10 +16,18 @@ public:
     void disconnect() override;
     bool is_connected() const override { return connected_; }
     
-    bool send_message(const std::string& message) override;
+    bool send_message(const std::string& message, bool binary = false) override;
+    bool send_binary(const std::vector<uint8_t>& data) override;
     void set_message_callback(WebSocketMessageCallback callback) override;
-    void set_connection_callback(WebSocketConnectionCallback callback) override;
+    void set_connect_callback(WebSocketConnectCallback callback) override;
     void set_error_callback(WebSocketErrorCallback callback) override;
+    void set_ping_interval(int seconds) override;
+    void set_timeout(int seconds) override;
+    void set_reconnect_attempts(int attempts) override;
+    void set_reconnect_delay(int seconds) override;
+    bool initialize() override;
+    void shutdown() override;
+    WebSocketState get_state() const override;
     
     // Test configuration
     void set_message_delay(std::chrono::milliseconds delay) { message_delay_ = delay; }
@@ -40,7 +48,7 @@ private:
     bool connection_failure_enabled_{false};
     
     WebSocketMessageCallback message_callback_;
-    WebSocketConnectionCallback connection_callback_;
+    WebSocketConnectCallback connect_callback_;
     WebSocketErrorCallback error_callback_;
     
     std::queue<std::string> message_queue_;

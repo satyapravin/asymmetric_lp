@@ -352,4 +352,8 @@ std::string GrvtOMS::map_order_type_to_grvt(const std::string& order_type) {
     return order_type;
 }
 
+void GrvtOMS::set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport) {
+    // Mock implementation for testing - not used in production
+}
+
 } // namespace grvt

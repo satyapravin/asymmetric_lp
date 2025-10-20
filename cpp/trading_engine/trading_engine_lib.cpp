@@ -264,15 +264,8 @@ void TradingEngineLib::setup_exchange_oms() {
         return;
     }
     
-    // Get exchange configuration from config manager
-    std::string exchange_config = config_manager_->get_string("exchange.config", "");
-    if (exchange_config.empty()) {
-        std::cerr << "[TRADING_ENGINE] No exchange configuration found in config file" << std::endl;
-        return;
-    }
-    
-    // Create exchange OMS using factory with configuration
-    exchange_oms_ = exchanges::OMSFactory::create(exchange_name_, exchange_config);
+    // Create exchange OMS using factory (like other libraries)
+    exchange_oms_ = exchanges::OMSFactory::create(exchange_name_);
     
     if (!exchange_oms_) {
         std::cerr << "[TRADING_ENGINE] Failed to create exchange OMS for: " << exchange_name_ << std::endl;
@@ -400,10 +393,19 @@ void TradingEngineLib::publish_order_event(const proto::OrderEvent& order_event)
     if (publisher_) {
         std::string message;
         if (order_event.SerializeToString(&message)) {
-            std::string topic = "ord." + exchange_name_;
+            std::string topic = "order_events";
+            std::cout << "[TRADING_ENGINE] Publishing order event to ZMQ topic: " << topic 
+                      << " cl_ord_id: " << order_event.cl_ord_id() 
+                      << " symbol: " << order_event.symbol() 
+                      << " size: " << message.size() << " bytes" << std::endl;
             publisher_->publish(topic, message);
             statistics_.zmq_messages_sent.fetch_add(1);
+            std::cout << "[TRADING_ENGINE] Order event published successfully" << std::endl;
+        } else {
+            std::cerr << "[TRADING_ENGINE] Failed to serialize order event" << std::endl;
         }
+    } else {
+        std::cerr << "[TRADING_ENGINE] No publisher available for order event" << std::endl;
     }
 }
 
@@ -430,6 +432,12 @@ void TradingEngineLib::update_order_state(const std::string& cl_ord_id, proto::O
                 break;
         }
         it->second.last_update_time = std::chrono::system_clock::now();
+    }
+}
+
+void TradingEngineLib::set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport) {
+    if (exchange_oms_) {
+        exchange_oms_->set_websocket_transport(transport);
     }
 }
 

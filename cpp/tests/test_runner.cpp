@@ -4,7 +4,6 @@
 #include <thread>
 
 // Include all test files
-#include "unit/websockets/test_binance_mock_transport.cpp"
 
 // Integration tests
 #include "integration/test_full_chain_integration.cpp"

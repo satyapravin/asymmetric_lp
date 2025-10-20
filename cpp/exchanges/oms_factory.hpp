@@ -19,6 +19,13 @@ public:
     static std::unique_ptr<IExchangeOMS> create(const std::string& exchange_name, const std::string& config_json);
     
     /**
+     * Create an OMS implementation for the specified exchange (simple version)
+     * @param exchange_name The name of the exchange (e.g., "binance", "deribit", "grvt")
+     * @return A unique pointer to the OMS implementation, or nullptr if not supported
+     */
+    static std::unique_ptr<IExchangeOMS> create(const std::string& exchange_name);
+    
+    /**
      * Check if an exchange is supported
      * @param exchange_name The name of the exchange
      * @return true if the exchange is supported, false otherwise

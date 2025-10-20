@@ -101,4 +101,35 @@ std::string OMSFactory::normalize_exchange_name(const std::string& exchange_name
     return normalized;
 }
 
+std::unique_ptr<IExchangeOMS> OMSFactory::create(const std::string& exchange_name) {
+    std::string normalized_name = normalize_exchange_name(exchange_name);
+    
+    std::cout << "[OMS_FACTORY] Creating OMS for exchange: " << normalized_name << std::endl;
+    
+    if (normalized_name == "binance") {
+        binance::BinanceConfig config;
+        config.api_key = "test_key";
+        config.api_secret = "test_secret";
+        config.base_url = "https://fapi.binance.com";
+        config.testnet = true;
+        return std::make_unique<binance::BinanceOMS>(config);
+    } else if (normalized_name == "deribit") {
+        deribit::DeribitOMSConfig config;
+        config.client_id = "test_client";
+        config.client_secret = "test_secret";
+        config.base_url = "https://test.deribit.com";
+        config.testnet = true;
+        return std::make_unique<deribit::DeribitOMS>(config);
+    } else if (normalized_name == "grvt") {
+        grvt::GrvtOMSConfig config;
+        config.api_key = "test_key";
+        config.base_url = "https://api.testnet.grvt.io";
+        config.testnet = true;
+        return std::make_unique<grvt::GrvtOMS>(config);
+    }
+    
+    std::cerr << "[OMS_FACTORY] Unsupported exchange: " << normalized_name << std::endl;
+    return nullptr;
+}
+
 } // namespace exchanges

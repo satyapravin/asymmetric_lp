@@ -49,6 +49,9 @@ public:
     
     // Real-time callbacks
     void set_order_status_callback(OrderStatusCallback callback) override;
+    
+    // WebSocket transport injection for testing
+    void set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport) override;
 
 private:
     DeribitOMSConfig config_;

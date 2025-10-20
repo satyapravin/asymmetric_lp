@@ -42,6 +42,14 @@ BinanceOMS::~BinanceOMS() {
 }
 
 bool BinanceOMS::connect() {
+    if (custom_transport_) {
+        // If a custom transport is injected (for testing)
+        std::cout << "[BINANCE] Connected using injected transport" << std::endl;
+        connected_.store(true);
+        authenticated_.store(true); // Assume authenticated for mock transport
+        return true;
+    }
+    
     if (!is_authenticated()) {
         std::cerr << "[BINANCE] Cannot connect without authentication" << std::endl;
         return false;
@@ -307,7 +315,7 @@ proto::OrderEvent BinanceOMS::parse_order_from_json(const std::string& json_str)
     }
     
     order_event.set_cl_ord_id(root["clientOrderId"].asString());
-    order_event.set_exch("BINANCE");
+    order_event.set_exch("binance");
     order_event.set_symbol(root["symbol"].asString());
     order_event.set_exch_order_id(root["orderId"].asString());
     order_event.set_fill_qty(std::stod(root["executedQty"].asString()));
@@ -345,6 +353,20 @@ std::string BinanceOMS::get_error_message(const std::string& response) {
     }
     
     return "Unknown error";
+}
+
+void BinanceOMS::set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport) {
+    custom_transport_ = transport;
+    if (!custom_transport_) return;
+    
+    custom_transport_->set_message_callback([this](const websocket_transport::WebSocketMessage& msg) {
+        try {
+            proto::OrderEvent evt = parse_order_from_json(msg.data);
+            if (order_callback_) order_callback_(evt);
+        } catch (...) {
+            // swallow parsing errors in tests
+        }
+    });
 }
 
 } // namespace binance

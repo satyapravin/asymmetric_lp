@@ -165,7 +165,7 @@ void MockWebSocketTransport::set_connection_delay_ms(int delay_ms) {
 }
 
 void MockWebSocketTransport::simulate_orderbook_message(const std::string& symbol) {
-    std::string filename = test_data_directory_ + "/orderbook_stream_message.json";
+    std::string filename = test_data_directory_ + "/orderbook_snapshot_message.json";
     load_and_replay_json_file(filename);
 }
 
@@ -175,8 +175,7 @@ void MockWebSocketTransport::simulate_trade_message(const std::string& symbol) {
 }
 
 void MockWebSocketTransport::simulate_ticker_message(const std::string& symbol) {
-    std::string filename = test_data_directory_ + "/ticker_message.json";
-    load_and_replay_json_file(filename);
+    // No ticker fixture in tests; no-op
 }
 
 void MockWebSocketTransport::simulate_custom_message(const std::string& message) {

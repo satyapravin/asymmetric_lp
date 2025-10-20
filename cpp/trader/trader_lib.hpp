@@ -151,6 +151,10 @@ private:
     std::shared_ptr<ZmqMDSAdapter> mds_adapter_;
     std::shared_ptr<ZmqPMSAdapter> pms_adapter_;
     
+    // OMS event polling thread
+    std::atomic<bool> oms_event_running_;
+    std::thread oms_event_thread_;
+    
     // Strategy
     std::shared_ptr<AbstractStrategy> strategy_;
     

@@ -107,13 +107,13 @@ TEST_CASE("POSITION FLOW INTEGRATION TEST") {
     auto position_server = std::make_unique<position_server::PositionServerLib>();
     
     std::cout << "[STEP 5] Setting up trader library..." << std::endl;
-    trader_lib->initialize("test_config.ini");
+    trader_lib->initialize("../tests/test_config.ini");
     trader_lib->set_strategy(test_strategy);
     
     trader_lib->start();
     
     std::cout << "[STEP 6] Setting up position server..." << std::endl;
-    position_server->initialize("test_config.ini");
+    position_server->initialize("../tests/test_config.ini");
     
     // Create ZMQ publisher for position server
     auto zmq_publisher = std::make_shared<ZmqPublisher>("tcp://127.0.0.1:5556");

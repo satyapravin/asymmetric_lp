@@ -9,7 +9,9 @@ ZmqSubscriber::ZmqSubscriber(const std::string& endpoint, const std::string& top
   sub_ = zmq_socket(ctx_, ZMQ_SUB);
   zmq_setsockopt(sub_, ZMQ_SUBSCRIBE, topic_.data(), topic_.size());
   if (zmq_connect(sub_, endpoint.c_str()) != 0) {
-    std::cerr << "ZMQ connect failed: " << zmq_strerror(zmq_errno()) << std::endl;
+    std::cerr << "[ZmqSubscriber] ZMQ connect failed to " << endpoint << ": " << zmq_strerror(zmq_errno()) << std::endl;
+  } else {
+    std::cout << "[ZmqSubscriber] Successfully connected to: " << endpoint << " topic: " << topic << std::endl;
   }
 }
 
@@ -65,6 +67,8 @@ std::optional<std::string> ZmqSubscriber::receive_blocking(int timeout_ms) {
     return std::nullopt;
   }
   std::string payload(static_cast<char*>(zmq_msg_data(&msg)), zmq_msg_size(&msg));
+  std::cout << "[ZmqSubscriber] Received message - topic: " << std::string(static_cast<char*>(zmq_msg_data(&topic)), zmq_msg_size(&topic))
+            << " payload size: " << payload.size() << " bytes" << std::endl;
   zmq_msg_close(&topic);
   zmq_msg_close(&msg);
   return payload;

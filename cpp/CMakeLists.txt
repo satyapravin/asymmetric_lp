@@ -122,6 +122,26 @@ add_subdirectory(trader)
 # Build tests (uses all libraries)
 add_subdirectory(tests)
 
+# Add top-level test target that runs all tests directly
+add_custom_target(test_all_target
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/tests/run_tests
+    DEPENDS run_tests integration_tests
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests
+    COMMENT "Running all tests (unit + integration)"
+)
+
+# Make test_all_target depend on all libraries being built
+add_dependencies(test_all_target
+    proto_msgs
+    utils
+    exchanges
+    base_strategy
+    trading_engine_lib
+    market_server_lib
+    position_server_lib
+    trader_lib
+)
+
 # Add test executables
 find_package(simdjson REQUIRED)
 

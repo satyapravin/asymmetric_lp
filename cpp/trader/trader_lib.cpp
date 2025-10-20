@@ -3,7 +3,7 @@
 
 namespace trader {
 
-TraderLib::TraderLib() : running_(false) {
+TraderLib::TraderLib() : running_(false), oms_event_running_(false) {
     std::cout << "[TRADER_LIB] Initializing Trader Library" << std::endl;
 }
 
@@ -53,6 +53,25 @@ void TraderLib::start() {
         strategy_container_->start();
     }
     
+    // Start OMS adapter polling
+    if (oms_adapter_) {
+        std::cout << "[TRADER_LIB] Starting OMS adapter polling" << std::endl;
+        oms_event_running_.store(true);
+        oms_event_thread_ = std::thread([this]() {
+            std::cout << "[TRADER_LIB] OMS event polling thread started" << std::endl;
+            int poll_count = 0;
+            while (oms_event_running_.load()) {
+                oms_adapter_->poll_events();
+                poll_count++;
+                if (poll_count % 100 == 0) {
+                    std::cout << "[TRADER_LIB] OMS polling count: " << poll_count << std::endl;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+            std::cout << "[TRADER_LIB] OMS event polling thread stopped" << std::endl;
+        });
+    }
+    
     running_.store(true);
     std::cout << "[TRADER_LIB] Started successfully" << std::endl;
 }
@@ -68,6 +87,15 @@ void TraderLib::stop() {
     // Stop strategy container
     if (strategy_container_) {
         strategy_container_->stop();
+    }
+    
+    // Stop OMS event polling thread
+    if (oms_event_running_.load()) {
+        std::cout << "[TRADER_LIB] Stopping OMS event polling" << std::endl;
+        oms_event_running_.store(false);
+        if (oms_event_thread_.joinable()) {
+            oms_event_thread_.join();
+        }
     }
     
     // Stop ZMQ adapters
@@ -118,6 +146,29 @@ void TraderLib::set_strategy(std::shared_ptr<AbstractStrategy> strategy) {
             
             // Forward position update to strategy container
             strategy_container_->on_position_update(position);
+        });
+    }
+    
+    // Set up OMS adapter callback to forward order events to strategy container
+    if (oms_adapter_) {
+        std::cout << "[TRADER_LIB] Setting up OMS adapter callback" << std::endl;
+        oms_adapter_->set_event_callback([this](const std::string& cl_ord_id, const std::string& exch, 
+                                                const std::string& symbol, uint32_t event_type, 
+                                                double fill_qty, double fill_price, const std::string& text) {
+            std::cout << "[TRADER_LIB] OMS adapter received order event: " << cl_ord_id 
+                      << " symbol: " << symbol << " type: " << event_type << std::endl;
+            
+            // Convert to protobuf OrderEvent and forward to strategy container
+            proto::OrderEvent order_event;
+            order_event.set_cl_ord_id(cl_ord_id);
+            order_event.set_exch(exch);
+            order_event.set_symbol(symbol);
+            order_event.set_event_type(static_cast<proto::OrderEventType>(event_type));
+            order_event.set_fill_qty(fill_qty);
+            order_event.set_fill_price(fill_price);
+            order_event.set_text(text);
+            
+            strategy_container_->on_order_event(order_event);
         });
     }
 }
