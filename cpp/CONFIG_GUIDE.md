@@ -34,31 +34,10 @@ exchange = binance
 ### Exchange API Configuration (JSON Files)
 Exchange-specific API configurations are stored in JSON format:
 
-**Master Configuration** (`cpp/exchanges/config/master_config.json`):
-```json
-{
-  "exchanges": {
-    "binance": {
-      "config_file": "binance/binance_config.json",
-      "enabled": true
-    },
-    "grvt": {
-      "config_file": "grvt/grvt_config.json", 
-      "enabled": true
-    },
-    "deribit": {
-      "config_file": "deribit/deribit_config.json",
-      "enabled": true
-    }
-  },
-  "global_settings": {
-    "default_timeout_ms": 5000,
-    "max_retries": 3,
-    "log_level": "INFO",
-    "enable_testnet": false
-  }
-}
-```
+**Individual Exchange Configurations**:
+- `cpp/exchanges/binance/binance_config.json` - Binance API configuration
+- `cpp/exchanges/grvt/grvt_config.json` - GRVT API configuration  
+- `cpp/exchanges/deribit/deribit_config.json` - Deribit API configuration
 
 ### Exchange-Specific Configurations
 
@@ -96,19 +75,13 @@ std::string symbol = config.get_string("[market_server]", "symbol");
 std::string zmq_endpoint = config.get_string("[zmq]", "mds_subscribe_endpoint");
 ```
 
-### Exchange API Configuration Manager
-The system uses `ApiEndpointManager` for JSON configuration:
+### Exchange Configuration Usage
+Individual exchange JSON files are loaded directly by exchange implementations:
 
 ```cpp
-#include "exchanges/config/api_endpoint_config.hpp"
-
-// Load exchange configuration
-ApiEndpointManager api_config;
-api_config.load_config("cpp/exchanges/config/master_config.json");
-
-// Get exchange config
-ExchangeConfig binance_config = api_config.get_exchange_config("binance");
-std::string rest_url = binance_config.get_rest_api_url("FUTURES");
+// Exchange implementations load their own config files directly
+// Example: BinanceOMS loads binance_config.json
+// Example: DeribitOMS loads deribit_config.json
 ```
 
 ## Key Features
@@ -129,8 +102,8 @@ Each asset type can have multiple URL types:
 
 #### For HTTP REST API (Data Fetcher - READ ONLY):
 ```cpp
-// Get REST API URL for Binance Futures
-std::string rest_url = binance_config.get_rest_api_url("FUTURES");
+// Exchange implementations use their own config loading
+// Example: BinanceOMS loads binance_config.json directly
 // Returns: "https://testnet.binancefuture.com"
 
 // HTTP REST API is ONLY used for:
@@ -141,13 +114,9 @@ std::string rest_url = binance_config.get_rest_api_url("FUTURES");
 
 #### For WebSocket (OMS, PMS, Subscriber - READ/WRITE):
 ```cpp
-// Get public WebSocket URL for market data
-std::string ws_url = binance_config.get_websocket_url("FUTURES", "public");
+// Exchange implementations use their own config loading
+// Example: BinanceOMS loads binance_config.json directly
 // Returns: "wss://dstream.binancefuture.com/stream"
-
-// Get private WebSocket URL for user data (orders, positions)
-std::string private_ws_url = binance_config.get_websocket_url("FUTURES", "private");
-// Returns: "wss://dstream.binancefuture.com/ws"
 
 // WebSocket is used for:
 // - place_order()          - Place new orders (real-time)

@@ -23,7 +23,6 @@
 // Exchange includes
 #include "../exchanges/i_exchange_oms.hpp"
 #include "../exchanges/i_exchange_subscriber.hpp"
-#include "../exchanges/config/api_endpoint_config.hpp"
 
 // Utils includes
 #include "../utils/oms/order.hpp"
