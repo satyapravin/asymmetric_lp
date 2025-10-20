@@ -1,23 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 project(asymmetric_cpp)
 
-# Require UWS_ROOT to be set and valid
-set(UWS_ROOT "" CACHE PATH "Path to local uWebSockets clone (required)")
-if(NOT UWS_ROOT)
-  message(FATAL_ERROR "UWS_ROOT is not set. Please set -DUWS_ROOT=/absolute/path/to/uWebSockets (contains src/App.h)")
-endif()
-set(UWS_DIR ${UWS_ROOT})
-
-# uWebSockets headers live under src (App.h)
-if(EXISTS ${UWS_DIR}/src/App.h)
-  message(STATUS "uWebSockets headers at: ${UWS_DIR}/src")
-  include_directories(${UWS_DIR}/src)
-  if(EXISTS ${UWS_DIR}/uSockets/src)
-    include_directories(${UWS_DIR}/uSockets/src)
-  endif()
-else()
-  message(FATAL_ERROR "uWebSockets headers not found under ${UWS_DIR}/src. Ensure UWS_ROOT points to the uWebSockets clone (with src/App.h present)")
-endif()
+# uWebSockets dependency removed - using only libuv for WebSocket functionality
 
 find_package(OpenSSL REQUIRED)
 find_package(ZLIB REQUIRED)

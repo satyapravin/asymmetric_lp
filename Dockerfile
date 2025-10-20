@@ -40,13 +40,11 @@ RUN python3 -m venv venv
 RUN /home/trader/asymmetric_lp/python/venv/bin/pip install --upgrade pip
 RUN /home/trader/asymmetric_lp/python/venv/bin/pip install -r requirements.txt
 
-# Download and set up uWebSockets dependency
-WORKDIR /home/trader/asymmetric_lp/cpp
-RUN git clone https://github.com/uNetworking/uWebSockets.git uWebSockets
+# uWebSockets dependency removed - using only libuv for WebSocket functionality
 
 # Build the C++ application and run tests
 WORKDIR /home/trader/asymmetric_lp/cpp/build
-RUN cmake -DUWS_ROOT=/home/trader/asymmetric_lp/cpp/uWebSockets .. && make -j$(nproc)
+RUN cmake .. && make -j$(nproc)
 
 # Run comprehensive test suite
 RUN echo "[DOCKER] Running comprehensive test suite..." && \

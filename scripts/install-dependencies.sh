@@ -34,28 +34,8 @@ sudo apt-get install -y \
 
 echo "✅ System dependencies installed successfully!"
 
-# Download uWebSockets if not present
-UWS_DIR="/home/pravin/dev/asymmetric_lp/cpp/uWebSockets"
-if [ ! -d "$UWS_DIR" ]; then
-    echo "📥 Downloading uWebSockets..."
-    cd /home/pravin/dev/asymmetric_lp/cpp
-    git clone https://github.com/uNetworking/uWebSockets.git uWebSockets
-    echo "✅ uWebSockets downloaded successfully!"
-else
-    echo "✅ uWebSockets already present at $UWS_DIR"
-fi
-
-# Verify uWebSockets structure
-if [ -f "$UWS_DIR/src/App.h" ]; then
-    echo "✅ uWebSockets structure verified"
-else
-    echo "❌ Error: uWebSockets structure invalid. Expected src/App.h not found."
-    exit 1
-fi
-
-# Set environment variable for uWebSockets
-export UWS_ROOT="$UWS_DIR"
-echo "🔧 Set UWS_ROOT=$UWS_ROOT"
+# uWebSockets dependency removed - using only libuv
+echo "✅ uWebSockets dependency removed - using only libuv for WebSocket functionality"
 
 # Create build directory and test build
 echo "🔨 Testing build configuration..."
@@ -64,7 +44,7 @@ mkdir -p build
 cd build
 
 # Test CMake configuration
-if cmake -DUWS_ROOT="$UWS_DIR" ..; then
+if cmake ..; then
     echo "✅ CMake configuration successful!"
 else
     echo "❌ CMake configuration failed!"
