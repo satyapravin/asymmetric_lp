@@ -62,7 +62,7 @@ The strategy uses residual inventory from DeFi LP positions to market make on Ce
 - **Deployment & Configuration**: See `DEPLOY.md` for complete deployment guide with all configurations
 - **Trading Engine**: See `cpp/trading_engine/README.md` for trading engine details
 - **Test Suite**: See `cpp/tests/README.md` for comprehensive test documentation
-- **Exchange Interfaces**: See `cpp/exchanges/INTERFACES_DOCUMENTATION.md` for exchange integration details
+- **Exchange Interfaces**: See `cpp/exchanges/interfaces.md` for exchange integration details
 
 ## Quick Start
 
