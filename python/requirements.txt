@@ -8,3 +8,10 @@ typing-extensions==4.8.0
 pyzmq==25.1.2
 pandas==2.1.4
 numpy==1.24.3
+protobuf==4.25.1
+
+# Testing dependencies
+pytest==7.4.3
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+pytest-xdist==3.5.0
