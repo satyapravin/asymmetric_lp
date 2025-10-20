@@ -160,6 +160,15 @@ cmake -S . -B build
 # Build all components
 cmake --build build -j
 
+# Build with AddressSanitizer (for debugging memory issues)
+cmake --build build --target build_asan
+
+# Build with UndefinedBehaviorSanitizer (for debugging UB issues)
+cmake --build build --target build_ubsan
+
+# Build with ThreadSanitizer (for debugging race conditions)
+cmake --build build --target build_tsan
+
 # Build specific components
 cmake --build build --target market_server
 cmake --build build --target trader
@@ -310,6 +319,30 @@ To implement a new trading strategy, see **[Strategy Development Guide](strategy
 export CPP_DEBUG=1
 export ZMQ_DEBUG=1
 ```
+
+### Sanitizer Support
+
+The build system includes support for Clang/GCC sanitizers to catch memory issues, undefined behavior, and race conditions:
+
+```bash
+# Build with AddressSanitizer (detects memory errors)
+cmake --build build --target build_asan
+./build/tests/run_tests  # Run tests with ASan
+
+# Build with UndefinedBehaviorSanitizer (detects UB)
+cmake --build build --target build_ubsan
+./build/tests/run_tests  # Run tests with UBSan
+
+# Build with ThreadSanitizer (detects race conditions)
+cmake --build build --target build_tsan
+./build/tests/run_tests  # Run tests with TSan
+```
+
+**Benefits for Trading System:**
+- **Memory Safety**: Catch buffer overflows, use-after-free, memory leaks
+- **Thread Safety**: Detect race conditions in multi-threaded trading components
+- **Undefined Behavior**: Catch integer overflow, null pointer dereference
+- **Production Safety**: Essential for financial trading systems
 
 ## Security Considerations
 
