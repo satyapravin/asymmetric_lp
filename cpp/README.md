@@ -141,8 +141,7 @@ sudo apt-get install -y \
   protobuf-compiler \
   libprotobuf-dev
 
-# External dependencies
-git clone --depth 1 https://github.com/uNetworking/uWebSockets.git /path/to/uWebSockets
+# External dependencies (uWebSockets removed - using only libuv)
 git clone --depth 1 https://github.com/warmcat/libwebsockets.git
 cd libwebsockets && mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release -DLWS_WITH_SHARED=ON
@@ -155,8 +154,8 @@ make -j && sudo make install && sudo ldconfig
 # Clean previous build
 rm -rf build
 
-# Configure with uWebSockets path
-cmake -S . -B build -DUWS_ROOT=/absolute/path/to/uWebSockets
+# Configure with libuv (uWebSockets removed)
+cmake -S . -B build
 
 # Build all components
 cmake --build build -j
@@ -287,7 +286,6 @@ To implement a new trading strategy, see **[Strategy Development Guide](strategy
 ### Common Issues
 
 #### **Build Errors**
-- **"UWS_ROOT is not set"**: Set `-DUWS_ROOT=/path/to/uWebSockets`
 - **"libwebsockets not found"**: Install libwebsockets system-wide and run `sudo ldconfig`
 - **"Protobuf version mismatch"**: Align protoc and libprotobuf versions
 
