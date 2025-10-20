@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y \
     libsimdjson-dev \
     libprotobuf-dev \
     protobuf-compiler \
+    libuv1-dev \
     python3 \
     python3-pip \
     python3-venv \
@@ -39,9 +40,13 @@ RUN python3 -m venv venv
 RUN /home/trader/asymmetric_lp/python/venv/bin/pip install --upgrade pip
 RUN /home/trader/asymmetric_lp/python/venv/bin/pip install -r requirements.txt
 
+# Download and set up uWebSockets dependency
+WORKDIR /home/trader/asymmetric_lp/cpp
+RUN git clone https://github.com/uNetworking/uWebSockets.git uWebSockets
+
 # Build the C++ application and run tests
 WORKDIR /home/trader/asymmetric_lp/cpp/build
-RUN cmake .. && make -j$(nproc)
+RUN cmake -DUWS_ROOT=/home/trader/asymmetric_lp/cpp/uWebSockets .. && make -j$(nproc)
 
 # Run comprehensive test suite
 RUN echo "[DOCKER] Running comprehensive test suite..." && \
