@@ -2,7 +2,7 @@
 
 ## Overview
 
-This Docker configuration supports the complete dual-venue trading system with both Python DeFi LP and C++ CeFi components running in separate containers with ZMQ communication.
+This Docker configuration supports the complete dual-venue trading system with both Python DeFi LP and C++ CeFi components running in separate containers with ZMQ communication. The system uses libuv for WebSocket functionality, with uWebSockets dependency removed for simplified architecture.
 
 ## Architecture
 
@@ -233,3 +233,4 @@ The Docker build process includes comprehensive test execution:
 - **Integration Tests**: 3 tests covering end-to-end data flows
 - **Total Coverage**: 16 tests with 57 assertions
 - **Build Validation**: Tests run during Docker build to ensure code quality
+- **WebSocket Support**: Uses libuv for WebSocket functionality (uWebSockets removed)
