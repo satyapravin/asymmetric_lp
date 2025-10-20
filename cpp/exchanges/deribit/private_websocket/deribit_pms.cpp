@@ -83,6 +83,11 @@ void DeribitPMS::set_account_balance_update_callback(AccountBalanceUpdateCallbac
     std::cout << "[DERIBIT_PMS] Account balance update callback set" << std::endl;
 }
 
+void DeribitPMS::set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport) {
+    // Deribit uses mock implementation for now
+    std::cout << "[DERIBIT_PMS] WebSocket transport injection not implemented (uses mock)" << std::endl;
+}
+
 void DeribitPMS::websocket_loop() {
     std::cout << "[DERIBIT_PMS] WebSocket loop started" << std::endl;
     

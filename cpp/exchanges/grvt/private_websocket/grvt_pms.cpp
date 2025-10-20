@@ -93,6 +93,11 @@ void GrvtPMS::set_account_balance_update_callback(AccountBalanceUpdateCallback c
     std::cout << "[GRVT_PMS] Account balance update callback set" << std::endl;
 }
 
+void GrvtPMS::set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport) {
+    // GRVT uses REST API polling, not WebSocket for balance updates
+    std::cout << "[GRVT_PMS] WebSocket transport injection not supported (uses REST API polling)" << std::endl;
+}
+
 void GrvtPMS::websocket_loop() {
     std::cout << "[GRVT_PMS] WebSocket loop started" << std::endl;
     

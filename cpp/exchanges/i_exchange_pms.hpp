@@ -1,6 +1,7 @@
 #pragma once
 #include "../proto/position.pb.h"
 #include "../proto/acc_balance.pb.h"
+#include "../exchanges/websocket/i_websocket_transport.hpp"
 #include <functional>
 
 // Callback types for real-time updates
@@ -37,4 +38,7 @@ public:
     // Real-time callbacks only (no query methods)
     virtual void set_position_update_callback(PositionUpdateCallback callback) = 0;
     virtual void set_account_balance_update_callback(AccountBalanceUpdateCallback callback) = 0;
+    
+    // Testing interface
+    virtual void set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport) = 0;
 };

@@ -38,6 +38,9 @@ public:
     // Real-time callbacks only (no query methods)
     void set_position_update_callback(PositionUpdateCallback callback) override;
     void set_account_balance_update_callback(AccountBalanceUpdateCallback callback) override;
+    
+    // Testing interface
+    void set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport) override;
 
 private:
     DeribitPMSConfig config_;

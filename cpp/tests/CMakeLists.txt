@@ -22,6 +22,7 @@ target_link_libraries(run_tests
     proto_msgs
     trader_lib
     market_server_lib
+    position_server_lib
 )
 
 # Include directories

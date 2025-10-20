@@ -42,6 +42,9 @@ public:
     // Real-time callbacks only (no query methods)
     void set_position_update_callback(PositionUpdateCallback callback) override;
     void set_account_balance_update_callback(AccountBalanceUpdateCallback callback) override;
+    
+    // Testing interface
+    void set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport) override;
 
     // GRVT-specific configuration
     void set_sub_account_id(const std::string& sub_account_id) { config_.sub_account_id = sub_account_id; }

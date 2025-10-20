@@ -8,6 +8,8 @@
 
 // Integration tests
 #include "integration/test_full_chain_integration.cpp"
+#include "integration/test_position_flow_integration.cpp"
+#include "integration/test_order_flow_integration.cpp"
 
 // Add timeout to prevent hanging
 int main(int argc, char** argv) {

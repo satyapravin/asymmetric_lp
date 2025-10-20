@@ -39,6 +39,9 @@ public:
     // Real-time callbacks only (no query methods)
     void set_position_update_callback(PositionUpdateCallback callback) override;
     void set_account_balance_update_callback(AccountBalanceUpdateCallback callback) override;
+    
+    // Testing interface
+    void set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport) override;
 
 private:
     BinancePMSConfig config_;
@@ -50,6 +53,9 @@ private:
     void* websocket_handle_{nullptr};
     std::thread websocket_thread_;
     std::atomic<bool> websocket_running_{false};
+    
+    // Custom transport for testing
+    std::shared_ptr<websocket_transport::IWebSocketTransport> custom_transport_;
     
     // Callbacks
     PositionUpdateCallback position_update_callback_;

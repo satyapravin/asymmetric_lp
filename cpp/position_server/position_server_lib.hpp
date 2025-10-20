@@ -10,6 +10,7 @@
 #include "../exchanges/pms_factory.hpp"
 #include "../utils/zmq/zmq_publisher.hpp"
 #include "../utils/config/process_config_manager.hpp"
+#include "../exchanges/websocket/i_websocket_transport.hpp"
 
 namespace position_server {
 
@@ -40,15 +41,9 @@ public:
     // Configuration
     void set_exchange(const std::string& exchange) { exchange_name_ = exchange; }
     void set_zmq_publisher(std::shared_ptr<ZmqPublisher> publisher) { publisher_ = publisher; }
-
-    // Event callbacks for testing
-    using PositionUpdateCallback = std::function<void(const proto::PositionUpdate&)>;
-    using BalanceUpdateCallback = std::function<void(const proto::AccountBalanceUpdate&)>;
-    using ErrorCallback = std::function<void(const std::string&)>;
-
-    void set_position_update_callback(PositionUpdateCallback callback) { position_callback_ = callback; }
-    void set_balance_update_callback(BalanceUpdateCallback callback) { balance_callback_ = callback; }
-    void set_error_callback(ErrorCallback callback) { error_callback_ = callback; }
+    
+    // Testing interface
+    void set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport);
 
     // Statistics
     struct Statistics {
@@ -71,8 +66,6 @@ public:
     void reset_statistics() { statistics_.reset(); }
 
     // Testing interface
-    void simulate_position_update(const proto::PositionUpdate& position);
-    void simulate_balance_update(const proto::AccountBalanceUpdate& balance);
     bool is_connected_to_exchange() const;
 
 private:
@@ -83,11 +76,6 @@ private:
     std::unique_ptr<IExchangePMS> exchange_pms_;
     std::shared_ptr<ZmqPublisher> publisher_;
     std::unique_ptr<config::ProcessConfigManager> config_manager_;
-    
-    // Callbacks
-    PositionUpdateCallback position_callback_;
-    BalanceUpdateCallback balance_callback_;
-    ErrorCallback error_callback_;
     
     // Statistics
     Statistics statistics_;

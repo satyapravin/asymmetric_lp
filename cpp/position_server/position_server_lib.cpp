@@ -47,7 +47,7 @@ void PositionServerLib::start() {
     
     if (exchange_pms_) {
         std::cout << "[POSITION_SERVER_LIB] Starting exchange PMS..." << std::endl;
-        exchange_pms_->start();
+        exchange_pms_->connect();
     }
     
     std::cout << "[POSITION_SERVER_LIB] Started successfully" << std::endl;
@@ -62,7 +62,7 @@ void PositionServerLib::stop() {
     
     if (exchange_pms_) {
         std::cout << "[POSITION_SERVER_LIB] Stopping exchange PMS..." << std::endl;
-        exchange_pms_->stop();
+        exchange_pms_->disconnect();
     }
     
     std::cout << "[POSITION_SERVER_LIB] Stopped" << std::endl;
@@ -76,7 +76,7 @@ void PositionServerLib::setup_exchange_pms() {
     std::cout << "[POSITION_SERVER_LIB] Setting up exchange PMS for: " << exchange_name_ << std::endl;
     
     // Create exchange PMS using factory
-    exchange_pms_ = PMSFactory::create(exchange_name_);
+    exchange_pms_ = PMSFactory::create_pms(exchange_name_);
     if (!exchange_pms_) {
         std::cerr << "[POSITION_SERVER_LIB] Failed to create exchange PMS for: " << exchange_name_ << std::endl;
         return;
@@ -87,12 +87,8 @@ void PositionServerLib::setup_exchange_pms() {
         handle_position_update(position);
     });
     
-    exchange_pms_->set_balance_update_callback([this](const proto::AccountBalanceUpdate& balance) {
+    exchange_pms_->set_account_balance_update_callback([this](const proto::AccountBalanceUpdate& balance) {
         handle_balance_update(balance);
-    });
-    
-    exchange_pms_->set_error_callback([this](const std::string& error) {
-        handle_error(error);
     });
     
     std::cout << "[POSITION_SERVER_LIB] Exchange PMS setup complete" << std::endl;
@@ -102,12 +98,7 @@ void PositionServerLib::handle_position_update(const proto::PositionUpdate& posi
     statistics_.position_updates++;
     
     std::cout << "[POSITION_SERVER_LIB] Position update: " << position.symbol() 
-              << " size: " << position.size() << " unrealized_pnl: " << position.unrealized_pnl() << std::endl;
-    
-    // Call the testing callback if set
-    if (position_callback_) {
-        position_callback_(position);
-    }
+              << " qty: " << position.qty() << " avg_price: " << position.avg_price() << std::endl;
     
     // Publish to ZMQ
     publish_to_zmq("position_updates", position.SerializeAsString());
@@ -116,13 +107,8 @@ void PositionServerLib::handle_position_update(const proto::PositionUpdate& posi
 void PositionServerLib::handle_balance_update(const proto::AccountBalanceUpdate& balance) {
     statistics_.balance_updates++;
     
-    std::cout << "[POSITION_SERVER_LIB] Balance update: " << balance.exchange() 
+    std::cout << "[POSITION_SERVER_LIB] Balance update: " 
               << " balances: " << balance.balances_size() << std::endl;
-    
-    // Call the testing callback if set
-    if (balance_callback_) {
-        balance_callback_(balance);
-    }
     
     // Publish to ZMQ
     publish_to_zmq("balance_updates", balance.SerializeAsString());
@@ -132,17 +118,22 @@ void PositionServerLib::handle_error(const std::string& error_message) {
     statistics_.connection_errors++;
     
     std::cerr << "[POSITION_SERVER_LIB] Error: " << error_message << std::endl;
-    
-    // Call the error callback if set
-    if (error_callback_) {
-        error_callback_(error_message);
-    }
 }
 
 void PositionServerLib::publish_to_zmq(const std::string& topic, const std::string& message) {
     if (publisher_) {
         publisher_->publish(topic, message);
         statistics_.zmq_messages_sent++;
+        std::cout << "[POSITION_SERVER_LIB] Published to ZMQ topic: " << topic << " size: " << message.size() << " bytes" << std::endl;
+    } else {
+        std::cout << "[POSITION_SERVER_LIB] No ZMQ publisher available!" << std::endl;
+    }
+}
+
+void PositionServerLib::set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport) {
+    if (exchange_pms_) {
+        exchange_pms_->set_websocket_transport(transport);
+        std::cout << "[POSITION_SERVER_LIB] WebSocket transport injected for testing" << std::endl;
     }
 }
 
