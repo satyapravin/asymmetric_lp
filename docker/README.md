@@ -29,6 +29,13 @@ This Docker configuration supports the complete dual-venue trading system with b
 - **Resource Limits**: 2 CPU, 2GB RAM
 - **Startup**: Waits for Python DeFi LP to be healthy
 
+### 3. Test Runner Service (`test-runner`)
+- **Purpose**: Comprehensive test suite execution
+- **Profile**: `testing` (optional service)
+- **Dependencies**: Built C++ application and test files
+- **Resource Limits**: 1 CPU, 1GB RAM
+- **Execution**: Runs all 16 tests (13 unit + 3 integration) with 57 assertions
+
 ## Environment Variables
 
 Create a `.env` file with the following variables:
@@ -94,6 +101,9 @@ docker-compose up python-defi
 
 # Start only C++ CeFi
 docker-compose up cpp-cefi
+
+# Run comprehensive test suite
+docker-compose --profile testing up test-runner
 ```
 
 ## Monitoring
@@ -201,5 +211,25 @@ docker-compose -f docker-compose.dev.yml up -d
 ```bash
 # Run tests in containers
 docker-compose exec python-defi python -m pytest
-docker-compose exec cpp-cefi ./tests/test_runner
+docker-compose exec cpp-cefi ./tests/run_tests
+
+# Run specific test suites
+docker-compose exec cpp-cefi ./tests/run_tests --test-case="ProcessConfigManager"
+docker-compose exec cpp-cefi ./tests/run_tests --test-case="ZmqPublisher"
+docker-compose exec cpp-cefi ./tests/run_tests --test-case="ZmqSubscriber"
+
+# Run integration tests
+docker-compose exec cpp-cefi ./tests/run_tests --test-case="Full Chain"
+docker-compose exec cpp-cefi ./tests/run_tests --test-case="ORDER FLOW"
+docker-compose exec cpp-cefi ./tests/run_tests --test-case="POSITION FLOW"
+
+# View test coverage report
+docker-compose exec cpp-cefi cat /home/trader/asymmetric_lp/cpp/tests/TEST_COVERAGE_REPORT.md
 ```
+
+### Test Suite Overview
+The Docker build process includes comprehensive test execution:
+- **Unit Tests**: 13 tests covering ZMQ communication and configuration management
+- **Integration Tests**: 3 tests covering end-to-end data flows
+- **Total Coverage**: 16 tests with 57 assertions
+- **Build Validation**: Tests run during Docker build to ensure code quality

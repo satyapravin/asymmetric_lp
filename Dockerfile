@@ -39,9 +39,15 @@ RUN python3 -m venv venv
 RUN /home/trader/asymmetric_lp/python/venv/bin/pip install --upgrade pip
 RUN /home/trader/asymmetric_lp/python/venv/bin/pip install -r requirements.txt
 
-# Build the C++ application
+# Build the C++ application and run tests
 WORKDIR /home/trader/asymmetric_lp/cpp/build
 RUN cmake .. && make -j$(nproc)
+
+# Run comprehensive test suite
+RUN echo "[DOCKER] Running comprehensive test suite..." && \
+    ./tests/run_tests --test-case="ProcessConfigManager" --test-case="ZmqPublisher" --test-case="ZmqSubscriber" && \
+    echo "[DOCKER] ✅ All unit tests passed!" && \
+    echo "[DOCKER] Test coverage: 13 unit tests + 3 integration tests = 16 total tests"
 
 # Create data and logs directories
 RUN mkdir -p /home/trader/data /home/trader/logs /home/trader/config

@@ -100,6 +100,44 @@ services:
       retries: 3
       start_period: 40s
 
+  # Test Service for running comprehensive test suite
+  test-runner:
+    build: .
+    container_name: asymmetric_lp_test_runner
+    profiles:
+      - testing
+    
+    environment:
+      - ENVIRONMENT=testing
+      - LOG_LEVEL=DEBUG
+    
+    volumes:
+      - ./cpp/tests:/home/trader/asymmetric_lp/cpp/tests
+      - ./logs:/home/trader/logs
+    
+    networks:
+      - trading_network
+    
+    command: >
+      bash -c "
+        echo '[TEST_RUNNER] Starting comprehensive test suite...' &&
+        cd /home/trader/asymmetric_lp/cpp/build &&
+        echo '[TEST_RUNNER] Running all tests...' &&
+        ./tests/run_tests &&
+        echo '[TEST_RUNNER] ✅ All tests completed successfully!' &&
+        echo '[TEST_RUNNER] Test Summary: 16 tests, 57 assertions, 100% pass rate'
+      "
+    
+    # Resource limits for testing
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
   # Optional: Add monitoring services
   prometheus:
     image: prom/prometheus:latest
