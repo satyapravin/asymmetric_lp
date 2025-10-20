@@ -5,6 +5,11 @@
 
 // Include all test files
 
+// Unit tests - Core utilities (working tests)
+#include "unit/utils/test_zmq_publisher.cpp"
+#include "unit/utils/test_zmq_subscriber.cpp"
+#include "unit/config/test_process_config_manager.cpp"
+
 // Integration tests
 #include "integration/test_full_chain_integration.cpp"
 #include "integration/test_position_flow_integration.cpp"
