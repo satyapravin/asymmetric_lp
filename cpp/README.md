@@ -150,6 +150,39 @@ make -j && sudo make install && sudo ldconfig
 
 ### Build Instructions
 
+### Prerequisites
+
+Ensure you have all dependencies installed (see [INSTALL_DEPENDENCIES.md](../INSTALL_DEPENDENCIES.md)):
+
+```bash
+# Install system dependencies
+sudo apt-get install -y build-essential cmake git pkg-config \
+    libzmq3-dev libwebsockets-dev libssl-dev libcurl4-openssl-dev \
+    libjsoncpp-dev libsimdjson-dev libprotobuf-dev protobuf-compiler \
+    libuv1-dev
+```
+
+### Protobuf Code Generation
+
+The build system automatically generates C++ headers from `.proto` files:
+
+**Proto Files:**
+- `proto/acc_balance.proto` → `acc_balance.pb.h` / `acc_balance.pb.cc`
+- `proto/market_data.proto` → `market_data.pb.h` / `market_data.pb.cc`
+- `proto/order.proto` → `order.pb.h` / `order.pb.cc`
+- `proto/position.proto` → `position.pb.h` / `position.pb.cc`
+
+**Manual Generation (if needed):**
+```bash
+# Generate headers from proto files
+protoc --cpp_out=. proto/acc_balance.proto
+protoc --cpp_out=. proto/market_data.proto
+protoc --cpp_out=. proto/order.proto
+protoc --cpp_out=. proto/position.proto
+```
+
+### Build Process
+
 ```bash
 # Clean previous build
 rm -rf build
@@ -157,7 +190,7 @@ rm -rf build
 # Configure with libuv (uWebSockets removed)
 cmake -S . -B build
 
-# Build all components
+# Build all components (includes protobuf generation)
 cmake --build build -j
 
 # Build with AddressSanitizer (for debugging memory issues)
