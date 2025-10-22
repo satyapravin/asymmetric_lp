@@ -1,0 +1,67 @@
+{
+  "exchange_name": "GRVT",
+  "version": "v1",
+  "testnet_mode": false,
+  "default_timeout_ms": 5000,
+  "max_retries": 3,
+  "assets": {
+    "PERPETUAL": {
+      "type": "PERPETUAL",
+      "name": "perpetual",
+      "urls": {
+        "rest_api": "https://api.grvt.io",
+        "websocket_public": "wss://api.grvt.io/ws/public",
+        "websocket_private": "wss://api.grvt.io/ws/private",
+        "websocket_market_data": "wss://api.grvt.io/ws/public",
+        "websocket_user_data": "wss://api.grvt.io/ws/private"
+      },
+      "endpoints": {
+        "get_open_orders": {
+          "name": "get_open_orders",
+          "path": "/v1/orders",
+          "method": "GET",
+          "requires_auth": true,
+          "requires_signature": false,
+          "description": "Get all open orders"
+        },
+        "get_positions": {
+          "name": "get_positions", 
+          "path": "/v1/positions",
+          "method": "GET",
+          "requires_auth": true,
+          "requires_signature": false,
+          "description": "Get current positions"
+        },
+        "get_account": {
+          "name": "get_account",
+          "path": "/v1/account",
+          "method": "GET", 
+          "requires_auth": true,
+          "requires_signature": false,
+          "description": "Get account information"
+        }
+      },
+      "websocket_channels": {
+        "orderbook": "orderbook",
+        "trades": "trades",
+        "ticker": "ticker",
+        "user_data": "user",
+        "place_order": "order",
+        "cancel_order": "order",
+        "modify_order": "order",
+        "order_updates": "orderUpdate",
+        "position_updates": "positionUpdate"
+      }
+    }
+  },
+  "global_headers": {
+    "Content-Type": "application/json",
+    "User-Agent": "AsymmetricLP/1.0"
+  },
+  "global_params": {},
+  "authentication": {
+    "api_key_header": "Authorization",
+    "session_cookie": "session",
+    "account_id_header": "X-Account-ID"
+  }
+}

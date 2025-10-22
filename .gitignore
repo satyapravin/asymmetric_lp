@@ -63,8 +63,6 @@ logs/
 *.log
 
 # Data files
-*.csv
-*.json
 backtest_results.json
 btc_ohlc_sample.csv
 test_sample.csv

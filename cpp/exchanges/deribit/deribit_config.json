@@ -1,0 +1,67 @@
+{
+  "exchange_name": "DERIBIT",
+  "version": "v2",
+  "testnet_mode": true,
+  "default_timeout_ms": 5000,
+  "max_retries": 3,
+  "assets": {
+    "PERPETUAL": {
+      "type": "PERPETUAL", 
+      "name": "perpetual",
+      "urls": {
+        "rest_api": "https://www.deribit.com",
+        "websocket_public": "wss://www.deribit.com/ws/api/v2",
+        "websocket_private": "wss://www.deribit.com/ws/api/v2",
+        "websocket_market_data": "wss://www.deribit.com/ws/api/v2",
+        "websocket_user_data": "wss://www.deribit.com/ws/api/v2"
+      },
+      "endpoints": {
+        "get_open_orders": {
+          "name": "get_open_orders",
+          "path": "/api/v2/private/get_open_orders",
+          "method": "GET",
+          "requires_auth": true,
+          "requires_signature": false,
+          "description": "Get all open orders"
+        },
+        "get_positions": {
+          "name": "get_positions", 
+          "path": "/api/v2/private/get_positions",
+          "method": "GET",
+          "requires_auth": true,
+          "requires_signature": false,
+          "description": "Get current positions"
+        },
+        "get_account": {
+          "name": "get_account",
+          "path": "/api/v2/private/get_account_summary",
+          "method": "GET", 
+          "requires_auth": true,
+          "requires_signature": false,
+          "description": "Get account information"
+        }
+      },
+      "websocket_channels": {
+        "orderbook": "book",
+        "trades": "trades",
+        "ticker": "ticker",
+        "user_data": "user",
+        "place_order": "buy",
+        "cancel_order": "cancel",
+        "modify_order": "edit",
+        "order_updates": "user.orders",
+        "position_updates": "user.portfolio"
+      }
+    }
+  },
+  "global_headers": {
+    "Content-Type": "application/json",
+    "User-Agent": "AsymmetricLP/1.0"
+  },
+  "global_params": {},
+  "authentication": {
+    "client_id": "client_id",
+    "client_secret": "client_secret",
+    "grant_type": "client_credentials"
+  }
+}

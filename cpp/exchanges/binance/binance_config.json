@@ -1,0 +1,125 @@
+{
+  "exchange_name": "BINANCE",
+  "version": "v1",
+  "testnet_mode": true,
+  "default_timeout_ms": 5000,
+  "max_retries": 3,
+  "assets": {
+    "FUTURES": {
+      "type": "FUTURES",
+      "name": "futures",
+      "urls": {
+        "rest_api": "https://testnet.binancefuture.com",
+        "websocket_public": "wss://dstream.binancefuture.com/stream",
+        "websocket_private": "wss://dstream.binancefuture.com/ws",
+        "websocket_market_data": "wss://dstream.binancefuture.com/stream",
+        "websocket_user_data": "wss://dstream.binancefuture.com/ws"
+      },
+      "endpoints": {
+        "get_open_orders": {
+          "name": "get_open_orders",
+          "path": "/fapi/v1/openOrders",
+          "method": "GET",
+          "requires_auth": true,
+          "requires_signature": true,
+          "description": "Get all open orders"
+        },
+        "get_positions": {
+          "name": "get_positions", 
+          "path": "/fapi/v2/positionRisk",
+          "method": "GET",
+          "requires_auth": true,
+          "requires_signature": true,
+          "description": "Get current positions"
+        },
+        "get_account": {
+          "name": "get_account",
+          "path": "/fapi/v2/account",
+          "method": "GET", 
+          "requires_auth": true,
+          "requires_signature": true,
+          "description": "Get account information"
+        },
+        "get_order_history": {
+          "name": "get_order_history",
+          "path": "/fapi/v1/allOrders",
+          "method": "GET",
+          "requires_auth": true,
+          "requires_signature": true,
+          "description": "Get order history"
+        }
+      },
+      "websocket_channels": {
+        "orderbook": "depth",
+        "trades": "trade", 
+        "ticker": "ticker",
+        "user_data": "userDataStream",
+        "place_order": "order",
+        "cancel_order": "order",
+        "modify_order": "order",
+        "order_updates": "orderUpdate",
+        "position_updates": "accountUpdate"
+      }
+    },
+    "SPOT": {
+      "type": "SPOT",
+      "name": "spot",
+      "urls": {
+        "rest_api": "https://api.binance.com",
+        "websocket_public": "wss://stream.binance.com:9443/stream",
+        "websocket_private": "wss://stream.binance.com:9443/ws",
+        "websocket_market_data": "wss://stream.binance.com:9443/stream",
+        "websocket_user_data": "wss://stream.binance.com:9443/ws"
+      },
+      "endpoints": {
+        "get_open_orders": {
+          "name": "get_open_orders",
+          "path": "/api/v3/openOrders",
+          "method": "GET",
+          "requires_auth": true,
+          "requires_signature": true,
+          "description": "Get all open spot orders"
+        },
+        "get_positions": {
+          "name": "get_positions", 
+          "path": "/api/v3/account",
+          "method": "GET",
+          "requires_auth": true,
+          "requires_signature": true,
+          "description": "Get spot account balances"
+        },
+        "get_account": {
+          "name": "get_account",
+          "path": "/api/v3/account",
+          "method": "GET", 
+          "requires_auth": true,
+          "requires_signature": true,
+          "description": "Get spot account information"
+        }
+      },
+      "websocket_channels": {
+        "orderbook": "depth",
+        "trades": "trade", 
+        "ticker": "ticker",
+        "user_data": "userDataStream",
+        "place_order": "order",
+        "cancel_order": "order",
+        "modify_order": "order",
+        "order_updates": "orderUpdate",
+        "position_updates": "accountUpdate"
+      }
+    }
+  },
+  "global_headers": {
+    "Content-Type": "application/json",
+    "User-Agent": "AsymmetricLP/1.0"
+  },
+  "global_params": {},
+  "authentication": {
+    "api_key_header": "X-MBX-APIKEY",
+    "signature_param": "signature",
+    "timestamp_param": "timestamp",
+    "testnet_api_key": "yf482RhkdiQg4S5Oaau8vGqPlimMn5Rlws1OvN3ThkJb2H7BXQJNx3KVH0KgbNxe",
+    "testnet_secret": "a90vC7XnrCLXprjIfsnCPWbjijNjtY0zTiAeTR9prEkOGS2Lk1LG5cBgtnXZkreG"
+  }
+}

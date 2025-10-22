@@ -1,0 +1,4 @@
+{
+  "code": -1021,
+  "msg": "Timestamp for this request is outside of the recvWindow."
+}

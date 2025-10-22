@@ -1,0 +1,7 @@
+{
+  "type": "BINANCE",
+  "api_key": "test_key",
+  "api_secret": "test_secret",
+  "base_url": "https://fapi.binance.com",
+  "websocket_url": "wss://fstream.binance.com/ws"
+}

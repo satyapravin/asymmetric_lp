@@ -1,0 +1,35 @@
+[
+  {
+    "accountAlias": "futures",
+    "asset": "USDT",
+    "balance": "1000.00000000",
+    "crossWalletBalance": "1000.00000000",
+    "crossUnPnl": "0.00000000",
+    "availableBalance": "950.00000000",
+    "maxWithdrawAmount": "950.00000000",
+    "marginAvailable": true,
+    "updateTime": 1640995200000
+  },
+  {
+    "accountAlias": "futures",
+    "asset": "BTC",
+    "balance": "0.10000000",
+    "crossWalletBalance": "0.10000000",
+    "crossUnPnl": "0.00000000",
+    "availableBalance": "0.08000000",
+    "maxWithdrawAmount": "0.08000000",
+    "marginAvailable": true,
+    "updateTime": 1640995200000
+  },
+  {
+    "accountAlias": "futures",
+    "asset": "ETH",
+    "balance": "1.50000000",
+    "crossWalletBalance": "1.50000000",
+    "crossUnPnl": "0.00000000",
+    "availableBalance": "1.20000000",
+    "maxWithdrawAmount": "1.20000000",
+    "marginAvailable": true,
+    "updateTime": 1640995200000
+  }
+]

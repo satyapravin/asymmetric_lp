@@ -1,0 +1,13 @@
+{
+  "clientOrderId": "TEST_ORDER_1",
+  "symbol": "BTCUSDT",
+  "orderId": "123456789",
+  "executedQty": "0.00000000",
+  "avgPrice": "0.00000000",
+  "status": "NEW",
+  "time": 1640995200000,
+  "side": "BUY",
+  "type": "LIMIT",
+  "origQty": "0.10000000",
+  "price": "50000.00000000"
+}
