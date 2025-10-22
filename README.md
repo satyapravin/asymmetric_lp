@@ -21,6 +21,49 @@ The strategy uses residual inventory from DeFi LP positions to market make on Ce
 | **C++ Servers** | 🔄 **UAT Pending** | Architecture complete, comprehensive test suite, sanitizer support added |
 | **Trader Process** | 🔄 **UAT Pending** | Strategy framework implemented, integration testing complete |
 
+## Quick Start
+
+### Prerequisites
+
+**System Dependencies (Ubuntu/Debian):**
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential cmake git pkg-config \
+    libzmq3-dev libwebsockets-dev libssl-dev libcurl4-openssl-dev \
+    libjsoncpp-dev libsimdjson-dev libprotobuf-dev protobuf-compiler \
+    libuv1-dev python3 python3-pip python3-venv python3-dev
+```
+
+**For other systems, see [INSTALL_DEPENDENCIES.md](INSTALL_DEPENDENCIES.md)**
+
+### Build Instructions
+
+```bash
+# Clone repository
+git clone <repository-url>
+cd asymmetric_lp
+
+# Build C++ components
+cd cpp
+mkdir build && cd build
+cmake ..
+make -j$(nproc)
+
+# Install Python dependencies
+cd ../../python
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Docker Alternative
+
+```bash
+# Build and run with Docker (includes all dependencies)
+docker build -t asymmetric_lp .
+docker run -it asymmetric_lp
+```
+
 ## Architecture
 
 ### Python DeFi Component
