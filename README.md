@@ -1,6 +1,6 @@
 # Asymmetric Liquidity Provision Strategy
 
-A sophisticated market-making strategy that combines DeFi liquidity provision with CeFi market making to create a statistical, inventory-aware hedge implemented via passive orders.
+A market-making strategy that combines DeFi liquidity provision with CeFi market making to create a statistical, inventory-aware hedge implemented via passive orders.
 
 ## Strategy Overview
 
