@@ -187,6 +187,31 @@ make -j$(nproc)  # On macOS: make -j$(sysctl -n hw.ncpu)
 
 If your system doesn't have the required packages, you can build them from source:
 
+#### Building Protobuf from Source
+
+```bash
+# Install dependencies for building protobuf
+sudo apt-get install -y autoconf automake libtool curl make g++ unzip
+
+# Download and build protobuf
+wget https://github.com/protocolbuffers/protobuf/releases/download/v21.12/protobuf-cpp-3.21.12.tar.gz
+tar -xzf protobuf-cpp-3.21.12.tar.gz
+cd protobuf-3.21.12
+
+# Configure and build
+./configure --prefix=/usr/local
+make -j$(nproc)
+sudo make install
+
+# Update library cache
+sudo ldconfig
+
+# Verify installation
+protoc --version
+```
+
+#### Building simdjson from Source
+
 ```bash
 # Example: Building simdjson from source
 git clone https://github.com/simdjson/simdjson.git
@@ -195,6 +220,22 @@ mkdir build && cd build
 cmake ..
 make -j$(nproc)
 sudo make install
+```
+
+#### Building ZeroMQ from Source
+
+```bash
+# Install dependencies
+sudo apt-get install -y libtool pkg-config build-essential autoconf automake
+
+# Download and build ZeroMQ
+wget https://github.com/zeromq/libzmq/releases/download/v4.3.4/zeromq-4.3.4.tar.gz
+tar -xzf zeromq-4.3.4.tar.gz
+cd zeromq-4.3.4
+./configure --prefix=/usr/local
+make -j$(nproc)
+sudo make install
+sudo ldconfig
 ```
 
 ## Docker Alternative
