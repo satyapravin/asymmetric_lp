@@ -21,25 +21,59 @@ class AsymmetricLPStrategy:
         self,
         current_price: float,
         price_history: List[Dict[str, float]],
-        initial_token0: float,
-        initial_token1: float,
         current_token0: float,
         current_token1: float,
+        last_rebalance_token0: Optional[float] = None,
+        last_rebalance_token1: Optional[float] = None,
+        last_rebalance_price: Optional[float] = None,
+        has_positions: bool = True,
     ) -> bool:
         """
-        Per-token depletion trigger used by both backtest and live.
-        Rebalance if either token is depleted by more than REBALANCE_THRESHOLD.
+        Per-token depletion trigger aligned with backtest logic.
+        Rebalance if either token is depleted by more than REBALANCE_THRESHOLD from last rebalance baseline,
+        or if price has deviated by more than REBALANCE_THRESHOLD from last rebalance price.
+        
+        Args:
+            current_price: Current spot price
+            price_history: Historical price data (unused but kept for API compatibility)
+            current_token0: Current token0 balance
+            current_token1: Current token1 balance
+            last_rebalance_token0: Token0 balance at last rebalance (None if first rebalance)
+            last_rebalance_token1: Token1 balance at last rebalance (None if first rebalance)
+            last_rebalance_price: Price at last rebalance (None if first rebalance)
+            has_positions: Whether positions exist (False triggers first mint)
+            
+        Returns:
+            True if rebalancing is needed
         """
         if current_price is None:
             return False
-        # Always allow first mint handled by caller (no positions yet)
-        init0 = max(initial_token0, 1e-18)
-        init1 = max(initial_token1, 1e-18)
+        
+        # Always allow first mint if no positions exist
+        if not has_positions:
+            return True
+        
+        # If no baselines set yet, skip (wait for first rebalance to set baselines)
+        if last_rebalance_token0 is None or last_rebalance_token1 is None or last_rebalance_price is None:
+            return False
+        
+        # Edge-triggered per-token depletion from last rebalance baselines
         cur0 = max(current_token0, 0.0)
         cur1 = max(current_token1, 0.0)
-        dev0 = (init0 - cur0) / init0 if cur0 < init0 else 0.0
-        dev1 = (init1 - cur1) / init1 if cur1 < init1 else 0.0
-        return (dev0 > self.config.REBALANCE_THRESHOLD) or (dev1 > self.config.REBALANCE_THRESHOLD)
+        base0 = max(last_rebalance_token0, 1e-18)
+        base1 = max(last_rebalance_token1, 1e-18)
+        
+        # Calculate depletion for each token (only if current is less than baseline)
+        dev0 = (base0 - cur0) / base0 if cur0 < base0 else 0.0
+        dev1 = (base1 - cur1) / base1 if cur1 < base1 else 0.0
+        
+        # Price deviation from last rebalance price
+        price_dev = abs(current_price - last_rebalance_price) / last_rebalance_price if last_rebalance_price else 0.0
+        
+        thresh = self.config.REBALANCE_THRESHOLD
+        
+        # Rebalance if any threshold is exceeded
+        return (dev0 > thresh) or (dev1 > thresh) or (price_dev > thresh)
 
     def plan_rebalance(
         self,

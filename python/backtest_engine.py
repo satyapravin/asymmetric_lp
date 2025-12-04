@@ -258,7 +258,8 @@ class BacktestEngine:
     
     def should_rebalance(self, current_price: float) -> bool:
         """
-        Determine if rebalancing is needed based on per-token inventory depletion
+        Determine if rebalancing is needed based on per-token inventory depletion.
+        Uses the shared strategy logic for consistency between backtest and live.
         
         Args:
             current_price: Current price
@@ -266,24 +267,16 @@ class BacktestEngine:
         Returns:
             True if rebalancing is needed
         """
-        # Always allow first mint
-        if not self.positions:
-            return True
-        # If no history yet or baselines not set, skip
-        if not self.price_history or self.last_rebalance_price is None or self.last_rebalance_token0 <= 0.0 or self.last_rebalance_token1 <= 0.0:
-            return False
-
-        # Edge-triggered per-token depletion from last rebalance baselines
-        cur0 = max(self.balance_0, 0.0)
-        cur1 = max(self.balance_1, 0.0)
-        base0 = max(self.last_rebalance_token0, 1e-18)
-        base1 = max(self.last_rebalance_token1, 1e-18)
-        dev0 = (base0 - cur0) / base0 if cur0 < base0 else 0.0
-        dev1 = (base1 - cur1) / base1 if cur1 < base1 else 0.0
-        # Price deviation from last rebalance price
-        price_dev = abs(current_price - self.last_rebalance_price) / self.last_rebalance_price if self.last_rebalance_price else 0.0
-        thresh = self.config.REBALANCE_THRESHOLD
-        return (dev0 > thresh) or (dev1 > thresh) or (price_dev > thresh)
+        return self.strategy.should_rebalance(
+            current_price=current_price,
+            price_history=self.price_history,
+            current_token0=self.balance_0,
+            current_token1=self.balance_1,
+            last_rebalance_token0=self.last_rebalance_token0 if self.last_rebalance_token0 > 0.0 else None,
+            last_rebalance_token1=self.last_rebalance_token1 if self.last_rebalance_token1 > 0.0 else None,
+            last_rebalance_price=self.last_rebalance_price,
+            has_positions=len(self.positions) > 0,
+        )
     
     def rebalance_positions(self, current_price: float, timestamp: datetime, amm_simulator: AMMSimulator) -> Dict[str, Any]:
         """

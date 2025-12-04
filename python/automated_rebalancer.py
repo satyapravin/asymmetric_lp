@@ -12,6 +12,7 @@ from uniswap_client import UniswapV3Client
 from lp_position_manager import LPPositionManager
 from utils import UniswapV3Utils, ErrorHandler, Logger, retry_on_failure, is_retryable_error
 from models.model_factory import ModelFactory
+from strategy import AsymmetricLPStrategy
 from alert_manager import TelegramAlertManager
 from inventory_publisher import InventoryPublisher
 
@@ -41,6 +42,9 @@ class AutomatedRebalancer:
         self.inventory_model = ModelFactory.create_model(model_name, self.config)
         logger.info(f"Using inventory model: {model_name}")
         
+        # Initialize strategy (shared logic for backtest and live)
+        self.strategy = AsymmetricLPStrategy(self.config, self.inventory_model)
+        
         # Monitoring state
         self.is_running = False
         self.monitoring_thread = None
@@ -50,6 +54,11 @@ class AutomatedRebalancer:
         # Price tracking
         self.last_spot_price = None
         self.price_history = []
+        
+        # Last rebalance baselines (aligned with backtest logic)
+        self.last_rebalance_token0: Optional[float] = None
+        self.last_rebalance_token1: Optional[float] = None
+        self.last_rebalance_price: Optional[float] = None
         
         logger.info("Automated Rebalancer initialized")
     
@@ -455,7 +464,8 @@ class AutomatedRebalancer:
     
     def should_rebalance(self, spot_price: float, positions: List[Dict[str, Any]]) -> bool:
         """
-        Determine if rebalancing is needed based on price proximity and inventory imbalance
+        Determine if rebalancing is needed based on per-token depletion and price deviation.
+        Uses shared strategy logic aligned with backtest.
         
         Args:
             spot_price: Current spot price
@@ -465,26 +475,28 @@ class AutomatedRebalancer:
             True if rebalancing is needed
         """
         try:
-            if not positions:
-                return True  # No positions, need to create initial ones
-            
             # Get current wallet balances
             token0_balance, token1_balance = self.get_wallet_balances(
                 self.config.TOKEN_A_ADDRESS, self.config.TOKEN_B_ADDRESS
             )
             
-            # Check inventory imbalance using inventory model
-            inventory_result = self.inventory_model.calculate_lp_ranges(
-                token0_balance, token1_balance, spot_price, self.price_history,
-                self.config.TOKEN_A_ADDRESS, self.config.TOKEN_B_ADDRESS, self.client
+            # Convert from wei to human-readable amounts
+            token0_decimals = self.client.get_token_decimals(self.config.TOKEN_A_ADDRESS)
+            token1_decimals = self.client.get_token_decimals(self.config.TOKEN_B_ADDRESS)
+            token0_amount = token0_balance / (10 ** token0_decimals)
+            token1_amount = token1_balance / (10 ** token1_decimals)
+            
+            # Use strategy's should_rebalance method (aligned with backtest)
+            return self.strategy.should_rebalance(
+                current_price=spot_price,
+                price_history=self.price_history,
+                current_token0=token0_amount,
+                current_token1=token1_amount,
+                last_rebalance_token0=self.last_rebalance_token0,
+                last_rebalance_token1=self.last_rebalance_token1,
+                last_rebalance_price=self.last_rebalance_price,
+                has_positions=len(positions) > 0,
             )
-            
-            # Rebalance if inventory is severely imbalanced
-            if inventory_result['target_rebalance']:
-                logger.info(f"Inventory imbalance {inventory_result['inventory_imbalance']:.3f} exceeds threshold")
-                return True
-            
-            return False
             
         except Exception as e:
             logger.error(f"Error checking rebalance condition: {e}")
@@ -775,9 +787,30 @@ class AutomatedRebalancer:
             token0_balance, token1_balance = self.get_wallet_balances(token0, token1)
             logger.info(f"Updated balances: Token0={token0_balance}, Token1={token1_balance}")
             
+            # Convert from wei to human-readable amounts for baseline tracking
+            token0_decimals = self.client.get_token_decimals(token0)
+            token1_decimals = self.client.get_token_decimals(token1)
+            token0_amount = token0_balance / (10 ** token0_decimals)
+            token1_amount = token1_balance / (10 ** token1_decimals)
+            
             # Calculate dynamic ranges
             range_a, range_b = self.calculate_dynamic_ranges(token0_balance, token1_balance, spot_price)
             logger.info(f"Calculated ranges: A={range_a}%, B={range_b}%")
+            
+            # Calculate inventory ratio for notifications
+            # token0 is USDC (already in USD), token1 is ETH (convert to USD)
+            token0_value = token0_amount
+            token1_value = token1_amount / spot_price
+            total_value = token0_value + token1_value
+            inventory_ratio = token0_value / total_value if total_value > 0 else 0.5
+            
+            # Calculate old inventory ratio from previous baseline BEFORE updating baselines
+            old_inventory_ratio = 0.5  # Default if no previous baseline
+            if self.last_rebalance_token0 is not None and self.last_rebalance_token1 is not None and self.last_rebalance_price is not None:
+                old_token0_value = self.last_rebalance_token0
+                old_token1_value = self.last_rebalance_token1 / self.last_rebalance_price
+                old_total_value = old_token0_value + old_token1_value
+                old_inventory_ratio = old_token0_value / old_total_value if old_total_value > 0 else 0.5
             
             # Create new single-sided positions
             result = self.create_single_sided_positions(token0, token1, fee, spot_price, range_a, range_b)
@@ -791,6 +824,13 @@ class AutomatedRebalancer:
                     {'token_id': 'new_position_b', 'status': 'created'}
                 ]
                 self.current_positions = new_positions
+                
+                # Update last rebalance baselines (aligned with backtest logic)
+                # NOTE: This must happen AFTER calculating old_inventory_ratio
+                self.last_rebalance_token0 = token0_amount
+                self.last_rebalance_token1 = token1_amount
+                self.last_rebalance_price = spot_price
+                logger.info(f"Updated rebalance baselines: token0={token0_amount:.6f}, token1={token1_amount:.6f}, price={spot_price:.6f}")
             
             # Add fee collection info to result
             result['fees_collected'] = total_fees_collected
@@ -821,7 +861,7 @@ class AutomatedRebalancer:
                     token_a_symbol=token_a_info['symbol'],
                     token_b_symbol=token_b_info['symbol'],
                     spot_price=spot_price,
-                    inventory_ratio=inventory_result.get('inventory_ratio', 0),
+                    inventory_ratio=inventory_ratio,
                     ranges=ranges_formatted,
                     fees_collected=fees_formatted,
                     gas_used=result.get('gas_used', 0)
@@ -831,12 +871,13 @@ class AutomatedRebalancer:
             
             # Publish rebalance event to CeFi MM agent
             try:
+                # old_inventory_ratio was already calculated above before updating baselines
                 self.inventory_publisher.publish_rebalance_event(
                     token_a_symbol=token_a_info['symbol'],
                     token_b_symbol=token_b_info['symbol'],
                     spot_price=spot_price,
-                    old_ratio=inventory_result.get('old_inventory_ratio', 0),
-                    new_ratio=inventory_result.get('inventory_ratio', 0),
+                    old_ratio=old_inventory_ratio,
+                    new_ratio=inventory_ratio,
                     fees_collected=fees_formatted,
                     gas_used=result.get('gas_used', 0),
                     ranges=ranges_formatted
