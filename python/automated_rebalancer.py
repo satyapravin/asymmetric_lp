@@ -831,59 +831,66 @@ class AutomatedRebalancer:
                 self.last_rebalance_token1 = token1_amount
                 self.last_rebalance_price = spot_price
                 logger.info(f"Updated rebalance baselines: token0={token0_amount:.6f}, token1={token1_amount:.6f}, price={spot_price:.6f}")
+                
+                # Update rebalance time and log success
+                self.last_rebalance_time = time.time()
+                logger.info("Rebalancing completed successfully")
+                
+                # Get token symbols for notifications (needed for both notification and event publishing)
+                try:
+                    token_a_info = self.client.get_token_info(token0)
+                    token_b_info = self.client.get_token_info(token1)
+                    
+                    # Format fees collected
+                    fees_formatted = {}
+                    if total_fees_collected:
+                        fees_formatted[f"{token_a_info['symbol']}"] = total_fees_collected.get('amount0', 0)
+                        fees_formatted[f"{token_b_info['symbol']}"] = total_fees_collected.get('amount1', 0)
+                    
+                    # Format ranges
+                    ranges_formatted = {
+                        'token_a_range': result.get('token_a_range', 0),
+                        'token_b_range': result.get('token_b_range', 0)
+                    }
+                    
+                    # Send Telegram notification (only on success)
+                    try:
+                        self.alert_manager.send_rebalance_notification(
+                            token_a_symbol=token_a_info['symbol'],
+                            token_b_symbol=token_b_info['symbol'],
+                            spot_price=spot_price,
+                            inventory_ratio=inventory_ratio,
+                            ranges=ranges_formatted,
+                            fees_collected=fees_formatted,
+                            gas_used=result.get('gas_used', 0)
+                        )
+                    except Exception as alert_error:
+                        logger.warning(f"Failed to send Telegram notification: {alert_error}")
+                    
+                    # Publish rebalance event to CeFi MM agent (only on success)
+                    try:
+                        # old_inventory_ratio was already calculated above before updating baselines
+                        self.inventory_publisher.publish_rebalance_event(
+                            token_a_symbol=token_a_info['symbol'],
+                            token_b_symbol=token_b_info['symbol'],
+                            spot_price=spot_price,
+                            old_ratio=old_inventory_ratio,
+                            new_ratio=inventory_ratio,
+                            fees_collected=fees_formatted,
+                            gas_used=result.get('gas_used', 0),
+                            ranges=ranges_formatted
+                        )
+                    except Exception as publish_error:
+                        logger.warning(f"Failed to publish rebalance event: {publish_error}")
+                except Exception as token_info_error:
+                    logger.warning(f"Failed to get token info for notifications: {token_info_error}")
+            else:
+                # Position creation failed - log error but don't send notifications
+                logger.error(f"Rebalancing failed: {result.get('error', 'Unknown error')}")
             
-            # Add fee collection info to result
+            # Add fee collection info to result (regardless of success/failure)
             result['fees_collected'] = total_fees_collected
             result['positions_burned'] = len(existing_positions)
-            
-            self.last_rebalance_time = time.time()
-            logger.info("Rebalancing completed successfully")
-            
-            # Send Telegram notification
-            try:
-                # Get token symbols for notification
-                token_a_info = self.client.get_token_info(token0)
-                token_b_info = self.client.get_token_info(token1)
-                
-                # Format fees collected
-                fees_formatted = {}
-                if total_fees_collected:
-                    fees_formatted[f"{token_a_info['symbol']}"] = total_fees_collected.get('amount0', 0)
-                    fees_formatted[f"{token_b_info['symbol']}"] = total_fees_collected.get('amount1', 0)
-                
-                # Format ranges
-                ranges_formatted = {
-                    'token_a_range': result.get('token_a_range', 0),
-                    'token_b_range': result.get('token_b_range', 0)
-                }
-                
-                self.alert_manager.send_rebalance_notification(
-                    token_a_symbol=token_a_info['symbol'],
-                    token_b_symbol=token_b_info['symbol'],
-                    spot_price=spot_price,
-                    inventory_ratio=inventory_ratio,
-                    ranges=ranges_formatted,
-                    fees_collected=fees_formatted,
-                    gas_used=result.get('gas_used', 0)
-                )
-            except Exception as alert_error:
-                logger.warning(f"Failed to send Telegram notification: {alert_error}")
-            
-            # Publish rebalance event to CeFi MM agent
-            try:
-                # old_inventory_ratio was already calculated above before updating baselines
-                self.inventory_publisher.publish_rebalance_event(
-                    token_a_symbol=token_a_info['symbol'],
-                    token_b_symbol=token_b_info['symbol'],
-                    spot_price=spot_price,
-                    old_ratio=old_inventory_ratio,
-                    new_ratio=inventory_ratio,
-                    fees_collected=fees_formatted,
-                    gas_used=result.get('gas_used', 0),
-                    ranges=ranges_formatted
-                )
-            except Exception as publish_error:
-                logger.warning(f"Failed to publish rebalance event: {publish_error}")
             
             return result
             

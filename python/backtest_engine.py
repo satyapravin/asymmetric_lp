@@ -111,8 +111,9 @@ class BacktestEngine:
         self.rebalances = []
         self.last_rebalance_time = None
         # Baselines set at each rebalance (for edge-triggered rebalances)
-        self.last_rebalance_token0: float = 0.0
-        self.last_rebalance_token1: float = 0.0
+        # Initialized as None to distinguish "never been set" from "is currently zero"
+        self.last_rebalance_token0: Optional[float] = None
+        self.last_rebalance_token1: Optional[float] = None
         self.last_rebalance_price: Optional[float] = None
         
         # Performance tracking
@@ -272,8 +273,8 @@ class BacktestEngine:
             price_history=self.price_history,
             current_token0=self.balance_0,
             current_token1=self.balance_1,
-            last_rebalance_token0=self.last_rebalance_token0 if self.last_rebalance_token0 > 0.0 else None,
-            last_rebalance_token1=self.last_rebalance_token1 if self.last_rebalance_token1 > 0.0 else None,
+            last_rebalance_token0=self.last_rebalance_token0,
+            last_rebalance_token1=self.last_rebalance_token1,
             last_rebalance_price=self.last_rebalance_price,
             has_positions=len(self.positions) > 0,
         )
