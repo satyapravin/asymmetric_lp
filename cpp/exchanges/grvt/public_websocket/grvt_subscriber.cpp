@@ -3,6 +3,7 @@
 #include <sstream>
 #include <chrono>
 #include <thread>
+#include <algorithm>
 #include <json/json.h>
 
 namespace grvt {
@@ -24,6 +25,35 @@ bool GrvtSubscriber::connect() {
     }
     
     try {
+        // If custom transport is set, use it (for testing)
+        if (custom_transport_) {
+            std::cout << "[GRVT_SUBSCRIBER] Using custom WebSocket transport" << std::endl;
+            
+            // Set up message callback BEFORE connecting
+            custom_transport_->set_message_callback([this](const websocket_transport::WebSocketMessage& ws_msg) {
+                if (!ws_msg.is_binary) {
+                    handle_websocket_message(ws_msg.data);
+                }
+            });
+            
+            if (custom_transport_->connect(config_.websocket_url)) {
+                connected_ = true;
+                websocket_running_ = true;
+                
+                // Start event loop if not already running
+                if (!custom_transport_->is_event_loop_running()) {
+                    custom_transport_->start_event_loop();
+                }
+                
+                websocket_thread_ = std::thread(&GrvtSubscriber::websocket_loop, this);
+                std::cout << "[GRVT_SUBSCRIBER] Connected successfully using injected transport" << std::endl;
+                return true;
+            } else {
+                std::cerr << "[GRVT_SUBSCRIBER] Failed to connect using custom transport" << std::endl;
+                return false;
+            }
+        }
+        
         // Initialize WebSocket connection (mock implementation)
         websocket_running_ = true;
         websocket_thread_ = std::thread(&GrvtSubscriber::websocket_loop, this);
@@ -62,8 +92,11 @@ bool GrvtSubscriber::subscribe_orderbook(const std::string& symbol, int top_n, i
         return false;
     }
     
-    std::string sub_msg = create_subscription_message(symbol, "orderbook");
+    // GRVT API: Use orderbook.s (snapshot) or orderbook.d (delta) channel
+    // Symbol should be separate parameter, not concatenated
+    std::string sub_msg = create_subscription_message(symbol, "orderbook", config_.use_snapshot_channels);
     std::cout << "[GRVT_SUBSCRIBER] Subscribing to orderbook: " << symbol 
+              << " channel: " << get_channel_name("orderbook", config_.use_snapshot_channels)
               << " top_n: " << top_n << " frequency: " << frequency_ms << "ms" << std::endl;
     
     // Add to subscribed symbols
@@ -75,8 +108,11 @@ bool GrvtSubscriber::subscribe_orderbook(const std::string& symbol, int top_n, i
         }
     }
     
-    // Mock subscription response
-    std::string mock_response = R"({"jsonrpc":"2.0","id":)" + std::to_string(request_id_++) + R"(,"result":{"subscribed":true,"channel":"orderbook.)" + symbol + R"("}})";
+    // Mock subscription response (GRVT format)
+    std::string channel_name = get_channel_name("orderbook", config_.use_snapshot_channels);
+    std::string mock_response = R"({"jsonrpc":"2.0","id":)" + std::to_string(request_id_++) + 
+                                R"(,"result":{"subscribed":true,"channel":")" + channel_name + 
+                                R"(","instrument":")" + symbol + R"("}})";
     handle_websocket_message(mock_response);
     
     return true;
@@ -88,7 +124,8 @@ bool GrvtSubscriber::subscribe_trades(const std::string& symbol) {
         return false;
     }
     
-    std::string sub_msg = create_subscription_message(symbol, "trades");
+    // GRVT API: trades channel doesn't have snapshot/delta variants
+    std::string sub_msg = create_subscription_message(symbol, "trades", false);
     std::cout << "[GRVT_SUBSCRIBER] Subscribing to trades: " << symbol << std::endl;
     
     // Add to subscribed symbols
@@ -100,8 +137,39 @@ bool GrvtSubscriber::subscribe_trades(const std::string& symbol) {
         }
     }
     
-    // Mock subscription response
-    std::string mock_response = R"({"jsonrpc":"2.0","id":)" + std::to_string(request_id_++) + R"(,"result":{"subscribed":true,"channel":"trades.)" + symbol + R"("}})";
+    // Mock subscription response (GRVT format)
+    std::string mock_response = R"({"jsonrpc":"2.0","id":)" + std::to_string(request_id_++) + 
+                                R"(,"result":{"subscribed":true,"channel":"trades","instrument":")" + symbol + R"("}})";
+    handle_websocket_message(mock_response);
+    
+    return true;
+}
+
+bool GrvtSubscriber::subscribe_ticker(const std::string& symbol) {
+    if (!is_connected()) {
+        std::cerr << "[GRVT_SUBSCRIBER] Not connected" << std::endl;
+        return false;
+    }
+    
+    // GRVT API: Use ticker.s (snapshot) or ticker.d (delta) channel
+    std::string sub_msg = create_subscription_message(symbol, "ticker", config_.use_snapshot_channels);
+    std::cout << "[GRVT_SUBSCRIBER] Subscribing to ticker: " << symbol 
+              << " channel: " << get_channel_name("ticker", config_.use_snapshot_channels) << std::endl;
+    
+    // Add to subscribed symbols
+    {
+        std::lock_guard<std::mutex> lock(symbols_mutex_);
+        auto it = std::find(subscribed_symbols_.begin(), subscribed_symbols_.end(), symbol);
+        if (it == subscribed_symbols_.end()) {
+            subscribed_symbols_.push_back(symbol);
+        }
+    }
+    
+    // Mock subscription response (GRVT format)
+    std::string channel_name = get_channel_name("ticker", config_.use_snapshot_channels);
+    std::string mock_response = R"({"jsonrpc":"2.0","id":)" + std::to_string(request_id_++) + 
+                                R"(,"result":{"subscribed":true,"channel":")" + channel_name + 
+                                R"(","instrument":")" + symbol + R"("}})";
     handle_websocket_message(mock_response);
     
     return true;
@@ -113,7 +181,9 @@ bool GrvtSubscriber::unsubscribe(const std::string& symbol) {
         return false;
     }
     
-    std::string unsub_msg = create_unsubscription_message(symbol, "orderbook");
+    // Unsubscribe from all channels for this symbol
+    // In practice, you might want to track which channels are subscribed per symbol
+    std::string unsub_msg = create_unsubscription_message(symbol, "orderbook", config_.use_snapshot_channels);
     std::cout << "[GRVT_SUBSCRIBER] Unsubscribing from: " << symbol << std::endl;
     
     // Remove from subscribed symbols
@@ -125,8 +195,11 @@ bool GrvtSubscriber::unsubscribe(const std::string& symbol) {
         }
     }
     
-    // Mock unsubscription response
-    std::string mock_response = R"({"jsonrpc":"2.0","id":)" + std::to_string(request_id_++) + R"(,"result":{"unsubscribed":true,"channel":"orderbook.)" + symbol + R"("}})";
+    // Mock unsubscription response (GRVT format)
+    std::string channel_name = get_channel_name("orderbook", config_.use_snapshot_channels);
+    std::string mock_response = R"({"jsonrpc":"2.0","id":)" + std::to_string(request_id_++) + 
+                                R"(,"result":{"unsubscribed":true,"channel":")" + channel_name + 
+                                R"(","instrument":")" + symbol + R"("}})";
     handle_websocket_message(mock_response);
     
     return true;
@@ -143,26 +216,35 @@ void GrvtSubscriber::set_trade_callback(TradeCallback callback) {
 void GrvtSubscriber::websocket_loop() {
     std::cout << "[GRVT_SUBSCRIBER] WebSocket loop started" << std::endl;
     
-    while (websocket_running_) {
-        try {
-            // Mock WebSocket message processing
+    // If custom transport is set, messages will come via callback
+    // Just wait for the loop to be stopped
+    if (custom_transport_) {
+        std::cout << "[GRVT_SUBSCRIBER] Using custom transport - messages will arrive via callback" << std::endl;
+        while (websocket_running_) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            
-            // Simulate occasional market data updates
-            static int counter = 0;
-            if (++counter % 20 == 0) {
-                std::string mock_orderbook_update = R"({"jsonrpc":"2.0","method":"orderbook_update","params":{"symbol":"BTCUSDT","bids":[["50000.0","0.1"],["49999.0","0.2"]],"asks":[["50001.0","0.15"],["50002.0","0.25"]],"timestamp":)" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) + R"(}})";
-                handle_websocket_message(mock_orderbook_update);
+        }
+    } else {
+        // Fallback: Mock WebSocket message processing
+        while (websocket_running_) {
+            try {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                
+                // Simulate occasional market data updates
+                static int counter = 0;
+                if (++counter % 20 == 0) {
+                    std::string mock_orderbook_update = R"({"jsonrpc":"2.0","method":"orderbook_update","params":{"symbol":"BTCUSDT","bids":[["50000.0","0.1"],["49999.0","0.2"]],"asks":[["50001.0","0.15"],["50002.0","0.25"]],"timestamp":)" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) + R"(}})";
+                    handle_websocket_message(mock_orderbook_update);
+                }
+                
+                if (counter % 35 == 0) {
+                    std::string mock_trade_update = R"({"jsonrpc":"2.0","method":"trade_update","params":{"symbol":"BTCUSDT","price":50000.5,"quantity":0.1,"side":"BUY","timestamp":)" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) + R"(}})";
+                    handle_websocket_message(mock_trade_update);
+                }
+                
+            } catch (const std::exception& e) {
+                std::cerr << "[GRVT_SUBSCRIBER] WebSocket loop error: " << e.what() << std::endl;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
             }
-            
-            if (counter % 35 == 0) {
-                std::string mock_trade_update = R"({"jsonrpc":"2.0","method":"trade_update","params":{"symbol":"BTCUSDT","price":50000.5,"quantity":0.1,"side":"BUY","timestamp":)" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) + R"(}})";
-                handle_websocket_message(mock_trade_update);
-            }
-            
-        } catch (const std::exception& e) {
-            std::cerr << "[GRVT_SUBSCRIBER] WebSocket loop error: " << e.what() << std::endl;
-            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
     }
     
@@ -179,18 +261,82 @@ void GrvtSubscriber::handle_websocket_message(const std::string& message) {
             return;
         }
         
+        // Handle both full and lite variants
+        bool is_lite = root.isMember("m") || root.isMember("j");
+        std::string method_key = is_lite ? "m" : "method";
+        std::string params_key = is_lite ? "p" : "params";
+        std::string result_key = is_lite ? "r" : "result";
+        std::string error_key = is_lite ? "e" : "error";
+        
         // Handle different message types
-        if (root.isMember("method")) {
-            std::string method = root["method"].asString();
+        if (root.isMember(method_key)) {
+            std::string method = root[method_key].asString();
             
-            if (method == "orderbook_update" && root.isMember("params")) {
-                handle_orderbook_update(root["params"]);
-            } else if (method == "trade_update" && root.isMember("params")) {
-                handle_trade_update(root["params"]);
+            // GRVT API: Method names match channel names (e.g., "orderbook.s", "ticker.d", "trades")
+            if (root.isMember(params_key)) {
+                const Json::Value& params = root[params_key];
+                
+                if (method.find("orderbook") != std::string::npos) {
+                    // Params format: [channel, instrument, data]
+                    // Data contains bids/asks arrays
+                    if (params.isArray() && params.size() >= 3) {
+                        Json::Value orderbook_data;
+                        orderbook_data["symbol"] = params[1];  // instrument
+                        
+                        // Parse orderbook data (format depends on full/lite variant)
+                        const Json::Value& data = params[2];
+                        
+                        // Extract timestamp from data if present, otherwise use current time
+                        if (data.isMember("timestamp")) {
+                            orderbook_data["timestamp"] = data["timestamp"];
+                        } else if (data.isMember("t")) {
+                            orderbook_data["timestamp"] = data["t"];
+                        } else {
+                            orderbook_data["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                std::chrono::system_clock::now().time_since_epoch()).count();
+                        }
+                        
+                        // Copy bids/asks arrays (check each separately for full/lite variants)
+                        if (data.isMember("bids")) {
+                            orderbook_data["bids"] = data["bids"];
+                        } else if (data.isMember("b")) {
+                            orderbook_data["bids"] = data["b"];
+                        }
+                        if (data.isMember("asks")) {
+                            orderbook_data["asks"] = data["asks"];
+                        } else if (data.isMember("a")) {
+                            orderbook_data["asks"] = data["a"];
+                        }
+                        
+                        handle_orderbook_update(orderbook_data);
+                    }
+                } else if (method.find("trades") != std::string::npos || method.find("trade") != std::string::npos) {
+                    // Params format: [channel, instrument, trade_data]
+                    if (params.isArray() && params.size() >= 3) {
+                        const Json::Value& trade_data = params[2];
+                        Json::Value trade_json;
+                        trade_json["symbol"] = params[1];
+                        trade_json["price"] = trade_data.isMember("price") ? trade_data["price"] : trade_data["p"];
+                        trade_json["quantity"] = trade_data.isMember("quantity") ? trade_data["quantity"] : trade_data["q"];
+                        trade_json["side"] = trade_data.isMember("side") ? trade_data["side"] : trade_data["s"];
+                        trade_json["tradeId"] = trade_data.isMember("tradeId") ? trade_data["tradeId"] : trade_data["ti"];
+                        trade_json["timestamp"] = trade_data.isMember("timestamp") ? trade_data["timestamp"] : trade_data["t"];
+                        
+                        handle_trade_update(trade_json);
+                    }
+                } else if (method.find("ticker") != std::string::npos) {
+                    // Handle ticker updates if needed
+                    std::cout << "[GRVT_SUBSCRIBER] Ticker update received: " << message << std::endl;
+                }
             }
-        } else if (root.isMember("result")) {
-            // Handle subscription responses
+        } else if (root.isMember(result_key)) {
+            // Handle subscription/unsubscription responses
             std::cout << "[GRVT_SUBSCRIBER] Subscription response: " << message << std::endl;
+        } else if (root.isMember(error_key)) {
+            // Handle error responses
+            std::string error_msg = root[error_key].isString() ? 
+                root[error_key].asString() : root[error_key].toStyledString();
+            std::cerr << "[GRVT_SUBSCRIBER] Error response: " << error_msg << std::endl;
         }
         
     } catch (const std::exception& e) {
@@ -201,82 +347,231 @@ void GrvtSubscriber::handle_websocket_message(const std::string& message) {
 void GrvtSubscriber::handle_orderbook_update(const Json::Value& orderbook_data) {
     proto::OrderBookSnapshot orderbook;
     orderbook.set_exch("GRVT");
+    
+    if (!orderbook_data.isMember("symbol")) {
+        std::cerr << "[GRVT_SUBSCRIBER] Orderbook data missing symbol" << std::endl;
+        return;
+    }
     orderbook.set_symbol(orderbook_data["symbol"].asString());
-    orderbook.set_timestamp_us(orderbook_data["timestamp"].asUInt64() * 1000); // Convert to microseconds
+    
+    // Handle timestamp (could be in milliseconds or nanoseconds)
+    if (orderbook_data.isMember("timestamp")) {
+        uint64_t timestamp = orderbook_data["timestamp"].asUInt64();
+        // If timestamp is very large (> year 2100 in ms), assume it's nanoseconds
+        if (timestamp > 4102444800000ULL) {
+            orderbook.set_timestamp_us(timestamp / 1000); // Convert nanoseconds to microseconds
+        } else {
+            orderbook.set_timestamp_us(timestamp * 1000); // Convert milliseconds to microseconds
+        }
+    } else {
+        orderbook.set_timestamp_us(std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+    }
     
     // Parse bids
-    const Json::Value& bids = orderbook_data["bids"];
-    if (bids.isArray()) {
-        for (const auto& bid : bids) {
-            proto::OrderBookLevel* level = orderbook.add_bids();
-            level->set_price(bid[0].asDouble());
-            level->set_qty(bid[1].asDouble());
+    if (orderbook_data.isMember("bids")) {
+        const Json::Value& bids = orderbook_data["bids"];
+        if (bids.isArray()) {
+            for (const auto& bid : bids) {
+                if (bid.isArray() && bid.size() >= 2) {
+                    proto::OrderBookLevel* level = orderbook.add_bids();
+                    // Handle string or numeric values
+                    if (bid[0].isString()) {
+                        level->set_price(std::stod(bid[0].asString()));
+                    } else {
+                        level->set_price(bid[0].asDouble());
+                    }
+                    if (bid[1].isString()) {
+                        level->set_qty(std::stod(bid[1].asString()));
+                    } else {
+                        level->set_qty(bid[1].asDouble());
+                    }
+                }
+            }
         }
     }
     
     // Parse asks
-    const Json::Value& asks = orderbook_data["asks"];
-    if (asks.isArray()) {
-        for (const auto& ask : asks) {
-            proto::OrderBookLevel* level = orderbook.add_asks();
-            level->set_price(ask[0].asDouble());
-            level->set_qty(ask[1].asDouble());
+    if (orderbook_data.isMember("asks")) {
+        const Json::Value& asks = orderbook_data["asks"];
+        if (asks.isArray()) {
+            for (const auto& ask : asks) {
+                if (ask.isArray() && ask.size() >= 2) {
+                    proto::OrderBookLevel* level = orderbook.add_asks();
+                    // Handle string or numeric values
+                    if (ask[0].isString()) {
+                        level->set_price(std::stod(ask[0].asString()));
+                    } else {
+                        level->set_price(ask[0].asDouble());
+                    }
+                    if (ask[1].isString()) {
+                        level->set_qty(std::stod(ask[1].asString()));
+                    } else {
+                        level->set_qty(ask[1].asDouble());
+                    }
+                }
+            }
         }
-    }
-    
-    if (orderbook_callback_) {
-        orderbook_callback_(orderbook);
     }
     
     std::cout << "[GRVT_SUBSCRIBER] Orderbook update: " << orderbook.symbol() 
               << " bids: " << orderbook.bids_size() 
               << " asks: " << orderbook.asks_size() << std::endl;
+    
+    if (orderbook_callback_) {
+        orderbook_callback_(orderbook);
+    }
 }
 
 void GrvtSubscriber::handle_trade_update(const Json::Value& trade_data) {
     proto::Trade trade;
     trade.set_exch("GRVT");
-    trade.set_symbol(trade_data["symbol"].asString());
-    trade.set_price(trade_data["price"].asDouble());
-    trade.set_qty(trade_data["quantity"].asDouble());
-    trade.set_is_buyer_maker(trade_data["side"].asString() == "sell");
-    trade.set_trade_id(trade_data["tradeId"].asString());
-    trade.set_timestamp_us(trade_data["timestamp"].asUInt64() * 1000); // Convert to microseconds
     
-    if (trade_callback_) {
-        trade_callback_(trade);
+    if (!trade_data.isMember("symbol")) {
+        std::cerr << "[GRVT_SUBSCRIBER] Trade data missing symbol" << std::endl;
+        return;
+    }
+    trade.set_symbol(trade_data["symbol"].asString());
+    
+    // Handle price (could be string or numeric)
+    if (trade_data.isMember("price")) {
+        if (trade_data["price"].isString()) {
+            trade.set_price(std::stod(trade_data["price"].asString()));
+        } else {
+            trade.set_price(trade_data["price"].asDouble());
+        }
+    } else if (trade_data.isMember("p")) {
+        if (trade_data["p"].isString()) {
+            trade.set_price(std::stod(trade_data["p"].asString()));
+        } else {
+            trade.set_price(trade_data["p"].asDouble());
+        }
+    }
+    
+    // Handle quantity (could be string or numeric)
+    if (trade_data.isMember("quantity")) {
+        if (trade_data["quantity"].isString()) {
+            trade.set_qty(std::stod(trade_data["quantity"].asString()));
+        } else {
+            trade.set_qty(trade_data["quantity"].asDouble());
+        }
+    } else if (trade_data.isMember("q")) {
+        if (trade_data["q"].isString()) {
+            trade.set_qty(std::stod(trade_data["q"].asString()));
+        } else {
+            trade.set_qty(trade_data["q"].asDouble());
+        }
+    }
+    
+    // Handle side
+    std::string side_str;
+    if (trade_data.isMember("side")) {
+        side_str = trade_data["side"].asString();
+    } else if (trade_data.isMember("s")) {
+        side_str = trade_data["s"].asString();
+    }
+    trade.set_is_buyer_maker(side_str == "sell" || side_str == "SELL");
+    
+    // Handle trade ID
+    if (trade_data.isMember("tradeId")) {
+        trade.set_trade_id(trade_data["tradeId"].asString());
+    } else if (trade_data.isMember("ti")) {
+        trade.set_trade_id(trade_data["ti"].asString());
+    }
+    
+    // Handle timestamp
+    if (trade_data.isMember("timestamp")) {
+        uint64_t timestamp = trade_data["timestamp"].asUInt64();
+        if (timestamp > 4102444800000ULL) {
+            trade.set_timestamp_us(timestamp / 1000);
+        } else {
+            trade.set_timestamp_us(timestamp * 1000);
+        }
+    } else if (trade_data.isMember("t")) {
+        uint64_t timestamp = trade_data["t"].asUInt64();
+        if (timestamp > 4102444800000ULL) {
+            trade.set_timestamp_us(timestamp / 1000);
+        } else {
+            trade.set_timestamp_us(timestamp * 1000);
+        }
+    } else {
+        trade.set_timestamp_us(std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
     }
     
     std::cout << "[GRVT_SUBSCRIBER] Trade update: " << trade.symbol() 
               << " " << trade.qty() << "@" << trade.price() 
               << " side: " << (trade.is_buyer_maker() ? "SELL" : "BUY") << std::endl;
+    
+    if (trade_callback_) {
+        trade_callback_(trade);
+    }
 }
 
-std::string GrvtSubscriber::create_subscription_message(const std::string& symbol, const std::string& channel) {
+std::string GrvtSubscriber::get_channel_name(const std::string& base_channel, bool use_snapshot) const {
+    // GRVT API: Channels use .s (snapshot) or .d (delta) suffix
+    // Trades channel doesn't have snapshot/delta variants
+    if (base_channel == "trades") {
+        return "trades";
+    }
+    return base_channel + (use_snapshot ? ".s" : ".d");
+}
+
+std::string GrvtSubscriber::create_subscription_message(const std::string& symbol, const std::string& channel, bool use_snapshot) {
     Json::Value root;
     root["jsonrpc"] = "2.0";
     root["id"] = generate_request_id();
     root["method"] = "SUBSCRIBE";
     
+    // GRVT API: params is array with [channel_name, instrument]
+    // Channel name includes .s or .d suffix (e.g., "orderbook.s", "ticker.d")
     Json::Value params(Json::arrayValue);
-    params.append(channel + "." + symbol);
+    std::string channel_name = get_channel_name(channel, use_snapshot);
+    params.append(channel_name);
+    params.append(symbol);  // Instrument name (e.g., "ETH_USDT_Perp")
     
     root["params"] = params;
+    
+    // Use lite variant if configured
+    if (config_.use_lite_version) {
+        // Lite variant uses shortened field names: j, m, p, i instead of jsonrpc, method, params, id
+        Json::Value lite_root;
+        lite_root["j"] = "2.0";
+        lite_root["m"] = "SUBSCRIBE";
+        lite_root["p"] = params;
+        lite_root["i"] = root["id"];
+        Json::StreamWriterBuilder builder;
+        return Json::writeString(builder, lite_root);
+    }
     
     Json::StreamWriterBuilder builder;
     return Json::writeString(builder, root);
 }
 
-std::string GrvtSubscriber::create_unsubscription_message(const std::string& symbol, const std::string& channel) {
+std::string GrvtSubscriber::create_unsubscription_message(const std::string& symbol, const std::string& channel, bool use_snapshot) {
     Json::Value root;
     root["jsonrpc"] = "2.0";
     root["id"] = generate_request_id();
     root["method"] = "UNSUBSCRIBE";
     
+    // GRVT API: params is array with [channel_name, instrument]
     Json::Value params(Json::arrayValue);
-    params.append(channel + "." + symbol);
+    std::string channel_name = get_channel_name(channel, use_snapshot);
+    params.append(channel_name);
+    params.append(symbol);
     
     root["params"] = params;
+    
+    // Use lite variant if configured
+    if (config_.use_lite_version) {
+        Json::Value lite_root;
+        lite_root["j"] = "2.0";
+        lite_root["m"] = "UNSUBSCRIBE";
+        lite_root["p"] = params;
+        lite_root["i"] = root["id"];
+        Json::StreamWriterBuilder builder;
+        return Json::writeString(builder, lite_root);
+    }
     
     Json::StreamWriterBuilder builder;
     return Json::writeString(builder, root);
@@ -292,6 +587,12 @@ void GrvtSubscriber::start() {
 
 void GrvtSubscriber::stop() {
     std::cout << "[GRVT_SUBSCRIBER] Stopping subscriber" << std::endl;
+    
+    // Stop custom transport event loop if running
+    if (custom_transport_ && custom_transport_->is_event_loop_running()) {
+        custom_transport_->stop_event_loop();
+    }
+    
     disconnect();
 }
 
@@ -302,7 +603,7 @@ void GrvtSubscriber::set_error_callback(std::function<void(const std::string&)> 
 
 void GrvtSubscriber::set_websocket_transport(std::unique_ptr<websocket_transport::IWebSocketTransport> transport) {
     std::cout << "[GRVT_SUBSCRIBER] Setting custom WebSocket transport for testing" << std::endl;
-    // Store transport for later use
+    custom_transport_ = std::move(transport);
 }
 
 } // namespace grvt

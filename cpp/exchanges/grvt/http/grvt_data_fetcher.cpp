@@ -7,13 +7,31 @@
 namespace grvt {
 
 GrvtDataFetcher::GrvtDataFetcher(const std::string& api_key, const std::string& session_cookie, const std::string& account_id)
-    : curl_(nullptr), authenticated_(false) {
+    : curl_(nullptr), authenticated_(false), auth_environment_(GrvtAuthEnvironment::PRODUCTION) {
     config_.api_key = api_key;
     config_.session_cookie = session_cookie;
     config_.account_id = account_id;
     curl_ = curl_easy_init();
     if (!curl_) {
         std::cerr << "[GRVT_DATA_FETCHER] Failed to initialize CURL" << std::endl;
+    }
+    authenticated_.store(!config_.api_key.empty() && !config_.session_cookie.empty() && !config_.account_id.empty());
+}
+
+GrvtDataFetcher::GrvtDataFetcher(const std::string& api_key, GrvtAuthEnvironment env)
+    : curl_(nullptr), authenticated_(false), auth_environment_(env) {
+    config_.api_key = api_key;
+    curl_ = curl_easy_init();
+    if (!curl_) {
+        std::cerr << "[GRVT_DATA_FETCHER] Failed to initialize CURL" << std::endl;
+    }
+    
+    // Initialize auth helper
+    auth_helper_ = std::make_unique<GrvtAuth>(auth_environment_);
+    
+    // Authenticate with API key
+    if (!api_key.empty()) {
+        authenticate_with_api_key(api_key);
     }
 }
 
@@ -25,8 +43,48 @@ GrvtDataFetcher::~GrvtDataFetcher() {
 
 void GrvtDataFetcher::set_auth_credentials(const std::string& api_key, const std::string& secret) {
     config_.api_key = api_key;
-    // Note: GRVT uses session cookies instead of secrets
-    authenticated_.store(!config_.api_key.empty() && !config_.session_cookie.empty() && !config_.account_id.empty());
+    
+    // If secret is provided, use it as session cookie (backward compatibility)
+    // Otherwise, authenticate with API key to get session cookie
+    if (!secret.empty()) {
+        config_.session_cookie = secret;
+        authenticated_.store(!config_.api_key.empty() && !config_.session_cookie.empty() && !config_.account_id.empty());
+    } else if (!api_key.empty()) {
+        // Authenticate with API key to get session cookie and account ID
+        authenticate_with_api_key(api_key);
+    } else {
+        authenticated_.store(false);
+    }
+}
+
+bool GrvtDataFetcher::authenticate_with_api_key(const std::string& api_key, const std::string& sub_account_id) {
+    if (api_key.empty()) {
+        std::cerr << "[GRVT_DATA_FETCHER] Cannot authenticate: API key is empty" << std::endl;
+        return false;
+    }
+    
+    config_.api_key = api_key;
+    
+    // Initialize auth helper if not already initialized
+    if (!auth_helper_) {
+        auth_helper_ = std::make_unique<GrvtAuth>(auth_environment_);
+    }
+    
+    // Perform authentication
+    GrvtAuthResult auth_result = auth_helper_->authenticate(api_key, sub_account_id);
+    
+    if (auth_result.is_valid()) {
+        config_.session_cookie = auth_result.session_cookie;
+        config_.account_id = auth_result.account_id;
+        authenticated_.store(true);
+        std::cout << "[GRVT_DATA_FETCHER] Authentication successful" << std::endl;
+        std::cout << "[GRVT_DATA_FETCHER] Account ID: " << config_.account_id << std::endl;
+        return true;
+    } else {
+        authenticated_.store(false);
+        std::cerr << "[GRVT_DATA_FETCHER] Authentication failed: " << auth_result.error_message << std::endl;
+        return false;
+    }
 }
 
 bool GrvtDataFetcher::is_authenticated() const {

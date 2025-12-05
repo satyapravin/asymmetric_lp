@@ -103,6 +103,8 @@ add_library(exchanges SHARED
     binance/private_websocket/binance_pms.cpp
     
     # GRVT implementation
+    grvt/grvt_auth.hpp
+    grvt/grvt_auth.cpp
     grvt/http/grvt_data_fetcher.hpp
     grvt/http/grvt_data_fetcher.cpp
     grvt/public_websocket/grvt_public_websocket_handler.hpp

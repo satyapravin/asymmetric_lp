@@ -1,0 +1,16 @@
+{
+  "jsonrpc": "2.0",
+  "method": "trades",
+  "params": [
+    "trades",
+    "ETH_USDT_Perp",
+    {
+      "price": "2533.75",
+      "quantity": "2.5",
+      "side": "BUY",
+      "tradeId": "trade_12345",
+      "timestamp": 1697788800000
+    }
+  ]
+}
+

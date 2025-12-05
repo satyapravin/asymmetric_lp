@@ -3,11 +3,33 @@
 #include <chrono>
 #include <thread>
 #include <algorithm>
+#include <atomic>
+#include <mutex>
 #include <curl/curl.h>
 #include <openssl/hmac.h>
 #include <openssl/evp.h>
 
 namespace binance {
+
+// CURL global state management with reference counting
+namespace {
+    std::mutex curl_init_mutex;
+    std::atomic<int> curl_ref_count{0};
+    
+    void ensure_curl_initialized() {
+        std::lock_guard<std::mutex> lock(curl_init_mutex);
+        if (curl_ref_count.fetch_add(1) == 0) {
+            curl_global_init(CURL_GLOBAL_DEFAULT);
+        }
+    }
+    
+    void ensure_curl_cleanup() {
+        std::lock_guard<std::mutex> lock(curl_init_mutex);
+        if (curl_ref_count.fetch_sub(1) == 1) {
+            curl_global_cleanup();
+        }
+    }
+}
 
 // HTTP response callback for CURL
 static size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* s) {
@@ -24,8 +46,8 @@ BinancePrivateWebSocketHandler::BinancePrivateWebSocketHandler(const std::string
     : api_key_(api_key), api_secret_(api_secret) {
     std::cout << "[BINANCE] Initializing Binance Private WebSocket Handler" << std::endl;
     
-    // Initialize CURL
-    curl_global_init(CURL_GLOBAL_DEFAULT);
+    // Initialize CURL with reference counting
+    ensure_curl_initialized();
     
     // Create listen key
     listen_key_ = create_listen_key();
@@ -34,7 +56,8 @@ BinancePrivateWebSocketHandler::BinancePrivateWebSocketHandler(const std::string
 BinancePrivateWebSocketHandler::~BinancePrivateWebSocketHandler() {
     std::cout << "[BINANCE] Destroying Binance Private WebSocket Handler" << std::endl;
     disconnect();
-    curl_global_cleanup();
+    // Cleanup CURL with reference counting
+    ensure_curl_cleanup();
 }
 
 bool BinancePrivateWebSocketHandler::connect(const std::string& url) {

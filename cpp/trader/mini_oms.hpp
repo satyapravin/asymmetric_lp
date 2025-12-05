@@ -60,8 +60,14 @@ public:
     void on_trade_execution(const proto::Trade& trade);
     
     // Callbacks
-    void set_order_state_callback(OrderStateCallback callback) { order_state_callback_ = callback; }
-    void set_order_event_callback(OrderEventCallback callback) { order_event_callback_ = callback; }
+    void set_order_state_callback(OrderStateCallback callback) {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        order_state_callback_ = callback;
+    }
+    void set_order_event_callback(OrderEventCallback callback) {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        order_event_callback_ = callback;
+    }
     
     // Statistics
     struct OrderStatistics {
@@ -107,7 +113,8 @@ private:
     std::atomic<bool> running_;
     OrderStatistics statistics_;
     
-    // Callbacks
+    // Callbacks (protected by mutex for thread safety)
+    mutable std::mutex callback_mutex_;
     OrderStateCallback order_state_callback_;
     OrderEventCallback order_event_callback_;
     

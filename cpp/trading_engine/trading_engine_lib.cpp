@@ -87,7 +87,10 @@ void TradingEngineLib::stop() {
     
     // Stop message processing thread
     message_processing_running_.store(false);
-    message_cv_.notify_all();
+    {
+        std::lock_guard<std::mutex> lock(message_queue_mutex_);
+        message_cv_.notify_all();
+    }
     
     if (message_processing_thread_.joinable()) {
         message_processing_thread_.join();

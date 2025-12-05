@@ -43,19 +43,9 @@ std::unique_ptr<IExchangePMS> PMSFactory::create_pms(const std::string& exchange
         return std::make_unique<deribit::DeribitPMS>(config);
     }
     else {
-        std::cerr << "[PMS_FACTORY] Unknown exchange: " << exchange_name 
-                  << ", using Binance as default" << std::endl;
-        
-        binance::BinancePMSConfig config;
-        config.api_key = "";
-        config.api_secret = "";
-        config.websocket_url = "wss://fstream.binance.com/ws";
-        config.testnet = false;
-        config.asset_type = "futures";
-        config.timeout_ms = 30000;
-        config.max_retries = 3;
-        
-        return std::make_unique<binance::BinancePMS>(config);
+        std::string error_msg = "[PMS_FACTORY] Unknown or unsupported exchange: " + exchange_name;
+        std::cerr << error_msg << std::endl;
+        throw std::runtime_error(error_msg);
     }
 }
 

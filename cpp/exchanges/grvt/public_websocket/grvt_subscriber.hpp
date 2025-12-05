@@ -14,7 +14,8 @@ namespace grvt {
 struct GrvtSubscriberConfig {
     std::string websocket_url;
     bool testnet{false};
-    bool use_lite_version{false};
+    bool use_lite_version{false};  // Use 'lite' variant with shortened field names
+    bool use_snapshot_channels{true};  // Use snapshot (.s) vs delta (.d) channels
     int timeout_ms{30000};
     int max_retries{3};
 };
@@ -34,6 +35,7 @@ public:
     // Market data subscriptions (via WebSocket)
     bool subscribe_orderbook(const std::string& symbol, int top_n, int frequency_ms) override;
     bool subscribe_trades(const std::string& symbol) override;
+    bool subscribe_ticker(const std::string& symbol);  // Additional GRVT-specific method
     bool unsubscribe(const std::string& symbol) override;
     
     // Real-time callbacks
@@ -43,6 +45,11 @@ public:
     
     // Testing interface - inject custom WebSocket transport
     void set_websocket_transport(std::unique_ptr<websocket_transport::IWebSocketTransport> transport) override;
+    
+    // Testing helpers (exposed for integration tests)
+    void handle_websocket_message(const std::string& message);  // Made public for testing
+    std::string create_subscription_message(const std::string& symbol, const std::string& channel, bool use_snapshot = true);  // Made public for testing
+    std::string get_channel_name(const std::string& base_channel, bool use_snapshot) const;  // Made public for testing
 
 private:
     GrvtSubscriberConfig config_;
@@ -58,19 +65,20 @@ private:
     std::vector<std::string> subscribed_symbols_;
     std::mutex symbols_mutex_;
     
+    // Custom WebSocket transport for testing
+    std::unique_ptr<websocket_transport::IWebSocketTransport> custom_transport_;
+    
     // Callbacks
     OrderbookCallback orderbook_callback_;
     TradeCallback trade_callback_;
     
     // Message handling
     void websocket_loop();
-    void handle_websocket_message(const std::string& message);
     void handle_orderbook_update(const Json::Value& orderbook_data);
     void handle_trade_update(const Json::Value& trade_data);
     
-    // Subscription management
-    std::string create_subscription_message(const std::string& symbol, const std::string& channel);
-    std::string create_unsubscription_message(const std::string& symbol, const std::string& channel);
+    // Subscription management (private)
+    std::string create_unsubscription_message(const std::string& symbol, const std::string& channel, bool use_snapshot = true);
     
     // Utility methods
     std::string generate_request_id();

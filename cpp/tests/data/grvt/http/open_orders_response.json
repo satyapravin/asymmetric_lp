@@ -1,0 +1,27 @@
+{
+  "result": [
+    {
+      "orderId": "order_12345",
+      "symbol": "ETH_USDT_Perp",
+      "side": "BUY",
+      "orderType": "LIMIT",
+      "quantity": "1.5",
+      "price": "2530.0",
+      "status": "NEW",
+      "time": 1697788800000,
+      "filledQuantity": "0.0"
+    },
+    {
+      "orderId": "order_12346",
+      "symbol": "ETH_USDT_Perp",
+      "side": "SELL",
+      "orderType": "LIMIT",
+      "quantity": "2.0",
+      "price": "2540.0",
+      "status": "PARTIALLY_FILLED",
+      "time": 1697788801000,
+      "filledQuantity": "1.0"
+    }
+  ]
+}
+

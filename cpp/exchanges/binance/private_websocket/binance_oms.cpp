@@ -17,6 +17,26 @@
 
 namespace binance {
 
+// CURL global state management with reference counting
+namespace {
+    std::mutex curl_init_mutex;
+    std::atomic<int> curl_ref_count{0};
+    
+    void ensure_curl_initialized() {
+        std::lock_guard<std::mutex> lock(curl_init_mutex);
+        if (curl_ref_count.fetch_add(1) == 0) {
+            curl_global_init(CURL_GLOBAL_DEFAULT);
+        }
+    }
+    
+    void ensure_curl_cleanup() {
+        std::lock_guard<std::mutex> lock(curl_init_mutex);
+        if (curl_ref_count.fetch_sub(1) == 1) {
+            curl_global_cleanup();
+        }
+    }
+}
+
 // HTTP response callback for CURL
 static size_t OMSWriteCallback(void* contents, size_t size, size_t nmemb, std::string* s) {
     size_t newLength = size * nmemb;
@@ -32,13 +52,14 @@ BinanceOMS::BinanceOMS(const BinanceConfig& config)
     : config_(config), connected_(false), authenticated_(false) {
     std::cout << "[BINANCE] Initializing Binance OMS" << std::endl;
     
-    // Initialize CURL
-    curl_global_init(CURL_GLOBAL_DEFAULT);
+    // Initialize CURL with reference counting
+    ensure_curl_initialized();
 }
 
 BinanceOMS::~BinanceOMS() {
     std::cout << "[BINANCE] Destroying Binance OMS" << std::endl;
-    curl_global_cleanup();
+    // Cleanup CURL with reference counting
+    ensure_curl_cleanup();
 }
 
 bool BinanceOMS::connect() {

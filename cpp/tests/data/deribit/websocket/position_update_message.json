@@ -1,0 +1,16 @@
+{
+  "jsonrpc": "2.0",
+  "method": "subscription",
+  "params": {
+    "channel": "user.portfolio.BTC",
+    "data": {
+      "instrument_name": "BTC-PERPETUAL",
+      "size": 0.1,
+      "average_price": 50000,
+      "mark_price": 50100,
+      "unrealized_pnl": 10.0,
+      "timestamp": 1640995200000
+    }
+  }
+}
+

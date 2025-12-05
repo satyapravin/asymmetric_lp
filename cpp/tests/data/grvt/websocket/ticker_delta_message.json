@@ -1,0 +1,14 @@
+{
+  "jsonrpc": "2.0",
+  "method": "ticker.d",
+  "params": [
+    "ticker.d",
+    "ETH_USDT_Perp",
+    {
+      "lastPrice": "2534.0",
+      "volume24h": "1250010.2",
+      "timestamp": 1697788801000
+    }
+  ]
+}
+

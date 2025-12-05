@@ -4,11 +4,12 @@
 #include "../utils/config/process_config_manager.hpp"
 #include <iostream>
 #include <thread>
+#include <stdexcept>
 
 namespace market_server {
 
 MarketServerLib::MarketServerLib() 
-    : running_(false), exchange_name_("binance"), symbol_("BTCUSDT") {
+    : running_(false), exchange_name_(""), symbol_("") {
 }
 
 MarketServerLib::~MarketServerLib() {
@@ -26,9 +27,26 @@ bool MarketServerLib::initialize(const std::string& config_file) {
             return false;
         }
         
-        // Load configuration values
-        exchange_name_ = config_manager_->get_string("market_server.exchange", "binance");
-        symbol_ = config_manager_->get_string("market_server.symbol", "BTCUSDT");
+        // Load configuration values (only override if not explicitly set)
+        if (exchange_name_.empty()) {
+            exchange_name_ = config_manager_->get_string("market_server.exchange", "");
+        }
+        if (symbol_.empty()) {
+            symbol_ = config_manager_->get_string("market_server.symbol", "");
+        }
+    }
+    
+    // Validate required configuration
+    if (exchange_name_.empty()) {
+        std::cerr << "[MARKET_SERVER_LIB] ERROR: Exchange name not configured. "
+                  << "Set it via set_exchange() or config file (market_server.exchange)" << std::endl;
+        throw std::runtime_error("Exchange name not configured");
+    }
+    
+    if (symbol_.empty()) {
+        std::cerr << "[MARKET_SERVER_LIB] ERROR: Symbol not configured. "
+                  << "Set it via set_symbol() or config file (market_server.symbol)" << std::endl;
+        throw std::runtime_error("Symbol not configured");
     }
     
     // Initialize ZMQ publisher
@@ -52,6 +70,20 @@ void MarketServerLib::start() {
     
     if (exchange_subscriber_) {
         std::cout << "[MARKET_SERVER_LIB] Starting exchange subscriber..." << std::endl;
+        
+        // Connect and subscribe to orderbook
+        if (exchange_subscriber_->connect()) {
+            std::cout << "[MARKET_SERVER_LIB] Connected to exchange" << std::endl;
+            
+            // Subscribe to orderbook for the configured symbol
+            if (!symbol_.empty()) {
+                exchange_subscriber_->subscribe_orderbook(symbol_, 20, 100);
+                std::cout << "[MARKET_SERVER_LIB] Subscribed to orderbook for: " << symbol_ << std::endl;
+            }
+        } else {
+            std::cerr << "[MARKET_SERVER_LIB] Failed to connect to exchange" << std::endl;
+        }
+        
         exchange_subscriber_->start();
     }
     

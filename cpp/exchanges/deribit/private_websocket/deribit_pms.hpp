@@ -9,6 +9,12 @@
 #include <functional>
 #include <json/json.h>
 
+// Forward declaration
+namespace websocket_transport {
+    class IWebSocketTransport;
+    struct WebSocketMessage;
+}
+
 namespace deribit {
 
 struct DeribitPMSConfig {
@@ -41,6 +47,9 @@ public:
     
     // Testing interface
     void set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport) override;
+    
+    // Testing helpers (exposed for integration tests)
+    void handle_websocket_message(const std::string& message);  // Made public for testing
 
 private:
     DeribitPMSConfig config_;
@@ -49,9 +58,11 @@ private:
     std::atomic<uint32_t> request_id_{1};
     
     // WebSocket connection
-    void* websocket_handle_{nullptr};
     std::thread websocket_thread_;
     std::atomic<bool> websocket_running_{false};
+    
+    // Custom WebSocket transport for testing
+    std::shared_ptr<websocket_transport::IWebSocketTransport> custom_transport_;
     
     // Callbacks
     PositionUpdateCallback position_update_callback_;
@@ -59,7 +70,6 @@ private:
     
     // Message handling
     void websocket_loop();
-    void handle_websocket_message(const std::string& message);
     void handle_position_update(const Json::Value& position_data);
     void handle_account_update(const Json::Value& account_data);
     void handle_balance_update(const Json::Value& balance_data);

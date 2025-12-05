@@ -1,0 +1,20 @@
+{
+  "result": {
+    "accountId": "acc_12345",
+    "balances": [
+      {
+        "instrument": "USDT",
+        "available": "10000.0",
+        "locked": "500.0",
+        "total": "10500.0"
+      },
+      {
+        "instrument": "ETH",
+        "available": "2.5",
+        "locked": "0.5",
+        "total": "3.0"
+      }
+    ]
+  }
+}
+

@@ -8,7 +8,7 @@
 namespace position_server {
 
 PositionServerLib::PositionServerLib() 
-    : running_(false), exchange_name_("binance") {
+    : running_(false), exchange_name_("") {
 }
 
 PositionServerLib::~PositionServerLib() {
@@ -26,8 +26,17 @@ bool PositionServerLib::initialize(const std::string& config_file) {
             return false;
         }
         
-        // Load configuration values
-        exchange_name_ = config_manager_->get_string("position_server.exchange", "binance");
+        // Load configuration values (only override if not explicitly set)
+        if (exchange_name_.empty()) {
+            exchange_name_ = config_manager_->get_string("position_server.exchange", "");
+        }
+    }
+    
+    // Validate required configuration
+    if (exchange_name_.empty()) {
+        std::cerr << "[POSITION_SERVER_LIB] ERROR: Exchange name not configured. "
+                  << "Set it via set_exchange() or config file (position_server.exchange)" << std::endl;
+        throw std::runtime_error("Exchange name not configured");
     }
     
     // Setup exchange PMS
@@ -73,13 +82,23 @@ bool PositionServerLib::is_connected_to_exchange() const {
 }
 
 void PositionServerLib::setup_exchange_pms() {
+    if (exchange_name_.empty()) {
+        std::cerr << "[POSITION_SERVER_LIB] Cannot setup PMS: exchange name not set" << std::endl;
+        return;
+    }
+    
     std::cout << "[POSITION_SERVER_LIB] Setting up exchange PMS for: " << exchange_name_ << std::endl;
     
-    // Create exchange PMS using factory
-    exchange_pms_ = PMSFactory::create_pms(exchange_name_);
-    if (!exchange_pms_) {
-        std::cerr << "[POSITION_SERVER_LIB] Failed to create exchange PMS for: " << exchange_name_ << std::endl;
-        return;
+    try {
+        // Create exchange PMS using factory
+        exchange_pms_ = PMSFactory::create_pms(exchange_name_);
+        if (!exchange_pms_) {
+            std::cerr << "[POSITION_SERVER_LIB] Failed to create exchange PMS for: " << exchange_name_ << std::endl;
+            return;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[POSITION_SERVER_LIB] Exception creating PMS: " << e.what() << std::endl;
+        throw;
     }
     
     // Set up callbacks

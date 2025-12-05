@@ -23,7 +23,7 @@ sudo apt-get install -y \
     libjsoncpp-dev \
     libsimdjson-dev \
     libprotobuf-dev \
-    protobuf-compiler \+
+    protobuf-compiler \
     libuv1-dev \
     python3 \
     python3-pip \

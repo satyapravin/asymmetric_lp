@@ -1,0 +1,19 @@
+{
+  "jsonrpc": "2.0",
+  "method": "orderUpdate",
+  "params": [
+    "orderUpdate",
+    {
+      "orderId": "order_12345",
+      "symbol": "ETH_USDT_Perp",
+      "side": "BUY",
+      "orderType": "LIMIT",
+      "quantity": "1.5",
+      "price": "2530.0",
+      "status": "FILLED",
+      "filledQuantity": "1.5",
+      "timestamp": 1697788800000
+    }
+  ]
+}
+

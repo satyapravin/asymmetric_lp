@@ -1,0 +1,18 @@
+{
+  "jsonrpc": "2.0",
+  "method": "subscription",
+  "params": {
+    "channel": "trades.BTC-PERPETUAL.raw",
+    "data": [
+      {
+        "price": 50000.5,
+        "amount": 0.1,
+        "direction": "buy",
+        "timestamp": 1640995200000,
+        "trade_id": "trade_12345",
+        "trade_seq": 12345
+      }
+    ]
+  }
+}
+

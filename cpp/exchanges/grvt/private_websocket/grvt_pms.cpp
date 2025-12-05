@@ -1,4 +1,5 @@
 #include "grvt_pms.hpp"
+#include "../grvt_auth.hpp"
 #include <iostream>
 #include <sstream>
 #include <chrono>
@@ -76,8 +77,29 @@ bool GrvtPMS::is_connected() const {
 
 void GrvtPMS::set_auth_credentials(const std::string& api_key, const std::string& secret) {
     config_.api_key = api_key;
-    config_.session_cookie = secret; // GRVT uses session cookie instead of secret
-    authenticated_.store(!config_.api_key.empty() && !config_.session_cookie.empty() && !config_.account_id.empty());
+    
+    // If secret is provided, use it as session cookie (backward compatibility)
+    // Otherwise, authenticate with API key to get session cookie
+    if (!secret.empty()) {
+        config_.session_cookie = secret;
+        authenticated_.store(!config_.api_key.empty() && !config_.session_cookie.empty() && !config_.account_id.empty());
+    } else if (!api_key.empty()) {
+        // Authenticate with API key to get session cookie and account ID
+        GrvtAuth auth_helper(GrvtAuthEnvironment::PRODUCTION);
+        GrvtAuthResult auth_result = auth_helper.authenticate(api_key);
+        
+        if (auth_result.is_valid()) {
+            config_.session_cookie = auth_result.session_cookie;
+            config_.account_id = auth_result.account_id;
+            authenticated_.store(true);
+            std::cout << "[GRVT_PMS] Authentication successful via API key" << std::endl;
+        } else {
+            authenticated_.store(false);
+            std::cerr << "[GRVT_PMS] Authentication failed: " << auth_result.error_message << std::endl;
+        }
+    } else {
+        authenticated_.store(false);
+    }
 }
 
 bool GrvtPMS::is_authenticated() const {

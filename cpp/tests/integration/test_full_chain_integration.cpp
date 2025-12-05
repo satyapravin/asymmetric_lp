@@ -147,6 +147,9 @@ TEST_CASE("Full Chain Integration Test: Mock WebSocket → Market Server → Str
     
     // Step 5: Set up the chain (start publisher before trader subscribes)
     std::cout << "\n[STEP 5] Setting up the data flow chain..." << std::endl;
+    // IMPORTANT: Set exchange and symbol BEFORE initializing (required)
+    market_server->set_exchange("binance");
+    market_server->set_symbol("BTCUSDT");
     // Initialize Market Server (this will set up 0MQ publishing)
     market_server->initialize("../tests/test_config.ini");
     // Inject the mock WebSocket transport into Market Server
@@ -281,16 +284,22 @@ TEST_CASE("Full Chain Integration Test: Mock WebSocket → Market Server → Str
     
     // Step 8: Cleanup
     std::cout << "\n[STEP 8] Cleaning up..." << std::endl;
-    mock_ws->stop_event_loop();
     
-    // Stop Trader Library
+    // Stop Trader Library first (stops receiving messages)
     trader_lib->stop();
     
-    // Stop Market Server
+    // Give threads time to clean up
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    
+    // Stop Market Server (stops publishing messages)
     market_server->stop();
     
-    // Give threads a moment to join cleanly
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // Stop mock WebSocket event loop
+    mock_ws->stop_event_loop();
+    
+    // Give threads and ZMQ resources time to fully clean up
+    // ZMQ needs extra time to clean up sockets and contexts
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
     
     std::cout << "\n=== FULL CHAIN INTEGRATION TEST COMPLETED ===" << std::endl;
 }

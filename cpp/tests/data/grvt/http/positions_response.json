@@ -1,0 +1,14 @@
+{
+  "result": [
+    {
+      "symbol": "ETH_USDT_Perp",
+      "side": "LONG",
+      "quantity": "5.5",
+      "entryPrice": "2530.0",
+      "markPrice": "2533.75",
+      "unrealizedPnl": "20.625",
+      "liquidationPrice": "2400.0"
+    }
+  ]
+}
+

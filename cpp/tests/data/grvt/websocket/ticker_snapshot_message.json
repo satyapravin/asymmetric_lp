@@ -1,0 +1,17 @@
+{
+  "jsonrpc": "2.0",
+  "method": "ticker.s",
+  "params": [
+    "ticker.s",
+    "ETH_USDT_Perp",
+    {
+      "lastPrice": "2533.75",
+      "volume24h": "1250000.5",
+      "high24h": "2550.0",
+      "low24h": "2520.0",
+      "open24h": "2530.0",
+      "timestamp": 1697788800000
+    }
+  ]
+}
+

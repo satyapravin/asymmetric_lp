@@ -63,12 +63,30 @@ public:
     using TradeExecutionCallback = std::function<void(const proto::Trade&)>;
     using ErrorCallback = std::function<void(const std::string&)>;
 
-    void set_order_event_callback(OrderEventCallback callback) { order_event_callback_ = callback; }
-    void set_market_data_callback(MarketDataCallback callback) { market_data_callback_ = callback; }
-    void set_position_update_callback(PositionUpdateCallback callback) { position_update_callback_ = callback; }
-    void set_balance_update_callback(BalanceUpdateCallback callback) { balance_update_callback_ = callback; }
-    void set_trade_execution_callback(TradeExecutionCallback callback) { trade_execution_callback_ = callback; }
-    void set_error_callback(ErrorCallback callback) { error_callback_ = callback; }
+    void set_order_event_callback(OrderEventCallback callback) {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        order_event_callback_ = callback;
+    }
+    void set_market_data_callback(MarketDataCallback callback) {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        market_data_callback_ = callback;
+    }
+    void set_position_update_callback(PositionUpdateCallback callback) {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        position_update_callback_ = callback;
+    }
+    void set_balance_update_callback(BalanceUpdateCallback callback) {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        balance_update_callback_ = callback;
+    }
+    void set_trade_execution_callback(TradeExecutionCallback callback) {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        trade_execution_callback_ = callback;
+    }
+    void set_error_callback(ErrorCallback callback) {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        error_callback_ = callback;
+    }
 
     // Strategy management
     std::shared_ptr<AbstractStrategy> get_strategy() const;
@@ -141,10 +159,10 @@ private:
     std::string exchange_;
     
     // Core components
+    std::unique_ptr<config::ProcessConfigManager> config_manager_;
     std::unique_ptr<StrategyContainer> strategy_container_;
     std::unique_ptr<MiniOMS> mini_oms_;
     std::unique_ptr<MiniPMS> mini_pms_;
-    std::unique_ptr<config::ProcessConfigManager> config_manager_;
     
     // ZMQ adapters
     std::shared_ptr<ZmqOMSAdapter> oms_adapter_;
@@ -158,7 +176,8 @@ private:
     // Strategy
     std::shared_ptr<AbstractStrategy> strategy_;
     
-    // Callbacks
+    // Callbacks (protected by mutex for thread safety)
+    mutable std::mutex callback_mutex_;
     OrderEventCallback order_event_callback_;
     MarketDataCallback market_data_callback_;
     PositionUpdateCallback position_update_callback_;

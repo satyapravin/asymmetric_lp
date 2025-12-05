@@ -10,10 +10,18 @@
 #include "unit/utils/test_zmq_subscriber.cpp"
 #include "unit/config/test_process_config_manager.cpp"
 
+// Unit tests - Exchange implementations
+#include "unit/exchanges/test_grvt_oms.cpp"
+#include "unit/exchanges/test_deribit_oms.cpp"
+
 // Integration tests
 #include "integration/test_full_chain_integration.cpp"
 #include "integration/test_position_flow_integration.cpp"
 #include "integration/test_order_flow_integration.cpp"
+#include "integration/test_grvt_integration.cpp"
+#include "integration/test_grvt_full_flow.cpp"
+#include "integration/test_deribit_integration.cpp"
+#include "integration/test_deribit_full_flow.cpp"
 
 // Add timeout to prevent hanging
 int main(int argc, char** argv) {

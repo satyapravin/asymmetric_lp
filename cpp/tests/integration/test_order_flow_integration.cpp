@@ -53,15 +53,7 @@ TEST_CASE("ORDER FLOW INTEGRATION TEST") {
     const std::string engine_pub_endpoint = oms_events_endpoint;      // Engine publishes here
     const std::string engine_topic = "order_events";                // TraderLib default event topic
 
-    // 1) Create TraderLib with strategy
-    auto trader_lib = std::make_unique<trader::TraderLib>();
-    trader_lib->set_exchange("binance");
-    trader_lib->initialize("../tests/test_config.ini");
-    auto strategy = std::make_shared<OrderCaptureStrategy>();
-    trader_lib->set_strategy(strategy);
-    trader_lib->start();
-
-    // 2) Create TradingEngineLib and inject mock websocket
+    // 1) Create TradingEngineLib and inject mock websocket FIRST (publisher binds before subscriber connects)
     auto engine = std::make_unique<trading_engine::TradingEngineLib>();
     engine->set_exchange("binance");
     engine->initialize("../tests/test_config.ini");
@@ -72,32 +64,49 @@ TEST_CASE("ORDER FLOW INTEGRATION TEST") {
     mock_ws->set_test_data_directory("data/binance/websocket");
     engine->set_websocket_transport(mock_ws);
 
-    // 3) Start engine and replay an executionReport message via mock WS
+    // 2) Start engine (publisher binds) and give it time to be ready
     engine->start();
     mock_ws->start_event_loop();
     
-    // Give ZMQ pub-sub connection time to fully establish (ZMQ "slow joiner" problem)
-    // The subscriber connected before the publisher bound, so we need to wait for the connection to stabilize
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    // Give publisher time to bind and be ready
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+    // 3) Create TraderLib with strategy AFTER publisher is bound (subscriber connects after publisher binds)
+    auto trader_lib = std::make_unique<trader::TraderLib>();
+    trader_lib->set_exchange("binance");
+    trader_lib->initialize("../tests/test_config.ini");
     
+    // Give subscriber time to connect
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    
+    auto strategy = std::make_shared<OrderCaptureStrategy>();
+    trader_lib->set_strategy(strategy);
+    trader_lib->start();
+
+    // 4) Give ZMQ pub-sub connection time to fully establish
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    
+    // 5) Replay an executionReport message via mock WS
     mock_ws->load_and_replay_json_file("../tests/data/binance/websocket/order_update_message_ack.json");
 
-    // 4) Wait for TraderLib's ZmqOMSAdapter to receive and forward to strategy
+    // 6) Wait for TraderLib's ZmqOMSAdapter to receive and forward to strategy
     int attempts = 0;
     while (strategy->order_event_count.load() == 0 && attempts < 50) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         attempts++;
     }
 
-    // 5) Assertions
+    // 7) Assertions
     CHECK(strategy->order_event_count.load() > 0);
     CHECK(strategy->last_event.cl_ord_id() == "TEST_ORDER_1");
     CHECK(strategy->last_event.symbol() == "BTCUSDT");
     CHECK(strategy->last_event.exch() == "binance");
 
-    // Cleanup
+    // Cleanup - stop trader lib first, then engine
     trader_lib->stop();
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
     mock_ws->stop_event_loop();
     engine->stop();
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
 }
 

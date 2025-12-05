@@ -1,6 +1,7 @@
 #include "subscriber_factory.hpp"
 #include <algorithm>
 #include <iostream>
+#include <stdexcept>
 
 std::unique_ptr<IExchangeSubscriber> SubscriberFactory::create_subscriber(const std::string& exchange_name) {
     std::string exchange = to_lowercase(exchange_name);
@@ -36,17 +37,9 @@ std::unique_ptr<IExchangeSubscriber> SubscriberFactory::create_subscriber(const 
         return std::make_unique<deribit::DeribitSubscriber>(config);
     }
     else {
-        std::cerr << "[SUBSCRIBER_FACTORY] Unknown exchange: " << exchange_name 
-                  << ", using Binance as default" << std::endl;
-        
-        binance::BinanceSubscriberConfig config;
-        config.websocket_url = "wss://fstream.binance.com/ws";
-        config.testnet = false;
-        config.asset_type = "futures";
-        config.timeout_ms = 30000;
-        config.max_retries = 3;
-        
-        return std::make_unique<binance::BinanceSubscriber>(config);
+        std::string error_msg = "[SUBSCRIBER_FACTORY] Unknown or unsupported exchange: " + exchange_name;
+        std::cerr << error_msg << std::endl;
+        throw std::runtime_error(error_msg);
     }
 }
 

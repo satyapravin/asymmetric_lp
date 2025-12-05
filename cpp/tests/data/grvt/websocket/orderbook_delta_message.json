@@ -1,0 +1,18 @@
+{
+  "jsonrpc": "2.0",
+  "method": "orderbook.d",
+  "params": [
+    "orderbook.d",
+    "ETH_USDT_Perp",
+    {
+      "bids": [
+        ["2533.75", "5.0"]
+      ],
+      "asks": [
+        ["2534.25", "8.0"]
+      ],
+      "timestamp": 1697788801000
+    }
+  ]
+}
+

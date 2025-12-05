@@ -106,7 +106,11 @@ TEST_CASE("POSITION FLOW INTEGRATION TEST") {
     std::cout << "[STEP 4] Creating position server..." << std::endl;
     auto position_server = std::make_unique<position_server::PositionServerLib>();
     
+    // IMPORTANT: Set exchange BEFORE initializing (required)
+    position_server->set_exchange("binance");
+    
     std::cout << "[STEP 5] Setting up trader library..." << std::endl;
+    trader_lib->set_exchange("binance");
     trader_lib->initialize("../tests/test_config.ini");
     trader_lib->set_strategy(test_strategy);
     

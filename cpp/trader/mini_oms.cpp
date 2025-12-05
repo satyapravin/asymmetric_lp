@@ -275,21 +275,24 @@ void MiniOMS::on_order_event(const proto::OrderEvent& order_event) {
     update_order_state(cl_ord_id, new_state, order_event.text(), 
                       order_event.fill_qty(), order_event.fill_price());
     
-    // Notify external callback
-    if (order_event_callback_) {
-    // Convert proto event to legacy OrderEvent
-    OrderEvent legacy_event;
-    legacy_event.cl_ord_id = cl_ord_id;
-    legacy_event.exch = order_event.exch();
-    legacy_event.symbol = order_event.symbol();
-    legacy_event.type = static_cast<OrderEventType>(order_event.event_type());
-    legacy_event.fill_qty = order_event.fill_qty();
-    legacy_event.fill_price = order_event.fill_price();
-    legacy_event.text = order_event.text();
-    legacy_event.exchange_order_id = order_event.exch_order_id();
-    legacy_event.timestamp_us = order_event.timestamp_us();
-        
-        order_event_callback_(legacy_event);
+    // Notify external callback with mutex protection
+    {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        if (order_event_callback_) {
+            // Convert proto event to legacy OrderEvent
+            OrderEvent legacy_event;
+            legacy_event.cl_ord_id = cl_ord_id;
+            legacy_event.exch = order_event.exch();
+            legacy_event.symbol = order_event.symbol();
+            legacy_event.type = static_cast<OrderEventType>(order_event.event_type());
+            legacy_event.fill_qty = order_event.fill_qty();
+            legacy_event.fill_price = order_event.fill_price();
+            legacy_event.text = order_event.text();
+            legacy_event.exchange_order_id = order_event.exch_order_id();
+            legacy_event.timestamp_us = order_event.timestamp_us();
+            
+            order_event_callback_(legacy_event);
+        }
     }
 }
 
@@ -378,8 +381,12 @@ void MiniOMS::update_order_state(const std::string& cl_ord_id, OrderState new_st
 }
 
 void MiniOMS::notify_order_state_change(const OrderStateInfo& order_info) {
-    if (order_state_callback_) {
-        order_state_callback_(order_info);
+    // Invoke callback with mutex protection
+    {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        if (order_state_callback_) {
+            order_state_callback_(order_info);
+        }
     }
 }
 

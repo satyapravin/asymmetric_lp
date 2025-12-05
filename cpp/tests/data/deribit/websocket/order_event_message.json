@@ -1,0 +1,17 @@
+{
+  "jsonrpc": "2.0",
+  "method": "subscription",
+  "params": {
+    "channel": "user.orders.BTC-PERPETUAL.raw",
+    "data": {
+      "order_id": "order_12345",
+      "order_state": "filled",
+      "instrument_name": "BTC-PERPETUAL",
+      "direction": "buy",
+      "amount": 0.1,
+      "price": 50000,
+      "timestamp": 1640995200000
+    }
+  }
+}
+

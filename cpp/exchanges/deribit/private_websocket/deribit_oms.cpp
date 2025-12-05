@@ -3,12 +3,21 @@
 #include <sstream>
 #include <chrono>
 #include <thread>
+#include <ctime>
 #include <json/json.h>
 
 namespace deribit {
 
 DeribitOMS::DeribitOMS(const DeribitOMSConfig& config) : config_(config) {
     std::cout << "[DERIBIT_OMS] Initializing Deribit OMS" << std::endl;
+    
+    // If credentials are provided in config, mark as authenticated
+    if (!config_.client_id.empty() && !config_.client_secret.empty()) {
+        authenticated_.store(true);
+        std::cout << "[DERIBIT_OMS] Credentials provided in config, marked as authenticated" << std::endl;
+    } else {
+        authenticated_.store(false);
+    }
 }
 
 DeribitOMS::~DeribitOMS() {
@@ -24,7 +33,44 @@ bool DeribitOMS::connect() {
     }
     
     try {
-        // Initialize WebSocket connection (mock implementation)
+        // If custom transport is set, use it (for testing)
+        if (custom_transport_) {
+            std::cout << "[DERIBIT_OMS] Using custom WebSocket transport" << std::endl;
+            
+            // Set up message callback BEFORE connecting
+            custom_transport_->set_message_callback([this](const websocket_transport::WebSocketMessage& ws_msg) {
+                if (!ws_msg.is_binary) {
+                    handle_websocket_message(ws_msg.data);
+                }
+            });
+            
+            if (custom_transport_->connect(config_.websocket_url)) {
+                connected_ = true;
+                websocket_running_ = true;
+                
+                // Start event loop if not already running
+                if (!custom_transport_->is_event_loop_running()) {
+                    custom_transport_->start_event_loop();
+                }
+                
+                websocket_thread_ = std::thread(&DeribitOMS::websocket_loop, this);
+                
+                // Authenticate
+                if (!authenticate_websocket()) {
+                    std::cerr << "[DERIBIT_OMS] Authentication failed" << std::endl;
+                    return false;
+                }
+                
+                authenticated_.store(true);
+                std::cout << "[DERIBIT_OMS] Connected successfully using injected transport" << std::endl;
+                return true;
+            } else {
+                std::cerr << "[DERIBIT_OMS] Failed to connect using custom transport" << std::endl;
+                return false;
+            }
+        }
+        
+        // Initialize WebSocket connection (mock implementation for now)
         websocket_running_ = true;
         websocket_thread_ = std::thread(&DeribitOMS::websocket_loop, this);
         
@@ -35,7 +81,7 @@ bool DeribitOMS::connect() {
         }
         
         connected_ = true;
-        authenticated_ = true;
+        authenticated_.store(true);
         
         std::cout << "[DERIBIT_OMS] Connected successfully" << std::endl;
         return true;
@@ -51,7 +97,11 @@ void DeribitOMS::disconnect() {
     
     websocket_running_ = false;
     connected_ = false;
-    authenticated_ = false;
+    authenticated_.store(false);
+    
+    if (custom_transport_) {
+        custom_transport_->stop_event_loop();
+    }
     
     if (websocket_thread_.joinable()) {
         websocket_thread_.join();
@@ -83,8 +133,8 @@ bool DeribitOMS::cancel_order(const std::string& cl_ord_id, const std::string& e
     std::string cancel_msg = create_cancel_message(cl_ord_id, exch_ord_id);
     std::cout << "[DERIBIT_OMS] Sending cancel order: " << cancel_msg << std::endl;
     
-    // Mock WebSocket send
-    handle_websocket_message(R"({"jsonrpc":"2.0","id":)" + std::to_string(request_id_++) + R"(,"result":{"order_id":")" + exch_ord_id + R"(","order_state":"cancelled"}})");
+    // Note: Order messages are handled by the mock transport's automatic replay
+    // For real WebSocket connections, the message would be sent here
     
     return true;
 }
@@ -98,8 +148,8 @@ bool DeribitOMS::replace_order(const std::string& cl_ord_id, const proto::OrderR
     std::string replace_msg = create_replace_message(cl_ord_id, new_order);
     std::cout << "[DERIBIT_OMS] Sending replace order: " << replace_msg << std::endl;
     
-    // Mock WebSocket send
-    handle_websocket_message(R"({"jsonrpc":"2.0","id":)" + std::to_string(request_id_++) + R"(,"result":{"order_id":")" + cl_ord_id + R"(","order_state":"replaced"}})");
+    // Note: Order messages are handled by the mock transport's automatic replay
+    // For real WebSocket connections, the message would be sent here
     
     return true;
 }
@@ -125,9 +175,8 @@ bool DeribitOMS::place_market_order(const std::string& symbol, const std::string
     std::string order_msg = create_order_message(symbol, side, quantity, 0.0, "MARKET");
     std::cout << "[DERIBIT_OMS] Sending market order: " << order_msg << std::endl;
     
-    // Mock WebSocket send
-    std::string mock_response = R"({"jsonrpc":"2.0","id":)" + std::to_string(request_id_++) + R"(,"result":{"order_id":")" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) + R"(","order_state":"open","instrument_name":")" + symbol + R"(","direction":")" + side + R"(","amount":)" + std::to_string(quantity) + R"(}})";
-    handle_websocket_message(mock_response);
+    // Note: Order messages are handled by the mock transport's automatic replay
+    // For real WebSocket connections, the message would be sent here
     
     return true;
 }
@@ -141,9 +190,8 @@ bool DeribitOMS::place_limit_order(const std::string& symbol, const std::string&
     std::string order_msg = create_order_message(symbol, side, quantity, price, "LIMIT");
     std::cout << "[DERIBIT_OMS] Sending limit order: " << order_msg << std::endl;
     
-    // Mock WebSocket send
-    std::string mock_response = R"({"jsonrpc":"2.0","id":)" + std::to_string(request_id_++) + R"(,"result":{"order_id":")" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) + R"(","order_state":"open","instrument_name":")" + symbol + R"(","direction":")" + side + R"(","amount":)" + std::to_string(quantity) + R"(,"price":)" + std::to_string(price) + R"(}})";
-    handle_websocket_message(mock_response);
+    // Note: Order messages are handled by the mock transport's automatic replay
+    // For real WebSocket connections, the message would be sent here
     
     return true;
 }
@@ -155,22 +203,39 @@ void DeribitOMS::set_order_status_callback(OrderStatusCallback callback) {
 void DeribitOMS::websocket_loop() {
     std::cout << "[DERIBIT_OMS] WebSocket loop started" << std::endl;
     
-    while (websocket_running_) {
-        try {
-            // Mock WebSocket message processing
+    if (custom_transport_) {
+        std::cout << "[DERIBIT_OMS] Using custom transport - messages will arrive via callback" << std::endl;
+        // The custom transport's event loop will handle message reception and callbacks
+        // We just need to keep this thread alive while the custom transport is running
+        while (websocket_running_.load()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            
-            // Simulate occasional order updates
-            static int counter = 0;
-            if (++counter % 50 == 0) {
-                std::string mock_order_update = R"({"jsonrpc":"2.0","method":"user.order","params":{"order_id":")" + std::to_string(counter) + R"(","order_state":"filled","instrument_name":"BTC-PERPETUAL","direction":"buy","amount":0.1,"price":50000}})";
-                handle_websocket_message(mock_order_update);
-            }
-            
-        } catch (const std::exception& e) {
-            std::cerr << "[DERIBIT_OMS] WebSocket loop error: " << e.what() << std::endl;
-            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
+    } else {
+        // Mock WebSocket message processing (for testing without real connection)
+        while (websocket_running_.load()) {
+            try {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                
+                // Simulate occasional order updates (only for mock mode)
+                static int counter = 0;
+                if (++counter % 50 == 0) {
+                    std::string mock_order_update = R"({"jsonrpc":"2.0","method":"subscription","params":{"channel":"user.orders.BTC-PERPETUAL.raw","data":{"order_id":")" + 
+                        std::to_string(counter) + R"(","order_state":"filled","instrument_name":"BTC-PERPETUAL","direction":"buy","amount":0.1,"price":50000,"timestamp":)" + 
+                        std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::system_clock::now().time_since_epoch()).count()) + R"(}}})";
+                    handle_websocket_message(mock_order_update);
+                }
+                
+            } catch (const std::exception& e) {
+                std::cerr << "[DERIBIT_OMS] WebSocket loop error: " << e.what() << std::endl;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+            }
+        }
+    }
+    
+    if (custom_transport_) {
+        std::cout << "[DERIBIT_OMS] Stopping custom transport event loop" << std::endl;
+        custom_transport_->stop_event_loop();
     }
     
     std::cout << "[DERIBIT_OMS] WebSocket loop stopped" << std::endl;
@@ -190,14 +255,60 @@ void DeribitOMS::handle_websocket_message(const std::string& message) {
         if (root.isMember("method")) {
             std::string method = root["method"].asString();
             
-            if (method == "user.order" && root.isMember("params")) {
-                handle_order_update(root["params"]);
-            } else if (method == "user.trades" && root.isMember("params")) {
-                handle_trade_update(root["params"]);
+            if (method == "subscription" && root.isMember("params")) {
+                Json::Value params = root["params"];
+                std::string channel = params["channel"].asString();
+                
+                if (channel.find("user.orders") == 0 && params.isMember("data")) {
+                    handle_order_update(params["data"]);
+                } else if (channel.find("user.trades") == 0 && params.isMember("data")) {
+                    handle_trade_update(params["data"]);
+                }
             }
         } else if (root.isMember("result")) {
             // Handle order response
-            std::cout << "[DERIBIT_OMS] Order response: " << message << std::endl;
+            Json::Value result = root["result"];
+            if (result.isMember("order") || result.isMember("order_id")) {
+                // Order placement/cancel/modify response
+                std::cout << "[DERIBIT_OMS] Order response: " << message << std::endl;
+                
+                // Convert to OrderEvent and notify callback
+                proto::OrderEvent order_event;
+                order_event.set_exch("DERIBIT");
+                
+                if (result.isMember("order")) {
+                    Json::Value order = result["order"];
+                    if (order.isMember("order_id")) {
+                        order_event.set_exch_order_id(order["order_id"].asString());
+                    }
+                    if (order.isMember("order_state")) {
+                        order_event.set_event_type(map_order_status(order["order_state"].asString()));
+                    }
+                    if (order.isMember("instrument_name")) {
+                        order_event.set_symbol(order["instrument_name"].asString());
+                    }
+                } else if (result.isMember("order_id")) {
+                    order_event.set_exch_order_id(result["order_id"].asString());
+                }
+                
+                order_event.set_timestamp_us(std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count());
+                
+                if (order_status_callback_) {
+                    order_status_callback_(order_event);
+                }
+            } else if (result.isMember("access_token")) {
+                // Authentication response
+                config_.access_token = result["access_token"].asString();
+                if (result.isMember("expires_in")) {
+                    std::cout << "[DERIBIT_OMS] Authentication successful, token expires in " 
+                              << result["expires_in"].asInt() << " seconds" << std::endl;
+                }
+            }
+        } else if (root.isMember("error")) {
+            // Handle errors
+            std::string error_msg = "Deribit API error: " + root["error"].toStyledString();
+            std::cerr << "[DERIBIT_OMS] " << error_msg << std::endl;
         }
         
     } catch (const std::exception& e) {
@@ -207,21 +318,42 @@ void DeribitOMS::handle_websocket_message(const std::string& message) {
 
 void DeribitOMS::handle_order_update(const Json::Value& order_data) {
     proto::OrderEvent order_event;
-    order_event.set_cl_ord_id(order_data["order_id"].asString());
+    
+    if (order_data.isMember("order_id")) {
+        order_event.set_exch_order_id(order_data["order_id"].asString());
+        order_event.set_cl_ord_id(order_data["order_id"].asString()); // Use exchange order ID as client order ID if not provided
+    }
+    
     order_event.set_exch("DERIBIT");
-    order_event.set_symbol(order_data["instrument_name"].asString());
-    order_event.set_exch_order_id(order_data["order_id"].asString());
-    order_event.set_fill_qty(order_data["amount"].asDouble());
-    order_event.set_fill_price(order_data["price"].asDouble());
-    order_event.set_event_type(map_order_status(order_data["order_state"].asString()));
-    order_event.set_timestamp_us(std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count());
+    
+    if (order_data.isMember("instrument_name")) {
+        order_event.set_symbol(order_data["instrument_name"].asString());
+    }
+    
+    if (order_data.isMember("order_state")) {
+        order_event.set_event_type(map_order_status(order_data["order_state"].asString()));
+    }
+    
+    if (order_data.isMember("amount")) {
+        order_event.set_fill_qty(order_data["amount"].asDouble());
+    }
+    
+    if (order_data.isMember("price")) {
+        order_event.set_fill_price(order_data["price"].asDouble());
+    }
+    
+    if (order_data.isMember("timestamp")) {
+        order_event.set_timestamp_us(order_data["timestamp"].asUInt64() * 1000); // Convert milliseconds to microseconds
+    } else {
+        order_event.set_timestamp_us(std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+    }
     
     if (order_status_callback_) {
         order_status_callback_(order_event);
     }
     
-    std::cout << "[DERIBIT_OMS] Order update: " << order_event.cl_ord_id() 
+    std::cout << "[DERIBIT_OMS] Order update: " << order_event.exch_order_id() 
               << " status: " << order_data["order_state"].asString() << std::endl;
 }
 
@@ -233,9 +365,13 @@ std::string DeribitOMS::create_order_message(const std::string& symbol, const st
                                             double quantity, double price, const std::string& order_type) {
     Json::Value root;
     root["jsonrpc"] = "2.0";
-    root["id"] = generate_request_id();
-    root["method"] = "private/buy";
-    if (side == "SELL") {
+    root["id"] = static_cast<int>(request_id_++);
+    
+    // Deribit uses separate methods for buy/sell
+    std::string deribit_side = map_side_to_deribit(side);
+    if (deribit_side == "buy") {
+        root["method"] = "private/buy";
+    } else {
         root["method"] = "private/sell";
     }
     
@@ -243,21 +379,24 @@ std::string DeribitOMS::create_order_message(const std::string& symbol, const st
     params["instrument_name"] = symbol;
     params["amount"] = quantity;
     params["type"] = map_order_type_to_deribit(order_type);
+    
     if (price > 0) {
         params["price"] = price;
     }
+    
     params["time_in_force"] = "good_til_cancelled";
     
     root["params"] = params;
     
     Json::StreamWriterBuilder builder;
+    builder["indentation"] = "";
     return Json::writeString(builder, root);
 }
 
 std::string DeribitOMS::create_cancel_message(const std::string& cl_ord_id, const std::string& exch_ord_id) {
     Json::Value root;
     root["jsonrpc"] = "2.0";
-    root["id"] = generate_request_id();
+    root["id"] = static_cast<int>(request_id_++);
     root["method"] = "private/cancel";
     
     Json::Value params;
@@ -266,13 +405,14 @@ std::string DeribitOMS::create_cancel_message(const std::string& cl_ord_id, cons
     root["params"] = params;
     
     Json::StreamWriterBuilder builder;
+    builder["indentation"] = "";
     return Json::writeString(builder, root);
 }
 
 std::string DeribitOMS::create_replace_message(const std::string& cl_ord_id, const proto::OrderRequest& new_order) {
     Json::Value root;
     root["jsonrpc"] = "2.0";
-    root["id"] = generate_request_id();
+    root["id"] = static_cast<int>(request_id_++);
     root["method"] = "private/edit";
     
     Json::Value params;
@@ -284,16 +424,28 @@ std::string DeribitOMS::create_replace_message(const std::string& cl_ord_id, con
     root["params"] = params;
     
     Json::StreamWriterBuilder builder;
+    builder["indentation"] = "";
     return Json::writeString(builder, root);
 }
 
 bool DeribitOMS::authenticate_websocket() {
+    if (config_.client_id.empty() || config_.client_secret.empty()) {
+        std::cerr << "[DERIBIT_OMS] Cannot authenticate: credentials not set" << std::endl;
+        return false;
+    }
+    
     std::string auth_msg = create_auth_message();
     std::cout << "[DERIBIT_OMS] Authenticating: " << auth_msg << std::endl;
     
-    // Mock authentication response
-    std::string mock_auth_response = R"({"jsonrpc":"2.0","id":)" + std::to_string(request_id_++) + R"(,"result":{"access_token":")" + get_access_token() + R"(","expires_in":3600}})";
-    handle_websocket_message(mock_auth_response);
+    // Note: Authentication messages are handled by the mock transport's automatic replay
+    // For real WebSocket connections, the message would be sent here
+    
+    // In mock mode, simulate authentication response
+    if (!custom_transport_) {
+        std::string mock_auth_response = R"({"jsonrpc":"2.0","id":)" + std::to_string(request_id_++) + 
+            R"(,"result":{"access_token":")" + get_access_token() + R"(","expires_in":3600}})";
+        handle_websocket_message(mock_auth_response);
+    }
     
     return true;
 }
@@ -301,7 +453,7 @@ bool DeribitOMS::authenticate_websocket() {
 std::string DeribitOMS::create_auth_message() {
     Json::Value root;
     root["jsonrpc"] = "2.0";
-    root["id"] = generate_request_id();
+    root["id"] = static_cast<int>(request_id_++);
     root["method"] = "public/auth";
     
     Json::Value params;
@@ -312,6 +464,7 @@ std::string DeribitOMS::create_auth_message() {
     root["params"] = params;
     
     Json::StreamWriterBuilder builder;
+    builder["indentation"] = "";
     return Json::writeString(builder, root);
 }
 
@@ -329,7 +482,7 @@ proto::OrderEventType DeribitOMS::map_order_status(const std::string& status) {
         return proto::OrderEventType::ACK;
     } else if (status == "filled") {
         return proto::OrderEventType::FILL;
-    } else if (status == "cancelled") {
+    } else if (status == "cancelled" || status == "canceled") {
         return proto::OrderEventType::CANCEL;
     } else if (status == "rejected") {
         return proto::OrderEventType::REJECT;
@@ -357,7 +510,8 @@ std::string DeribitOMS::map_order_type_to_deribit(const std::string& order_type)
 }
 
 void DeribitOMS::set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport) {
-    // Mock implementation for testing - not used in production
+    std::cout << "[DERIBIT_OMS] Setting custom WebSocket transport for testing" << std::endl;
+    custom_transport_ = transport;
 }
 
 } // namespace deribit
