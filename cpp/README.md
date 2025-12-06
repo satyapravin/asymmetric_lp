@@ -285,10 +285,6 @@ cmake . && make run_tests
 ./build/trader config/trader.ini &
 ```
 
-### Docker Deployment
-
-See `../DEPLOY.md` for complete Docker deployment instructions.
-
 ## Development Guides
 
 ### Architecture Overview

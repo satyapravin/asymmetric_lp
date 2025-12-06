@@ -63,8 +63,6 @@
 - **Standalone Build System**: Independent test framework
 
 #### ✅ **7. Deployment & Operations**
-- **Docker Containerization**: Production-ready Docker setup
-- **Docker Compose**: Multi-service orchestration
 - **Process Management**: Individual process control and monitoring
 - **Resource Limits**: CPU and memory constraints per process
 - **Signal Handling**: Graceful shutdown on SIGTERM/SIGINT
@@ -80,14 +78,8 @@
 sudo apt-get update
 sudo apt-get install python3 python3-pip python3-venv
 
-# Install Docker and Docker Compose
-sudo apt-get install docker.io docker-compose
-
 # Install C++ build tools
 sudo apt-get install build-essential cmake
-
-# Add user to docker group
-sudo usermod -aG docker $USER
 ```
 
 ### **1. Clone and Setup**
@@ -155,21 +147,6 @@ sed -i 's/your_binance_api_secret/'"$BINANCE_API_SECRET"'/g' config/*binance*.in
 ```
 
 ### **4. Start Trading System**
-
-#### **Option A: Docker Deployment (Recommended)**
-```bash
-# Build and start both components
-docker-compose build
-docker-compose up -d
-
-# View logs for both components
-docker-compose logs -f python-defi cpp-cefi
-
-# Check system status
-docker-compose ps
-```
-
-#### **Option B: Manual Deployment**
 ```bash
 # Start Python DeFi LP (Terminal 1)
 cd python/
@@ -441,20 +418,24 @@ cmake . && make run_tests
 
 ### **Starting/Stopping**
 ```bash
-# Start all processes
-docker-compose up -d
+# Start all processes manually
+cd python/
+source venv/bin/activate
+python main.py --config config.py &
+
+cd ../cpp/build/
+./bin/market_server BINANCE ../config/market_server_binance.ini &
+./bin/trading_engine BINANCE ../config/trading_engine_binance.ini --daemon &
+./bin/position_server BINANCE ../config/position_server_binance.ini &
+./bin/trader ../config/trader.ini &
 
 # Stop all processes gracefully
-docker-compose down
+pkill -f "market_server\|trading_engine\|position_server\|trader\|main.py"
 
 # Restart specific process
-docker-compose restart trader
-docker-compose restart market_server_binance
-docker-compose restart trading_engine_binance
-docker-compose restart position_server_binance
-
-# Start specific process only
-docker-compose up -d trader
+pkill -f trader
+cd cpp/build/
+./bin/trader ../config/trader.ini &
 ```
 
 ### **Updates**
@@ -468,13 +449,9 @@ cmake . && make run_tests
 ./run_tests
 
 # Rebuild and restart all processes
-docker-compose down
-docker build -t asymmetric_lp_trader .
-docker-compose up -d
-
-# Update specific process
-docker-compose stop trading_engine_binance
-docker-compose up -d trading_engine_binance
+cd ../../cpp/build/
+cmake .. && make -j4
+# Then restart processes as shown above
 ```
 
 ### **Data Management**
@@ -500,50 +477,54 @@ ls -la cpp/config/
 #### **1. API Authentication Errors**
 ```bash
 # Check API keys for specific exchange
-docker-compose logs trading_engine_binance | grep "API error"
-docker-compose logs trading_engine_deribit | grep "API error"
+grep "API error" logs/trading_engine_binance.log
+grep "API error" logs/trading_engine_deribit.log
 
 # Verify environment variables
-docker exec asymmetric_lp_trading_engine_binance env | grep API_KEY
+env | grep API_KEY
 ```
 
 #### **2. Process Communication Issues**
 ```bash
 # Check ZMQ connectivity
-docker-compose logs trader | grep "ZMQ"
-docker-compose logs quote_server_binance | grep "ZMQ"
+grep "ZMQ" logs/trader.log
+grep "ZMQ" logs/market_server_binance.log
 
 # Restart specific process
-docker-compose restart trading_engine_binance
+pkill -f trading_engine_binance
+cd cpp/build/
+./bin/trading_engine BINANCE ../config/trading_engine_binance.ini --daemon &
 ```
 
 #### **3. WebSocket Connection Issues**
 ```bash
 # Check WebSocket connections
-docker-compose logs quote_server_binance | grep "WebSocket"
-docker-compose logs trading_engine_binance | grep "WebSocket"
+grep "WebSocket" logs/market_server_binance.log
+grep "WebSocket" logs/trading_engine_binance.log
 
 # Check network connectivity
-docker exec asymmetric_lp_quote_server_binance ping fstream.binance.com
+ping -c 3 fstream.binance.com
 ```
 
 #### **4. High Memory Usage**
 ```bash
 # Check resource usage for all processes
-docker stats
+ps aux | grep -E "market_server|trading_engine|position_server|trader|main.py"
 
-# Adjust limits in docker-compose.yml per process
+# Monitor memory usage
+top -p $(pgrep -d, -f "market_server|trading_engine|position_server|trader|main.py")
 ```
 
 ### **Debug Mode**
 ```bash
 # Run specific process in debug mode
-docker-compose run --rm trader --log-level DEBUG
-docker-compose run --rm quote_server_binance --log-level DEBUG
-docker-compose run --rm trading_engine_binance --log-level DEBUG
+cd cpp/build/
+./bin/trader ../config/trader.ini --log-level DEBUG
+./bin/market_server BINANCE ../config/market_server_binance.ini --log-level DEBUG
+./bin/trading_engine BINANCE ../config/trading_engine_binance.ini --log-level DEBUG
 
 # Run test suite in debug mode
-cd cpp/tests/standalone_build/
+cd ../tests/standalone_build/
 ./run_tests --verbose
 ```
 
@@ -558,12 +539,12 @@ cd cpp/tests/standalone_build/
 - Rotate API keys regularly
 
 ### **Network Security**
-- Container runs as non-root user
+- Processes run with appropriate user permissions
 - Limited network access
 - No exposed ports (except monitoring)
 
 ### **Data Security**
-- Data files are stored in mounted volumes
+- Data files are stored in local directories
 - Regular backups recommended
 - Access logs for audit trails
 
@@ -589,18 +570,17 @@ cd cpp/tests/standalone_build/
 ## 🆘 **Support**
 
 ### **Logs Location**
-- Container logs: `docker-compose logs [process_name]`
 - File logs: `logs/[process_name].log`
 - Data files: `data/` directory
 - Configuration files: `cpp/config/` directory
 
 ### **Emergency Procedures**
-1. **Stop All Trading**: `docker-compose down`
-2. **Stop Specific Exchange**: `docker-compose stop trading_engine_[exchange]`
+1. **Stop All Trading**: `pkill -f "market_server|trading_engine|position_server|trader|main.py"`
+2. **Stop Specific Exchange**: `pkill -f trading_engine_[exchange]`
 3. **Check Positions**: Review `data/positions.csv`
 4. **Manual Orders**: Use exchange web interface
-5. **Restart System**: `docker-compose up -d`
-6. **Restart Specific Process**: `docker-compose restart [process_name]`
+5. **Restart System**: Follow manual deployment steps in Quick Start section
+6. **Restart Specific Process**: Kill the process and restart using the manual deployment commands
 
 ---
 

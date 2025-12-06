@@ -331,21 +331,6 @@ void handle_balance_update(const std::string& balance_data);
 
 ## Deployment
 
-### Docker Deployment
-```bash
-# Build trading engine
-docker build -t trading_engine .
-
-# Run trading engine
-docker run -d \
-  --name trading_engine_binance \
-  -e BINANCE_API_KEY=your_key \
-  -e BINANCE_API_SECRET=your_secret \
-  -v $(pwd)/config:/app/config \
-  -v $(pwd)/logs:/app/logs \
-  trading_engine BINANCE config/trading_engine_binance.ini
-```
-
 ### Systemd Service
 ```bash
 # Install systemd service

@@ -238,19 +238,6 @@ sudo make install
 sudo ldconfig
 ```
 
-## Docker Alternative
-
-If you're having trouble with system dependencies, you can use Docker:
-
-```bash
-# Build and run with Docker
-docker build -t asymmetric_lp .
-docker run -it asymmetric_lp
-
-# Or use docker-compose
-docker-compose up --build
-```
-
 ## Support
 
 If you continue to have issues:
@@ -259,5 +246,3 @@ If you continue to have issues:
 2. Ensure you have the development headers installed (usually `-dev` or `-devel` packages)
 3. Verify CMake can find the packages with `pkg-config --list-all`
 4. Check the build logs for specific missing dependencies
-
-The Docker setup is guaranteed to work and includes all dependencies pre-installed.

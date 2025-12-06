@@ -57,14 +57,6 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Docker Alternative
-
-```bash
-# Build and run with Docker (includes all dependencies)
-docker build -t asymmetric_lp .
-docker run -it asymmetric_lp
-```
-
 ## Architecture
 
 ### Python DeFi Component
@@ -115,29 +107,11 @@ docker run -it asymmetric_lp
 ## Quick Start
 
 ### Prerequisites
-- Docker and Docker Compose (recommended)
-- Python 3.8+ with pip (for manual deployment)
-- C++17 compiler (GCC 9+ or Clang 10+) (for manual deployment)
-- CMake 3.16+ (for manual deployment)
+- Python 3.8+ with pip
+- C++17 compiler (GCC 9+ or Clang 10+)
+- CMake 3.16+
 
-### Docker Deployment (Recommended)
-```bash
-git clone <repository-url>
-cd asymmetric_lp
-
-# Create environment file
-cp docker/.env.template .env
-# Edit .env with your API keys and configuration
-
-# Build and start both components
-docker-compose build
-docker-compose up -d
-
-# View logs
-docker-compose logs -f python-defi cpp-cefi
-```
-
-*See `DEPLOY.md` for detailed configuration and deployment instructions.*
+*See `docs/deploy.md` for detailed configuration and deployment instructions.*
 
 ## Contributing
 
