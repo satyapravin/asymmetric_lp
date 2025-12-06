@@ -1,5 +1,5 @@
 #include "deribit_oms.hpp"
-#include <iostream>
+#include "../../../utils/logging/log_helper.hpp"
 #include <sstream>
 #include <chrono>
 #include <thread>
@@ -9,12 +9,12 @@
 namespace deribit {
 
 DeribitOMS::DeribitOMS(const DeribitOMSConfig& config) : config_(config) {
-    std::cout << "[DERIBIT_OMS] Initializing Deribit OMS" << std::endl;
+    LOG_INFO_COMP("DERIBIT_OMS", "Initializing Deribit OMS");
     
     // If credentials are provided in config, mark as authenticated
     if (!config_.client_id.empty() && !config_.client_secret.empty()) {
         authenticated_.store(true);
-        std::cout << "[DERIBIT_OMS] Credentials provided in config, marked as authenticated" << std::endl;
+        LOG_INFO_COMP("DERIBIT_OMS", "Credentials provided in config, marked as authenticated");
     } else {
         authenticated_.store(false);
     }
@@ -25,17 +25,17 @@ DeribitOMS::~DeribitOMS() {
 }
 
 bool DeribitOMS::connect() {
-    std::cout << "[DERIBIT_OMS] Connecting to Deribit WebSocket..." << std::endl;
+    LOG_INFO_COMP("DERIBIT_OMS", "Connecting to Deribit WebSocket...");
     
     if (connected_.load()) {
-        std::cout << "[DERIBIT_OMS] Already connected" << std::endl;
+        LOG_INFO_COMP("DERIBIT_OMS", "Already connected");
         return true;
     }
     
     try {
         // If custom transport is set, use it (for testing)
         if (custom_transport_) {
-            std::cout << "[DERIBIT_OMS] Using custom WebSocket transport" << std::endl;
+            LOG_INFO_COMP("DERIBIT_OMS", "Using custom WebSocket transport");
             
             // Set up message callback BEFORE connecting
             custom_transport_->set_message_callback([this](const websocket_transport::WebSocketMessage& ws_msg) {
@@ -57,15 +57,15 @@ bool DeribitOMS::connect() {
                 
                 // Authenticate
                 if (!authenticate_websocket()) {
-                    std::cerr << "[DERIBIT_OMS] Authentication failed" << std::endl;
+                    LOG_ERROR_COMP("DERIBIT_OMS", "Authentication failed");
                     return false;
                 }
                 
                 authenticated_.store(true);
-                std::cout << "[DERIBIT_OMS] Connected successfully using injected transport" << std::endl;
+                LOG_INFO_COMP("DERIBIT_OMS", "Connected successfully using injected transport");
                 return true;
             } else {
-                std::cerr << "[DERIBIT_OMS] Failed to connect using custom transport" << std::endl;
+                LOG_ERROR_COMP("DERIBIT_OMS", "Failed to connect using custom transport");
                 return false;
             }
         }
@@ -76,24 +76,24 @@ bool DeribitOMS::connect() {
         
         // Authenticate
         if (!authenticate_websocket()) {
-            std::cerr << "[DERIBIT_OMS] Authentication failed" << std::endl;
+            LOG_ERROR_COMP("DERIBIT_OMS", "Authentication failed");
             return false;
         }
         
         connected_ = true;
         authenticated_.store(true);
         
-        std::cout << "[DERIBIT_OMS] Connected successfully" << std::endl;
+        LOG_INFO_COMP("DERIBIT_OMS", "Connected successfully");
         return true;
         
     } catch (const std::exception& e) {
-        std::cerr << "[DERIBIT_OMS] Connection failed: " << e.what() << std::endl;
+        LOG_ERROR_COMP("DERIBIT_OMS", "Connection failed: " + std::string(e.what()));
         return false;
     }
 }
 
 void DeribitOMS::disconnect() {
-    std::cout << "[DERIBIT_OMS] Disconnecting..." << std::endl;
+    LOG_INFO_COMP("DERIBIT_OMS", "Disconnecting...");
     
     websocket_running_ = false;
     connected_ = false;
@@ -107,7 +107,7 @@ void DeribitOMS::disconnect() {
         websocket_thread_.join();
     }
     
-    std::cout << "[DERIBIT_OMS] Disconnected" << std::endl;
+    LOG_INFO_COMP("DERIBIT_OMS", "Disconnected");
 }
 
 bool DeribitOMS::is_connected() const {
@@ -126,12 +126,12 @@ bool DeribitOMS::is_authenticated() const {
 
 bool DeribitOMS::cancel_order(const std::string& cl_ord_id, const std::string& exch_ord_id) {
     if (!is_connected() || !is_authenticated()) {
-        std::cerr << "[DERIBIT_OMS] Not connected or authenticated" << std::endl;
+        LOG_ERROR_COMP("DERIBIT_OMS", "Not connected or authenticated");
         return false;
     }
     
     std::string cancel_msg = create_cancel_message(cl_ord_id, exch_ord_id);
-    std::cout << "[DERIBIT_OMS] Sending cancel order: " << cancel_msg << std::endl;
+    LOG_DEBUG_COMP("DERIBIT_OMS", "Sending cancel order: " + cancel_msg);
     
     // Note: Order messages are handled by the mock transport's automatic replay
     // For real WebSocket connections, the message would be sent here
@@ -141,12 +141,12 @@ bool DeribitOMS::cancel_order(const std::string& cl_ord_id, const std::string& e
 
 bool DeribitOMS::replace_order(const std::string& cl_ord_id, const proto::OrderRequest& new_order) {
     if (!is_connected() || !is_authenticated()) {
-        std::cerr << "[DERIBIT_OMS] Not connected or authenticated" << std::endl;
+        LOG_ERROR_COMP("DERIBIT_OMS", "Not connected or authenticated");
         return false;
     }
     
     std::string replace_msg = create_replace_message(cl_ord_id, new_order);
-    std::cout << "[DERIBIT_OMS] Sending replace order: " << replace_msg << std::endl;
+    LOG_DEBUG_COMP("DERIBIT_OMS", "Sending replace order: " + replace_msg);
     
     // Note: Order messages are handled by the mock transport's automatic replay
     // For real WebSocket connections, the message would be sent here
@@ -168,12 +168,12 @@ proto::OrderEvent DeribitOMS::get_order_status(const std::string& cl_ord_id, con
 
 bool DeribitOMS::place_market_order(const std::string& symbol, const std::string& side, double quantity) {
     if (!is_connected() || !is_authenticated()) {
-        std::cerr << "[DERIBIT_OMS] Not connected or authenticated" << std::endl;
+        LOG_ERROR_COMP("DERIBIT_OMS", "Not connected or authenticated");
         return false;
     }
     
     std::string order_msg = create_order_message(symbol, side, quantity, 0.0, "MARKET");
-    std::cout << "[DERIBIT_OMS] Sending market order: " << order_msg << std::endl;
+    LOG_DEBUG_COMP("DERIBIT_OMS", "Sending market order: " + order_msg);
     
     // Note: Order messages are handled by the mock transport's automatic replay
     // For real WebSocket connections, the message would be sent here
@@ -183,12 +183,12 @@ bool DeribitOMS::place_market_order(const std::string& symbol, const std::string
 
 bool DeribitOMS::place_limit_order(const std::string& symbol, const std::string& side, double quantity, double price) {
     if (!is_connected() || !is_authenticated()) {
-        std::cerr << "[DERIBIT_OMS] Not connected or authenticated" << std::endl;
+        LOG_ERROR_COMP("DERIBIT_OMS", "Not connected or authenticated");
         return false;
     }
     
     std::string order_msg = create_order_message(symbol, side, quantity, price, "LIMIT");
-    std::cout << "[DERIBIT_OMS] Sending limit order: " << order_msg << std::endl;
+    LOG_DEBUG_COMP("DERIBIT_OMS", "Sending limit order: " + order_msg);
     
     // Note: Order messages are handled by the mock transport's automatic replay
     // For real WebSocket connections, the message would be sent here
@@ -201,10 +201,10 @@ void DeribitOMS::set_order_status_callback(OrderStatusCallback callback) {
 }
 
 void DeribitOMS::websocket_loop() {
-    std::cout << "[DERIBIT_OMS] WebSocket loop started" << std::endl;
+    LOG_INFO_COMP("DERIBIT_OMS", "WebSocket loop started");
     
     if (custom_transport_) {
-        std::cout << "[DERIBIT_OMS] Using custom transport - messages will arrive via callback" << std::endl;
+        LOG_INFO_COMP("DERIBIT_OMS", "Using custom transport - messages will arrive via callback");
         // The custom transport's event loop will handle message reception and callbacks
         // We just need to keep this thread alive while the custom transport is running
         while (websocket_running_.load()) {
@@ -227,18 +227,18 @@ void DeribitOMS::websocket_loop() {
                 }
                 
             } catch (const std::exception& e) {
-                std::cerr << "[DERIBIT_OMS] WebSocket loop error: " << e.what() << std::endl;
+                LOG_ERROR_COMP("DERIBIT_OMS", "WebSocket loop error: " + std::string(e.what()));
                 std::this_thread::sleep_for(std::chrono::milliseconds(1000));
             }
         }
     }
     
     if (custom_transport_) {
-        std::cout << "[DERIBIT_OMS] Stopping custom transport event loop" << std::endl;
+        LOG_INFO_COMP("DERIBIT_OMS", "Stopping custom transport event loop");
         custom_transport_->stop_event_loop();
     }
     
-    std::cout << "[DERIBIT_OMS] WebSocket loop stopped" << std::endl;
+    LOG_INFO_COMP("DERIBIT_OMS", "WebSocket loop stopped");
 }
 
 void DeribitOMS::handle_websocket_message(const std::string& message) {
@@ -247,7 +247,7 @@ void DeribitOMS::handle_websocket_message(const std::string& message) {
         Json::Reader reader;
         
         if (!reader.parse(message, root)) {
-            std::cerr << "[DERIBIT_OMS] Failed to parse WebSocket message" << std::endl;
+            LOG_ERROR_COMP("DERIBIT_OMS", "Failed to parse WebSocket message");
             return;
         }
         
@@ -270,7 +270,7 @@ void DeribitOMS::handle_websocket_message(const std::string& message) {
             Json::Value result = root["result"];
             if (result.isMember("order") || result.isMember("order_id")) {
                 // Order placement/cancel/modify response
-                std::cout << "[DERIBIT_OMS] Order response: " << message << std::endl;
+                LOG_DEBUG_COMP("DERIBIT_OMS", "Order response: " + message);
                 
                 // Convert to OrderEvent and notify callback
                 proto::OrderEvent order_event;
@@ -301,18 +301,18 @@ void DeribitOMS::handle_websocket_message(const std::string& message) {
                 // Authentication response
                 config_.access_token = result["access_token"].asString();
                 if (result.isMember("expires_in")) {
-                    std::cout << "[DERIBIT_OMS] Authentication successful, token expires in " 
-                              << result["expires_in"].asInt() << " seconds" << std::endl;
+                    LOG_INFO_COMP("DERIBIT_OMS", "Authentication successful, token expires in " + 
+                                  std::to_string(result["expires_in"].asInt()) + " seconds");
                 }
             }
         } else if (root.isMember("error")) {
             // Handle errors
             std::string error_msg = "Deribit API error: " + root["error"].toStyledString();
-            std::cerr << "[DERIBIT_OMS] " << error_msg << std::endl;
+            LOG_ERROR_COMP("DERIBIT_OMS", error_msg);
         }
         
     } catch (const std::exception& e) {
-        std::cerr << "[DERIBIT_OMS] Error handling WebSocket message: " << e.what() << std::endl;
+        LOG_ERROR_COMP("DERIBIT_OMS", "Error handling WebSocket message: " + std::string(e.what()));
     }
 }
 
@@ -353,12 +353,12 @@ void DeribitOMS::handle_order_update(const Json::Value& order_data) {
         order_status_callback_(order_event);
     }
     
-    std::cout << "[DERIBIT_OMS] Order update: " << order_event.exch_order_id() 
-              << " status: " << order_data["order_state"].asString() << std::endl;
+    LOG_DEBUG_COMP("DERIBIT_OMS", "Order update: " + order_event.exch_order_id() + 
+                  " status: " + order_data["order_state"].asString());
 }
 
 void DeribitOMS::handle_trade_update(const Json::Value& trade_data) {
-    std::cout << "[DERIBIT_OMS] Trade update: " << trade_data.toStyledString() << std::endl;
+    LOG_DEBUG_COMP("DERIBIT_OMS", "Trade update: " + trade_data.toStyledString());
 }
 
 std::string DeribitOMS::create_order_message(const std::string& symbol, const std::string& side, 
@@ -430,12 +430,12 @@ std::string DeribitOMS::create_replace_message(const std::string& cl_ord_id, con
 
 bool DeribitOMS::authenticate_websocket() {
     if (config_.client_id.empty() || config_.client_secret.empty()) {
-        std::cerr << "[DERIBIT_OMS] Cannot authenticate: credentials not set" << std::endl;
+        LOG_ERROR_COMP("DERIBIT_OMS", "Cannot authenticate: credentials not set");
         return false;
     }
     
     std::string auth_msg = create_auth_message();
-    std::cout << "[DERIBIT_OMS] Authenticating: " << auth_msg << std::endl;
+    LOG_INFO_COMP("DERIBIT_OMS", "Authenticating: " + auth_msg);
     
     // Note: Authentication messages are handled by the mock transport's automatic replay
     // For real WebSocket connections, the message would be sent here
@@ -510,7 +510,7 @@ std::string DeribitOMS::map_order_type_to_deribit(const std::string& order_type)
 }
 
 void DeribitOMS::set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport) {
-    std::cout << "[DERIBIT_OMS] Setting custom WebSocket transport for testing" << std::endl;
+    LOG_INFO_COMP("DERIBIT_OMS", "Setting custom WebSocket transport for testing");
     custom_transport_ = transport;
 }
 

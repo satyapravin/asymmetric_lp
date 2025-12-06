@@ -1,6 +1,6 @@
 #include "pms_factory.hpp"
+#include "../utils/logging/log_helper.hpp"
 #include <algorithm>
-#include <iostream>
 
 std::unique_ptr<IExchangePMS> PMSFactory::create_pms(const std::string& exchange_name) {
     std::string exchange = to_lowercase(exchange_name);
@@ -43,8 +43,8 @@ std::unique_ptr<IExchangePMS> PMSFactory::create_pms(const std::string& exchange
         return std::make_unique<deribit::DeribitPMS>(config);
     }
     else {
-        std::string error_msg = "[PMS_FACTORY] Unknown or unsupported exchange: " + exchange_name;
-        std::cerr << error_msg << std::endl;
+        std::string error_msg = "Unknown or unsupported exchange: " + exchange_name;
+        LOG_ERROR_COMP("PMS_FACTORY", error_msg);
         throw std::runtime_error(error_msg);
     }
 }

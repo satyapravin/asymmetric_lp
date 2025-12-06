@@ -6,6 +6,7 @@
 #include <functional>
 #include <memory>
 #include "../utils/zmq/zmq_subscriber.hpp"
+#include "../utils/logging/log_helper.hpp"
 #include "../proto/position.pb.h"
 
 // Position Management System ZMQ Adapter
@@ -25,46 +26,46 @@ public:
   }
 
   void stop() {
-    std::cout << "[PMS_ADAPTER] Stopping PMS adapter" << std::endl;
+    LOG_INFO_COMP("PMS_ADAPTER", "Stopping PMS adapter");
     running_.store(false);
     
     // Close ZMQ subscriber to unblock receive() call
     if (subscriber_) {
       subscriber_.reset();
-      std::cout << "[PMS_ADAPTER] ZMQ subscriber closed" << std::endl;
+      LOG_INFO_COMP("PMS_ADAPTER", "ZMQ subscriber closed");
     }
     
     if (worker_.joinable()) {
       worker_.join();
-      std::cout << "[PMS_ADAPTER] PMS adapter stopped" << std::endl;
+      LOG_INFO_COMP("PMS_ADAPTER", "PMS adapter stopped");
     }
   }
 
   void set_position_callback(PositionUpdateCallback callback) {
     position_callback_ = callback;
-    std::cout << "[PMS_ADAPTER] Position callback set: " << (callback ? "YES" : "NO") << std::endl;
+    LOG_INFO_COMP("PMS_ADAPTER", "Position callback set: " + std::string(callback ? "YES" : "NO"));
   }
 
 private:
   void run() {
-    std::cout << "[PMS_ADAPTER] Starting to listen on " << endpoint_ << " topic: " << topic_ << std::endl;
+    LOG_INFO_COMP("PMS_ADAPTER", "Starting to listen on " + endpoint_ + " topic: " + topic_);
     subscriber_ = std::make_unique<ZmqSubscriber>(endpoint_, topic_);
     while (running_.load()) {
       auto msg = subscriber_->receive();
       if (!msg) continue;
       
-      std::cout << "[PMS_ADAPTER] Received message of size: " << msg->size() << " bytes" << std::endl;
+      LOG_DEBUG_COMP("PMS_ADAPTER", "Received message of size: " + std::to_string(msg->size()) + " bytes");
       
       // Parse protobuf position update
       proto::PositionUpdate position;
       if (position.ParseFromString(*msg)) {
-        std::cout << "[PMS_ADAPTER] Parsed protobuf: " << position.symbol() << " qty: " << position.qty() << std::endl;
+        LOG_DEBUG_COMP("PMS_ADAPTER", "Parsed protobuf: " + position.symbol() + " qty: " + std::to_string(position.qty()));
         if (position_callback_) {
-          std::cout << "[PMS_ADAPTER] Calling position callback" << std::endl;
+          LOG_DEBUG_COMP("PMS_ADAPTER", "Calling position callback");
           position_callback_(position);
         }
       } else {
-        std::cout << "[PMS_ADAPTER] Failed to parse protobuf message" << std::endl;
+        LOG_ERROR_COMP("PMS_ADAPTER", "Failed to parse protobuf message");
       }
     }
   }

@@ -1,5 +1,5 @@
 #include "mini_pms.hpp"
-#include <iostream>
+#include "../utils/logging/log_helper.hpp"
 #include <sstream>
 #include <iomanip>
 #include <chrono>
@@ -16,7 +16,7 @@ void MiniPMS::start() {
         return;
     }
     
-    std::cout << "[MINI_PMS] Starting Mini Position Management System" << std::endl;
+    LOG_INFO_COMP("MINI_PMS", "Starting Mini Position Management System");
     running_.store(true);
     
     // Clear any existing positions
@@ -26,7 +26,7 @@ void MiniPMS::start() {
     }
     
     statistics_.reset();
-    std::cout << "[MINI_PMS] Mini PMS started successfully" << std::endl;
+    LOG_INFO_COMP("MINI_PMS", "Mini PMS started successfully");
 }
 
 void MiniPMS::stop() {
@@ -34,13 +34,13 @@ void MiniPMS::stop() {
         return;
     }
     
-    std::cout << "[MINI_PMS] Stopping Mini Position Management System" << std::endl;
+    LOG_INFO_COMP("MINI_PMS", "Stopping Mini Position Management System");
     running_.store(false);
     
     // Clear callback
     clear_position_update_callback();
     
-    std::cout << "[MINI_PMS] Mini PMS stopped" << std::endl;
+    LOG_INFO_COMP("MINI_PMS", "Mini PMS stopped");
 }
 
 void MiniPMS::update_position(const proto::PositionUpdate& position_update) {
@@ -98,8 +98,11 @@ void MiniPMS::update_account_balance(const std::string& exchange, const std::str
         account_balances_[exchange][instrument] = balance_info;
         statistics_.position_creates.fetch_add(1);
         
-        std::cout << "[MINI_PMS] Created balance: " << exchange << ":" << instrument 
-                  << " balance=" << balance << " available=" << available << " locked=" << locked << std::endl;
+        std::string log_msg = "Created balance: " + exchange + ":" + instrument + 
+                              " balance=" + std::to_string(balance) + 
+                              " available=" + std::to_string(available) + 
+                              " locked=" + std::to_string(locked);
+        LOG_DEBUG_COMP("MINI_PMS", log_msg);
     } else {
         // Update existing balance
         AccountBalanceInfo& existing = account_balances_[exchange][instrument];
@@ -110,8 +113,11 @@ void MiniPMS::update_account_balance(const std::string& exchange, const std::str
         
         statistics_.position_updates.fetch_add(1);
         
-        std::cout << "[MINI_PMS] Updated balance: " << exchange << ":" << instrument 
-                  << " balance=" << balance << " available=" << available << " locked=" << locked << std::endl;
+        std::string log_msg = "Updated balance: " + exchange + ":" + instrument + 
+                              " balance=" + std::to_string(balance) + 
+                              " available=" + std::to_string(available) + 
+                              " locked=" + std::to_string(locked);
+        LOG_DEBUG_COMP("MINI_PMS", log_msg);
     }
     
     statistics_.total_updates.fetch_add(1);
@@ -140,8 +146,10 @@ void MiniPMS::update_position(const std::string& exchange, const std::string& sy
         positions_[exchange][symbol] = position;
         statistics_.position_creates.fetch_add(1);
         
-        std::cout << "[MINI_PMS] Created position: " << exchange << ":" << symbol 
-                  << " qty=" << qty << " price=" << avg_price << std::endl;
+        std::string log_msg = "Created position: " + exchange + ":" + symbol + 
+                              " qty=" + std::to_string(qty) + 
+                              " price=" + std::to_string(avg_price);
+        LOG_DEBUG_COMP("MINI_PMS", log_msg);
     } else {
         // Update existing position
         PositionInfo& existing = positions_[exchange][symbol];
@@ -152,9 +160,11 @@ void MiniPMS::update_position(const std::string& exchange, const std::string& sy
         
         statistics_.position_updates.fetch_add(1);
         
-        std::cout << "[MINI_PMS] Updated position: " << exchange << ":" << symbol 
-                  << " qty=" << qty << " price=" << avg_price 
-                  << " unrealized_pnl=" << unrealized_pnl << std::endl;
+        std::string log_msg = "Updated position: " + exchange + ":" + symbol + 
+                              " qty=" + std::to_string(qty) + 
+                              " price=" + std::to_string(avg_price) + 
+                              " unrealized_pnl=" + std::to_string(unrealized_pnl);
+        LOG_DEBUG_COMP("MINI_PMS", log_msg);
     }
     
     statistics_.total_updates.fetch_add(1);
@@ -387,22 +397,22 @@ size_t MiniPMS::get_position_count() const {
 
 void MiniPMS::set_position_update_callback(PositionUpdateCallback callback) {
     position_callback_ = callback;
-    std::cout << "[MINI_PMS] Position update callback set" << std::endl;
+    LOG_INFO_COMP("MINI_PMS", "Position update callback set");
 }
 
 void MiniPMS::clear_position_update_callback() {
     position_callback_ = nullptr;
-    std::cout << "[MINI_PMS] Position update callback cleared" << std::endl;
+    LOG_INFO_COMP("MINI_PMS", "Position update callback cleared");
 }
 
 void MiniPMS::set_account_balance_update_callback(AccountBalanceUpdateCallback callback) {
     account_balance_callback_ = callback;
-    std::cout << "[MINI_PMS] Account balance update callback set" << std::endl;
+    LOG_INFO_COMP("MINI_PMS", "Account balance update callback set");
 }
 
 void MiniPMS::clear_account_balance_update_callback() {
     account_balance_callback_ = nullptr;
-    std::cout << "[MINI_PMS] Account balance update callback cleared" << std::endl;
+    LOG_INFO_COMP("MINI_PMS", "Account balance update callback cleared");
 }
 
 void MiniPMS::notify_position_update(const PositionInfo& position) {
@@ -411,7 +421,7 @@ void MiniPMS::notify_position_update(const PositionInfo& position) {
             position_callback_(position);
             statistics_.callback_notifications.fetch_add(1);
         } catch (const std::exception& e) {
-            std::cerr << "[MINI_PMS] Error in position update callback: " << e.what() << std::endl;
+            LOG_ERROR_COMP("MINI_PMS", "Error in position update callback: " + std::string(e.what()));
         }
     }
 }
@@ -422,7 +432,7 @@ void MiniPMS::notify_account_balance_update(const AccountBalanceInfo& balance) {
             account_balance_callback_(balance);
             statistics_.callback_notifications.fetch_add(1);
         } catch (const std::exception& e) {
-            std::cerr << "[MINI_PMS] Error in account balance update callback: " << e.what() << std::endl;
+            LOG_ERROR_COMP("MINI_PMS", "Error in account balance update callback: " + std::string(e.what()));
         }
     }
 }
@@ -440,20 +450,24 @@ std::string MiniPMS::generate_balance_key(const std::string& exchange,
 void MiniPMS::log_position_event(const std::string& event, const PositionInfo& position) {
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);
-    
-    std::cout << "[MINI_PMS] " << std::put_time(std::localtime(&time_t), "%H:%M:%S")
-              << " " << event << " " << position.exchange << ":" << position.symbol
-              << " qty=" << position.qty << " price=" << position.avg_price << std::endl;
+    std::stringstream ss;
+    ss << std::put_time(std::localtime(&time_t), "%H:%M:%S");
+    std::string log_msg = ss.str() + " " + event + " " + position.exchange + ":" + position.symbol +
+                          " qty=" + std::to_string(position.qty) + 
+                          " price=" + std::to_string(position.avg_price);
+    LOG_DEBUG_COMP("MINI_PMS", log_msg);
 }
 
 void MiniPMS::log_balance_event(const std::string& event, const AccountBalanceInfo& balance) {
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);
-    
-    std::cout << "[MINI_PMS] " << std::put_time(std::localtime(&time_t), "%H:%M:%S")
-              << " " << event << " " << balance.exchange << ":" << balance.instrument
-              << " balance=" << balance.balance << " available=" << balance.available 
-              << " locked=" << balance.locked << std::endl;
+    std::stringstream ss;
+    ss << std::put_time(std::localtime(&time_t), "%H:%M:%S");
+    std::string log_msg = ss.str() + " " + event + " " + balance.exchange + ":" + balance.instrument +
+                          " balance=" + std::to_string(balance.balance) + 
+                          " available=" + std::to_string(balance.available) + 
+                          " locked=" + std::to_string(balance.locked);
+    LOG_INFO_COMP("MINI_PMS", log_msg);
 }
 
 std::string MiniPMS::get_current_time_string() const {

@@ -1,5 +1,5 @@
 #include "grvt_subscriber.hpp"
-#include <iostream>
+#include "../../../utils/logging/log_helper.hpp"
 #include <sstream>
 #include <chrono>
 #include <thread>
@@ -9,7 +9,7 @@
 namespace grvt {
 
 GrvtSubscriber::GrvtSubscriber(const GrvtSubscriberConfig& config) : config_(config) {
-    std::cout << "[GRVT_SUBSCRIBER] Initializing GRVT Subscriber" << std::endl;
+    LOG_INFO_COMP("GRVT_SUBSCRIBER", "Initializing GRVT Subscriber");
 }
 
 GrvtSubscriber::~GrvtSubscriber() {
@@ -17,17 +17,17 @@ GrvtSubscriber::~GrvtSubscriber() {
 }
 
 bool GrvtSubscriber::connect() {
-    std::cout << "[GRVT_SUBSCRIBER] Connecting to GRVT WebSocket..." << std::endl;
+    LOG_INFO_COMP("GRVT_SUBSCRIBER", "Connecting to GRVT WebSocket...");
     
     if (connected_.load()) {
-        std::cout << "[GRVT_SUBSCRIBER] Already connected" << std::endl;
+        LOG_INFO_COMP("GRVT_SUBSCRIBER", "Already connected");
         return true;
     }
     
     try {
         // If custom transport is set, use it (for testing)
         if (custom_transport_) {
-            std::cout << "[GRVT_SUBSCRIBER] Using custom WebSocket transport" << std::endl;
+            LOG_INFO_COMP("GRVT_SUBSCRIBER", "Using custom WebSocket transport");
             
             // Set up message callback BEFORE connecting
             custom_transport_->set_message_callback([this](const websocket_transport::WebSocketMessage& ws_msg) {
@@ -46,10 +46,10 @@ bool GrvtSubscriber::connect() {
                 }
                 
                 websocket_thread_ = std::thread(&GrvtSubscriber::websocket_loop, this);
-                std::cout << "[GRVT_SUBSCRIBER] Connected successfully using injected transport" << std::endl;
+                LOG_INFO_COMP("GRVT_SUBSCRIBER", "Connected successfully using injected transport");
                 return true;
             } else {
-                std::cerr << "[GRVT_SUBSCRIBER] Failed to connect using custom transport" << std::endl;
+                LOG_ERROR_COMP("GRVT_SUBSCRIBER", "Failed to connect using custom transport");
                 return false;
             }
         }
@@ -60,17 +60,17 @@ bool GrvtSubscriber::connect() {
         
         connected_ = true;
         
-        std::cout << "[GRVT_SUBSCRIBER] Connected successfully" << std::endl;
+        LOG_INFO_COMP("GRVT_SUBSCRIBER", "Connected successfully");
         return true;
         
     } catch (const std::exception& e) {
-        std::cerr << "[GRVT_SUBSCRIBER] Connection failed: " << e.what() << std::endl;
+        LOG_ERROR_COMP("GRVT_SUBSCRIBER", "Connection failed: " + std::string(e.what()));
         return false;
     }
 }
 
 void GrvtSubscriber::disconnect() {
-    std::cout << "[GRVT_SUBSCRIBER] Disconnecting..." << std::endl;
+    LOG_INFO_COMP("GRVT_SUBSCRIBER", "Disconnecting...");
     
     websocket_running_ = false;
     connected_ = false;
@@ -79,7 +79,7 @@ void GrvtSubscriber::disconnect() {
         websocket_thread_.join();
     }
     
-    std::cout << "[GRVT_SUBSCRIBER] Disconnected" << std::endl;
+    LOG_INFO_COMP("GRVT_SUBSCRIBER", "Disconnected");
 }
 
 bool GrvtSubscriber::is_connected() const {
@@ -88,16 +88,17 @@ bool GrvtSubscriber::is_connected() const {
 
 bool GrvtSubscriber::subscribe_orderbook(const std::string& symbol, int top_n, int frequency_ms) {
     if (!is_connected()) {
-        std::cerr << "[GRVT_SUBSCRIBER] Not connected" << std::endl;
+        LOG_ERROR_COMP("GRVT_SUBSCRIBER", "Not connected");
         return false;
     }
     
     // GRVT API: Use orderbook.s (snapshot) or orderbook.d (delta) channel
     // Symbol should be separate parameter, not concatenated
     std::string sub_msg = create_subscription_message(symbol, "orderbook", config_.use_snapshot_channels);
-    std::cout << "[GRVT_SUBSCRIBER] Subscribing to orderbook: " << symbol 
-              << " channel: " << get_channel_name("orderbook", config_.use_snapshot_channels)
-              << " top_n: " << top_n << " frequency: " << frequency_ms << "ms" << std::endl;
+    std::string log_msg = "Subscribing to orderbook: " + symbol + 
+                          " channel: " + get_channel_name("orderbook", config_.use_snapshot_channels) +
+                          " top_n: " + std::to_string(top_n) + " frequency: " + std::to_string(frequency_ms) + "ms";
+    LOG_INFO_COMP("GRVT_SUBSCRIBER", log_msg);
     
     // Add to subscribed symbols
     {
@@ -120,13 +121,13 @@ bool GrvtSubscriber::subscribe_orderbook(const std::string& symbol, int top_n, i
 
 bool GrvtSubscriber::subscribe_trades(const std::string& symbol) {
     if (!is_connected()) {
-        std::cerr << "[GRVT_SUBSCRIBER] Not connected" << std::endl;
+        LOG_ERROR_COMP("GRVT_SUBSCRIBER", "Not connected");
         return false;
     }
     
     // GRVT API: trades channel doesn't have snapshot/delta variants
     std::string sub_msg = create_subscription_message(symbol, "trades", false);
-    std::cout << "[GRVT_SUBSCRIBER] Subscribing to trades: " << symbol << std::endl;
+    LOG_INFO_COMP("GRVT_SUBSCRIBER", "Subscribing to trades: " + symbol);
     
     // Add to subscribed symbols
     {
@@ -147,14 +148,15 @@ bool GrvtSubscriber::subscribe_trades(const std::string& symbol) {
 
 bool GrvtSubscriber::subscribe_ticker(const std::string& symbol) {
     if (!is_connected()) {
-        std::cerr << "[GRVT_SUBSCRIBER] Not connected" << std::endl;
+        LOG_ERROR_COMP("GRVT_SUBSCRIBER", "Not connected");
         return false;
     }
     
     // GRVT API: Use ticker.s (snapshot) or ticker.d (delta) channel
     std::string sub_msg = create_subscription_message(symbol, "ticker", config_.use_snapshot_channels);
-    std::cout << "[GRVT_SUBSCRIBER] Subscribing to ticker: " << symbol 
-              << " channel: " << get_channel_name("ticker", config_.use_snapshot_channels) << std::endl;
+    std::string ticker_log_msg = "Subscribing to ticker: " + symbol + 
+                                  " channel: " + get_channel_name("ticker", config_.use_snapshot_channels);
+    LOG_INFO_COMP("GRVT_SUBSCRIBER", ticker_log_msg);
     
     // Add to subscribed symbols
     {
@@ -177,14 +179,14 @@ bool GrvtSubscriber::subscribe_ticker(const std::string& symbol) {
 
 bool GrvtSubscriber::unsubscribe(const std::string& symbol) {
     if (!is_connected()) {
-        std::cerr << "[GRVT_SUBSCRIBER] Not connected" << std::endl;
+        LOG_ERROR_COMP("GRVT_SUBSCRIBER", "Not connected");
         return false;
     }
     
     // Unsubscribe from all channels for this symbol
     // In practice, you might want to track which channels are subscribed per symbol
     std::string unsub_msg = create_unsubscription_message(symbol, "orderbook", config_.use_snapshot_channels);
-    std::cout << "[GRVT_SUBSCRIBER] Unsubscribing from: " << symbol << std::endl;
+    LOG_INFO_COMP("GRVT_SUBSCRIBER", "Unsubscribing from: " + symbol);
     
     // Remove from subscribed symbols
     {
@@ -214,12 +216,12 @@ void GrvtSubscriber::set_trade_callback(TradeCallback callback) {
 }
 
 void GrvtSubscriber::websocket_loop() {
-    std::cout << "[GRVT_SUBSCRIBER] WebSocket loop started" << std::endl;
+    LOG_INFO_COMP("GRVT_SUBSCRIBER", "WebSocket loop started");
     
     // If custom transport is set, messages will come via callback
     // Just wait for the loop to be stopped
     if (custom_transport_) {
-        std::cout << "[GRVT_SUBSCRIBER] Using custom transport - messages will arrive via callback" << std::endl;
+        LOG_INFO_COMP("GRVT_SUBSCRIBER", "Using custom transport - messages will arrive via callback");
         while (websocket_running_) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
@@ -242,13 +244,13 @@ void GrvtSubscriber::websocket_loop() {
                 }
                 
             } catch (const std::exception& e) {
-                std::cerr << "[GRVT_SUBSCRIBER] WebSocket loop error: " << e.what() << std::endl;
+                LOG_ERROR_COMP("GRVT_SUBSCRIBER", "WebSocket loop error: " + std::string(e.what()));
                 std::this_thread::sleep_for(std::chrono::milliseconds(1000));
             }
         }
     }
     
-    std::cout << "[GRVT_SUBSCRIBER] WebSocket loop stopped" << std::endl;
+    LOG_INFO_COMP("GRVT_SUBSCRIBER", "WebSocket loop stopped");
 }
 
 void GrvtSubscriber::handle_websocket_message(const std::string& message) {
@@ -257,7 +259,7 @@ void GrvtSubscriber::handle_websocket_message(const std::string& message) {
         Json::Reader reader;
         
         if (!reader.parse(message, root)) {
-            std::cerr << "[GRVT_SUBSCRIBER] Failed to parse WebSocket message" << std::endl;
+            LOG_ERROR_COMP("GRVT_SUBSCRIBER", "Failed to parse WebSocket message");
             return;
         }
         
@@ -326,21 +328,21 @@ void GrvtSubscriber::handle_websocket_message(const std::string& message) {
                     }
                 } else if (method.find("ticker") != std::string::npos) {
                     // Handle ticker updates if needed
-                    std::cout << "[GRVT_SUBSCRIBER] Ticker update received: " << message << std::endl;
+                    LOG_INFO_COMP("GRVT_SUBSCRIBER", "Ticker update received: " + message);
                 }
             }
         } else if (root.isMember(result_key)) {
             // Handle subscription/unsubscription responses
-            std::cout << "[GRVT_SUBSCRIBER] Subscription response: " << message << std::endl;
+            LOG_INFO_COMP("GRVT_SUBSCRIBER", "Subscription response: " + message);
         } else if (root.isMember(error_key)) {
             // Handle error responses
             std::string error_msg = root[error_key].isString() ? 
                 root[error_key].asString() : root[error_key].toStyledString();
-            std::cerr << "[GRVT_SUBSCRIBER] Error response: " << error_msg << std::endl;
+            LOG_ERROR_COMP("GRVT_SUBSCRIBER", "Error response: " + error_msg);
         }
         
     } catch (const std::exception& e) {
-        std::cerr << "[GRVT_SUBSCRIBER] Error handling WebSocket message: " << e.what() << std::endl;
+        LOG_ERROR_COMP("GRVT_SUBSCRIBER", "Error handling WebSocket message: " + std::string(e.what()));
     }
 }
 
@@ -349,7 +351,7 @@ void GrvtSubscriber::handle_orderbook_update(const Json::Value& orderbook_data) 
     orderbook.set_exch("GRVT");
     
     if (!orderbook_data.isMember("symbol")) {
-        std::cerr << "[GRVT_SUBSCRIBER] Orderbook data missing symbol" << std::endl;
+        LOG_ERROR_COMP("GRVT_SUBSCRIBER", "Orderbook data missing symbol");
         return;
     }
     orderbook.set_symbol(orderbook_data["symbol"].asString());
@@ -414,9 +416,10 @@ void GrvtSubscriber::handle_orderbook_update(const Json::Value& orderbook_data) 
         }
     }
     
-    std::cout << "[GRVT_SUBSCRIBER] Orderbook update: " << orderbook.symbol() 
-              << " bids: " << orderbook.bids_size() 
-              << " asks: " << orderbook.asks_size() << std::endl;
+    std::string orderbook_log_msg = "Orderbook update: " + orderbook.symbol() + 
+                                     " bids: " + std::to_string(orderbook.bids_size()) + 
+                                     " asks: " + std::to_string(orderbook.asks_size());
+    LOG_DEBUG_COMP("GRVT_SUBSCRIBER", orderbook_log_msg);
     
     if (orderbook_callback_) {
         orderbook_callback_(orderbook);
@@ -428,7 +431,7 @@ void GrvtSubscriber::handle_trade_update(const Json::Value& trade_data) {
     trade.set_exch("GRVT");
     
     if (!trade_data.isMember("symbol")) {
-        std::cerr << "[GRVT_SUBSCRIBER] Trade data missing symbol" << std::endl;
+        LOG_ERROR_COMP("GRVT_SUBSCRIBER", "Trade data missing symbol");
         return;
     }
     trade.set_symbol(trade_data["symbol"].asString());
@@ -499,9 +502,10 @@ void GrvtSubscriber::handle_trade_update(const Json::Value& trade_data) {
             std::chrono::system_clock::now().time_since_epoch()).count());
     }
     
-    std::cout << "[GRVT_SUBSCRIBER] Trade update: " << trade.symbol() 
-              << " " << trade.qty() << "@" << trade.price() 
-              << " side: " << (trade.is_buyer_maker() ? "SELL" : "BUY") << std::endl;
+    std::string trade_log_msg = "Trade update: " + trade.symbol() + 
+                                 " " + std::to_string(trade.qty()) + "@" + std::to_string(trade.price()) + 
+                                 " side: " + (trade.is_buyer_maker() ? "SELL" : "BUY");
+    LOG_DEBUG_COMP("GRVT_SUBSCRIBER", trade_log_msg);
     
     if (trade_callback_) {
         trade_callback_(trade);
@@ -582,11 +586,11 @@ std::string GrvtSubscriber::generate_request_id() {
 }
 
 void GrvtSubscriber::start() {
-    std::cout << "[GRVT_SUBSCRIBER] Starting subscriber" << std::endl;
+    LOG_INFO_COMP("GRVT_SUBSCRIBER", "Starting subscriber");
 }
 
 void GrvtSubscriber::stop() {
-    std::cout << "[GRVT_SUBSCRIBER] Stopping subscriber" << std::endl;
+    LOG_INFO_COMP("GRVT_SUBSCRIBER", "Stopping subscriber");
     
     // Stop custom transport event loop if running
     if (custom_transport_ && custom_transport_->is_event_loop_running()) {
@@ -597,12 +601,12 @@ void GrvtSubscriber::stop() {
 }
 
 void GrvtSubscriber::set_error_callback(std::function<void(const std::string&)> callback) {
-    std::cout << "[GRVT_SUBSCRIBER] Setting error callback" << std::endl;
+    LOG_INFO_COMP("GRVT_SUBSCRIBER", "Setting error callback");
     // Store callback for later use
 }
 
 void GrvtSubscriber::set_websocket_transport(std::unique_ptr<websocket_transport::IWebSocketTransport> transport) {
-    std::cout << "[GRVT_SUBSCRIBER] Setting custom WebSocket transport for testing" << std::endl;
+    LOG_INFO_COMP("GRVT_SUBSCRIBER", "Setting custom WebSocket transport for testing");
     custom_transport_ = std::move(transport);
 }
 

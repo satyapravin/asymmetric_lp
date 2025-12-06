@@ -1,5 +1,5 @@
 #include "trading_engine.hpp"
-#include <iostream>
+#include "../utils/logging/log_helper.hpp"
 #include <fstream>
 #include <signal.h>
 #include <unistd.h>
@@ -8,6 +8,8 @@
 #include <cstring>
 #include <algorithm>
 #include "../utils/config/config.hpp"
+#include <thread>
+#include <chrono>
 
 namespace trading_engine {
 
@@ -17,8 +19,8 @@ static TradingEngineProcess* g_process_instance = nullptr;
 
 TradingEngineProcess::TradingEngineProcess(const std::string& exchange_name, const std::string& config_file) 
     : exchange_name_(exchange_name), config_file_(config_file) {
-    std::cout << "[TRADING_ENGINE_PROCESS] Creating process for exchange: " << exchange_name << std::endl;
-    std::cout << "[TRADING_ENGINE_PROCESS] Using config file: " << config_file << std::endl;
+    LOG_INFO_COMP("TRADING_ENGINE_PROCESS", "Creating process for exchange: " + exchange_name);
+    LOG_INFO_COMP("TRADING_ENGINE_PROCESS", "Using config file: " + config_file);
 }
 
 TradingEngineProcess::~TradingEngineProcess() {
@@ -26,7 +28,7 @@ TradingEngineProcess::~TradingEngineProcess() {
 }
 
 bool TradingEngineProcess::start() {
-    std::cout << "[TRADING_ENGINE_PROCESS] Starting trading engine process..." << std::endl;
+    LOG_INFO_COMP("TRADING_ENGINE_PROCESS", "Starting trading engine process...");
     
     try {
         // Set up signal handlers
@@ -35,20 +37,20 @@ bool TradingEngineProcess::start() {
         
         // Create PID file
         if (!create_pid_file()) {
-            std::cerr << "[TRADING_ENGINE_PROCESS] Failed to create PID file" << std::endl;
+            LOG_ERROR_COMP("TRADING_ENGINE_PROCESS", "Failed to create PID file");
             return false;
         }
         
         // Create trading engine
         engine_ = TradingEngineFactory::create_trading_engine(exchange_name_, config_file_);
         if (!engine_) {
-            std::cerr << "[TRADING_ENGINE_PROCESS] Failed to create trading engine" << std::endl;
+            LOG_ERROR_COMP("TRADING_ENGINE_PROCESS", "Failed to create trading engine");
             return false;
         }
         
         // Initialize trading engine
         if (!engine_->initialize()) {
-            std::cerr << "[TRADING_ENGINE_PROCESS] Failed to initialize trading engine" << std::endl;
+            LOG_ERROR_COMP("TRADING_ENGINE_PROCESS", "Failed to initialize trading engine");
             return false;
         }
         
@@ -56,8 +58,8 @@ bool TradingEngineProcess::start() {
         running_ = true;
         process_id_ = getpid();
         
-        std::cout << "[TRADING_ENGINE_PROCESS] Trading engine process started successfully" << std::endl;
-        std::cout << "[TRADING_ENGINE_PROCESS] Process ID: " << process_id_ << std::endl;
+        LOG_INFO_COMP("TRADING_ENGINE_PROCESS", "Trading engine process started successfully");
+        LOG_INFO_COMP("TRADING_ENGINE_PROCESS", "Process ID: " + std::to_string(process_id_));
         
         // Run trading engine
         engine_->run();
@@ -65,13 +67,13 @@ bool TradingEngineProcess::start() {
         return true;
         
     } catch (const std::exception& e) {
-        std::cerr << "[TRADING_ENGINE_PROCESS] Exception during startup: " << e.what() << std::endl;
+        LOG_ERROR_COMP("TRADING_ENGINE_PROCESS", "Exception during startup: " + std::string(e.what()));
         return false;
     }
 }
 
 void TradingEngineProcess::stop() {
-    std::cout << "[TRADING_ENGINE_PROCESS] Stopping trading engine process..." << std::endl;
+    LOG_INFO_COMP("TRADING_ENGINE_PROCESS", "Stopping trading engine process...");
     
     running_ = false;
     g_shutdown_requested = true;
@@ -83,7 +85,7 @@ void TradingEngineProcess::stop() {
     
     remove_pid_file();
     
-    std::cout << "[TRADING_ENGINE_PROCESS] Trading engine process stopped" << std::endl;
+    LOG_INFO_COMP("TRADING_ENGINE_PROCESS", "Trading engine process stopped");
 }
 
 bool TradingEngineProcess::is_running() const {
@@ -91,12 +93,12 @@ bool TradingEngineProcess::is_running() const {
 }
 
 void TradingEngineProcess::signal_handler(int signal) {
-    std::cout << "[TRADING_ENGINE_PROCESS] Received signal: " << signal << std::endl;
+    LOG_INFO_COMP("TRADING_ENGINE_PROCESS", "Received signal: " + std::to_string(signal));
     
     switch (signal) {
         case SIGINT:
         case SIGTERM:
-            std::cout << "[TRADING_ENGINE_PROCESS] Shutdown signal received" << std::endl;
+            LOG_INFO_COMP("TRADING_ENGINE_PROCESS", "Shutdown signal received");
             g_shutdown_requested = true;
             if (g_process_instance) {
                 g_process_instance->stop();
@@ -104,30 +106,30 @@ void TradingEngineProcess::signal_handler(int signal) {
             break;
             
         case SIGHUP:
-            std::cout << "[TRADING_ENGINE_PROCESS] Reload signal received" << std::endl;
+            LOG_INFO_COMP("TRADING_ENGINE_PROCESS", "Reload signal received");
             // Configuration reload functionality will be implemented when needed
             break;
             
         case SIGUSR1:
-            std::cout << "[TRADING_ENGINE_PROCESS] Status signal received" << std::endl;
+            LOG_INFO_COMP("TRADING_ENGINE_PROCESS", "Status signal received");
             if (g_process_instance && g_process_instance->engine_) {
                 auto health = g_process_instance->engine_->get_health_status();
                 auto metrics = g_process_instance->engine_->get_performance_metrics();
                 
-                std::cout << "[TRADING_ENGINE_PROCESS] Health Status:" << std::endl;
+                LOG_INFO_COMP("TRADING_ENGINE_PROCESS", "Health Status:");
                 for (const auto& [key, value] : health) {
-                    std::cout << "  " << key << ": " << value << std::endl;
+                    LOG_INFO_COMP("TRADING_ENGINE_PROCESS", "  " + key + ": " + value);
                 }
                 
-                std::cout << "[TRADING_ENGINE_PROCESS] Performance Metrics:" << std::endl;
+                LOG_INFO_COMP("TRADING_ENGINE_PROCESS", "Performance Metrics:");
                 for (const auto& [key, value] : metrics) {
-                    std::cout << "  " << key << ": " << value << std::endl;
+                    LOG_INFO_COMP("TRADING_ENGINE_PROCESS", "  " + key + ": " + value);
                 }
             }
             break;
             
         default:
-            std::cout << "[TRADING_ENGINE_PROCESS] Unknown signal: " << signal << std::endl;
+            LOG_WARN_COMP("TRADING_ENGINE_PROCESS", "Unknown signal: " + std::to_string(signal));
             break;
     }
 }
@@ -144,20 +146,18 @@ bool TradingEngineProcess::create_pid_file() {
     try {
         std::ofstream pid_file(engine_->get_config().pid_file);
         if (!pid_file.is_open()) {
-            std::cerr << "[TRADING_ENGINE_PROCESS] Failed to open PID file: " 
-                      << engine_->get_config().pid_file << std::endl;
+            LOG_ERROR_COMP("TRADING_ENGINE_PROCESS", "Failed to open PID file: " + engine_->get_config().pid_file);
             return false;
         }
         
         pid_file << getpid() << std::endl;
         pid_file.close();
         
-        std::cout << "[TRADING_ENGINE_PROCESS] PID file created: " 
-                  << engine_->get_config().pid_file << std::endl;
+        LOG_INFO_COMP("TRADING_ENGINE_PROCESS", "PID file created: " + engine_->get_config().pid_file);
         return true;
         
     } catch (const std::exception& e) {
-        std::cerr << "[TRADING_ENGINE_PROCESS] Exception creating PID file: " << e.what() << std::endl;
+        LOG_ERROR_COMP("TRADING_ENGINE_PROCESS", "Exception creating PID file: " + std::string(e.what()));
         return false;
     }
 }
@@ -165,21 +165,20 @@ bool TradingEngineProcess::create_pid_file() {
 void TradingEngineProcess::remove_pid_file() {
     try {
         if (unlink(engine_->get_config().pid_file.c_str()) == 0) {
-            std::cout << "[TRADING_ENGINE_PROCESS] PID file removed: " 
-                      << engine_->get_config().pid_file << std::endl;
+            LOG_INFO_COMP("TRADING_ENGINE_PROCESS", "PID file removed: " + engine_->get_config().pid_file);
         }
     } catch (const std::exception& e) {
-        std::cerr << "[TRADING_ENGINE_PROCESS] Exception removing PID file: " << e.what() << std::endl;
+        LOG_ERROR_COMP("TRADING_ENGINE_PROCESS", "Exception removing PID file: " + std::string(e.what()));
     }
 }
 
 bool TradingEngineProcess::daemonize() {
-    std::cout << "[TRADING_ENGINE_PROCESS] Daemonizing process..." << std::endl;
+    LOG_INFO_COMP("TRADING_ENGINE_PROCESS", "Daemonizing process...");
     
     // Fork first time
     pid_t pid = fork();
     if (pid < 0) {
-        std::cerr << "[TRADING_ENGINE_PROCESS] First fork failed" << std::endl;
+        LOG_ERROR_COMP("TRADING_ENGINE_PROCESS", "First fork failed");
         return false;
     }
     
@@ -190,14 +189,14 @@ bool TradingEngineProcess::daemonize() {
     
     // Child process continues
     if (setsid() < 0) {
-        std::cerr << "[TRADING_ENGINE_PROCESS] setsid failed" << std::endl;
+        LOG_ERROR_COMP("TRADING_ENGINE_PROCESS", "setsid failed");
         return false;
     }
     
     // Fork second time
     pid = fork();
     if (pid < 0) {
-        std::cerr << "[TRADING_ENGINE_PROCESS] Second fork failed" << std::endl;
+        LOG_ERROR_COMP("TRADING_ENGINE_PROCESS", "Second fork failed");
         return false;
     }
     
@@ -208,7 +207,7 @@ bool TradingEngineProcess::daemonize() {
     
     // Change working directory
     if (chdir("/") < 0) {
-        std::cerr << "[TRADING_ENGINE_PROCESS] chdir failed" << std::endl;
+        LOG_ERROR_COMP("TRADING_ENGINE_PROCESS", "chdir failed");
         return false;
     }
     
@@ -222,7 +221,7 @@ bool TradingEngineProcess::daemonize() {
     open("/dev/null", O_WRONLY);
     open("/dev/null", O_WRONLY);
     
-    std::cout << "[TRADING_ENGINE_PROCESS] Process daemonized successfully" << std::endl;
+    LOG_INFO_COMP("TRADING_ENGINE_PROCESS", "Process daemonized successfully");
     return true;
 }
 
@@ -230,7 +229,7 @@ bool TradingEngineProcess::daemonize() {
 
 // Main function
 int main(int argc, char* argv[]) {
-    std::cout << "=== Trading Engine Process ===" << std::endl;
+    LOG_INFO_COMP("TRADING_ENGINE", "=== Trading Engine Process ===");
     
     // Load configuration from command line
     AppConfig cfg;
@@ -249,8 +248,8 @@ int main(int argc, char* argv[]) {
     }
     
     if (config_file.empty()) {
-        std::cerr << "Usage: " << argv[0] << " -c <path/to/config.ini> [--daemon]" << std::endl;
-        std::cerr << "Example: " << argv[0] << " -c /etc/trading_engine/trading_engine_binance.ini" << std::endl;
+        LOG_ERROR_COMP("TRADING_ENGINE", "Usage: " + std::string(argv[0]) + " -c <path/to/config.ini> [--daemon]");
+        LOG_ERROR_COMP("TRADING_ENGINE", "Example: " + std::string(argv[0]) + " -c /etc/trading_engine/trading_engine_binance.ini");
         return 1;
     }
 
@@ -259,16 +258,16 @@ int main(int argc, char* argv[]) {
     
     // Validate required configuration
     if (cfg.exchanges_csv.empty()) {
-        std::cerr << "Config missing required key: EXCHANGES" << std::endl;
+        LOG_ERROR_COMP("TRADING_ENGINE", "Config missing required key: EXCHANGES");
         return 1;
     }
     
     std::string exchange_name = cfg.exchanges_csv;
     std::transform(exchange_name.begin(), exchange_name.end(), exchange_name.begin(), ::toupper);
     
-    std::cout << "Starting trading engine for exchange: " << exchange_name << std::endl;
+    LOG_INFO_COMP("TRADING_ENGINE", "Starting trading engine for exchange: " + exchange_name);
     if (daemon_mode) {
-        std::cout << "Running in daemon mode" << std::endl;
+        LOG_INFO_COMP("TRADING_ENGINE", "Running in daemon mode");
     }
     
     try {
@@ -278,14 +277,14 @@ int main(int argc, char* argv[]) {
         // Daemonize if requested
         if (daemon_mode) {
             if (!process.daemonize()) {
-                std::cerr << "Failed to daemonize process" << std::endl;
+                LOG_ERROR_COMP("TRADING_ENGINE", "Failed to daemonize process");
                 return 1;
             }
         }
         
         // Start the process
         if (!process.start()) {
-            std::cerr << "Failed to start trading engine process" << std::endl;
+            LOG_ERROR_COMP("TRADING_ENGINE", "Failed to start trading engine process");
             return 1;
         }
         
@@ -294,11 +293,11 @@ int main(int argc, char* argv[]) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
         
-        std::cout << "Trading engine process completed" << std::endl;
+        LOG_INFO_COMP("TRADING_ENGINE", "Trading engine process completed");
         return 0;
         
     } catch (const std::exception& e) {
-        std::cerr << "Exception in main: " << e.what() << std::endl;
+        LOG_ERROR_COMP("TRADING_ENGINE", "Exception in main: " + std::string(e.what()));
         return 1;
     }
 }

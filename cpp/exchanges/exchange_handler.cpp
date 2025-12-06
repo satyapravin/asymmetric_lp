@@ -1,5 +1,5 @@
 #include "exchange_handler.hpp"
-#include <iostream>
+#include "../utils/logging/log_helper.hpp"
 #include <sstream>
 #include <chrono>
 #include <openssl/hmac.h>
@@ -25,17 +25,17 @@ ExchangeHandler::~ExchangeHandler() {
 bool ExchangeHandler::start() {
     if (running_.load()) return true;
     
-    std::cout << "[EXCHANGE_HANDLER] Starting " << config_.name << " handler" << std::endl;
+    LOG_INFO_COMP("EXCHANGE_HANDLER", "Starting " + config_.name + " handler");
     
     // Initialize HTTP handler
     if (!http_handler_->initialize()) {
-        std::cerr << "[EXCHANGE_HANDLER] Failed to initialize HTTP handler" << std::endl;
+        LOG_ERROR_COMP("EXCHANGE_HANDLER", "Failed to initialize HTTP handler");
         return false;
     }
     
     // Initialize WebSocket handler
     if (!websocket_handler_->initialize()) {
-        std::cerr << "[EXCHANGE_HANDLER] Failed to initialize WebSocket handler" << std::endl;
+        LOG_ERROR_COMP("EXCHANGE_HANDLER", "Failed to initialize WebSocket handler");
         return false;
     }
     
@@ -45,31 +45,31 @@ bool ExchangeHandler::start() {
     });
     
     websocket_handler_->set_error_callback([this](const std::string& error) {
-        std::cerr << "[EXCHANGE_HANDLER] WebSocket error: " << error << std::endl;
+        LOG_ERROR_COMP("EXCHANGE_HANDLER", "WebSocket error: " + error);
     });
     
     websocket_handler_->set_connect_callback([this](bool connected) {
         connected_.store(connected);
-        std::cout << "[EXCHANGE_HANDLER] WebSocket " << (connected ? "connected" : "disconnected") << std::endl;
+        LOG_INFO_COMP("EXCHANGE_HANDLER", "WebSocket " + std::string(connected ? "connected" : "disconnected"));
     });
     
     // Connect WebSocket
     if (!websocket_handler_->connect(config_.websocket_url)) {
-        std::cerr << "[EXCHANGE_HANDLER] Failed to connect WebSocket" << std::endl;
+        LOG_ERROR_COMP("EXCHANGE_HANDLER", "Failed to connect WebSocket");
         return false;
     }
     
     running_.store(true);
     connected_.store(true);
     
-    std::cout << "[EXCHANGE_HANDLER] Started successfully" << std::endl;
+    LOG_INFO_COMP("EXCHANGE_HANDLER", "Started successfully");
     return true;
 }
 
 void ExchangeHandler::stop() {
     if (!running_.load()) return;
     
-    std::cout << "[EXCHANGE_HANDLER] Stopping " << config_.name << " handler" << std::endl;
+    LOG_INFO_COMP("EXCHANGE_HANDLER", "Stopping " + config_.name + " handler");
     
     running_.store(false);
     connected_.store(false);
@@ -83,18 +83,19 @@ void ExchangeHandler::stop() {
         http_handler_->shutdown();
     }
     
-    std::cout << "[EXCHANGE_HANDLER] Stopped" << std::endl;
+    LOG_INFO_COMP("EXCHANGE_HANDLER", "Stopped");
 }
 
 bool ExchangeHandler::send_order(const Order& order) {
     if (!connected_.load()) {
-        std::cerr << "[EXCHANGE_HANDLER] Not connected - cannot send order" << std::endl;
+        LOG_ERROR_COMP("EXCHANGE_HANDLER", "Not connected - cannot send order");
         return false;
     }
     
-    std::cout << "[EXCHANGE_HANDLER] Sending order: " << order.client_order_id 
-              << " " << (order.side == OrderSide::BUY ? "BUY" : "SELL")
-              << " " << order.quantity << " @ " << order.price << std::endl;
+    std::string side_str = (order.side == OrderSide::BUY ? "BUY" : "SELL");
+    std::string log_msg = "Sending order: " + order.client_order_id + " " + side_str + 
+                          " " + std::to_string(order.quantity) + " @ " + std::to_string(order.price);
+    LOG_DEBUG_COMP("EXCHANGE_HANDLER", log_msg);
     
     try {
         // Create order payload
@@ -104,7 +105,7 @@ bool ExchangeHandler::send_order(const Order& order) {
         HttpResponse response = make_http_request("POST", "/fapi/v1/order", payload, true);
         
         if (!response.success) {
-            std::cerr << "[EXCHANGE_HANDLER] Order failed: " << response.error_message << std::endl;
+            LOG_ERROR_COMP("EXCHANGE_HANDLER", "Order failed: " + response.error_message);
             return false;
         }
         
@@ -112,14 +113,14 @@ bool ExchangeHandler::send_order(const Order& order) {
         Json::Value root;
         Json::Reader reader;
         if (!reader.parse(response.body, root)) {
-            std::cerr << "[EXCHANGE_HANDLER] Failed to parse order response" << std::endl;
+            LOG_ERROR_COMP("EXCHANGE_HANDLER", "Failed to parse order response");
             return false;
         }
         
         // Check for API errors
         if (root.isMember("code") && root["code"].asInt() != 0) {
             std::string error_msg = root["msg"].asString();
-            std::cerr << "[EXCHANGE_HANDLER] API error: " << error_msg << std::endl;
+            LOG_ERROR_COMP("EXCHANGE_HANDLER", "API error: " + error_msg);
             return false;
         }
         
@@ -141,24 +142,24 @@ bool ExchangeHandler::send_order(const Order& order) {
             order_event_callback_(updated_order);
         }
         
-        std::cout << "[EXCHANGE_HANDLER] Order sent successfully: " << order.client_order_id 
-                  << " -> " << updated_order.exchange_order_id << std::endl;
+        LOG_DEBUG_COMP("EXCHANGE_HANDLER", "Order sent successfully: " + order.client_order_id + 
+                      " -> " + updated_order.exchange_order_id);
         
         return true;
         
     } catch (const std::exception& e) {
-        std::cerr << "[EXCHANGE_HANDLER] Error sending order: " << e.what() << std::endl;
+        LOG_ERROR_COMP("EXCHANGE_HANDLER", "Error sending order: " + std::string(e.what()));
         return false;
     }
 }
 
 bool ExchangeHandler::cancel_order(const std::string& client_order_id) {
     if (!connected_.load()) {
-        std::cerr << "[EXCHANGE_HANDLER] Not connected - cannot cancel order" << std::endl;
+        LOG_ERROR_COMP("EXCHANGE_HANDLER", "Not connected - cannot cancel order");
         return false;
     }
     
-    std::cout << "[EXCHANGE_HANDLER] Cancelling order: " << client_order_id << std::endl;
+    LOG_DEBUG_COMP("EXCHANGE_HANDLER", "Cancelling order: " + client_order_id);
     
     try {
         // Create cancel payload
@@ -168,7 +169,7 @@ bool ExchangeHandler::cancel_order(const std::string& client_order_id) {
         HttpResponse response = make_http_request("DELETE", "/fapi/v1/order", payload, true);
         
         if (!response.success) {
-            std::cerr << "[EXCHANGE_HANDLER] Cancel failed: " << response.error_message << std::endl;
+            LOG_ERROR_COMP("EXCHANGE_HANDLER", "Cancel failed: " + response.error_message);
             return false;
         }
         
@@ -176,26 +177,26 @@ bool ExchangeHandler::cancel_order(const std::string& client_order_id) {
         Json::Value root;
         Json::Reader reader;
         if (!reader.parse(response.body, root)) {
-            std::cerr << "[EXCHANGE_HANDLER] Failed to parse cancel response" << std::endl;
+            LOG_ERROR_COMP("EXCHANGE_HANDLER", "Failed to parse cancel response");
             return false;
         }
         
         // Check for API errors
         if (root.isMember("code") && root["code"].asInt() != 0) {
             std::string error_msg = root["msg"].asString();
-            std::cerr << "[EXCHANGE_HANDLER] API error: " << error_msg << std::endl;
+            LOG_ERROR_COMP("EXCHANGE_HANDLER", "API error: " + error_msg);
             return false;
         }
         
         // Update order status
         update_order_status(client_order_id, OrderStatus::CANCELLED);
         
-        std::cout << "[EXCHANGE_HANDLER] Order cancelled successfully: " << client_order_id << std::endl;
+        LOG_DEBUG_COMP("EXCHANGE_HANDLER", "Order cancelled successfully: " + client_order_id);
         
         return true;
         
     } catch (const std::exception& e) {
-        std::cerr << "[EXCHANGE_HANDLER] Error cancelling order: " << e.what() << std::endl;
+        LOG_ERROR_COMP("EXCHANGE_HANDLER", "Error cancelling order: " + std::string(e.what()));
         return false;
     }
 }
@@ -336,7 +337,7 @@ void BinanceHandler::handle_websocket_message(const std::string& message) {
     Json::Reader reader;
     
     if (!reader.parse(message, root)) {
-        std::cerr << "[BINANCE_HANDLER] Failed to parse WebSocket message" << std::endl;
+        LOG_ERROR_COMP("BINANCE_HANDLER", "Failed to parse WebSocket message");
         return;
     }
     
@@ -380,7 +381,7 @@ void BinanceHandler::handle_order_update(const std::string& message) {
 
 void BinanceHandler::handle_account_update(const std::string& message) {
     // Handle account balance updates
-    std::cout << "[BINANCE_HANDLER] Account update received" << std::endl;
+    LOG_INFO_COMP("BINANCE_HANDLER", "Account update received");
 }
 
 std::string BinanceHandler::generate_signature(const std::string& data) {
@@ -404,14 +405,14 @@ std::string BinanceHandler::create_listen_key() {
     HttpResponse response = make_http_request("POST", "/fapi/v1/listenKey", "", true);
     
     if (!response.success) {
-        std::cerr << "[BINANCE_HANDLER] Failed to create listen key" << std::endl;
+        LOG_ERROR_COMP("BINANCE_HANDLER", "Failed to create listen key");
         return "";
     }
     
     Json::Value root;
     Json::Reader reader;
     if (!reader.parse(response.body, root)) {
-        std::cerr << "[BINANCE_HANDLER] Failed to parse listen key response" << std::endl;
+        LOG_ERROR_COMP("BINANCE_HANDLER", "Failed to parse listen key response");
         return "";
     }
     
@@ -427,7 +428,7 @@ void BinanceHandler::refresh_listen_key() {
             if (refresh_running_.load()) {
                 HttpResponse response = make_http_request("PUT", "/fapi/v1/listenKey", "", true);
                 if (!response.success) {
-                    std::cerr << "[BINANCE_HANDLER] Failed to refresh listen key" << std::endl;
+                    LOG_ERROR_COMP("BINANCE_HANDLER", "Failed to refresh listen key");
                 }
             }
         }

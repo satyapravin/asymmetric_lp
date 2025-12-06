@@ -1,6 +1,6 @@
 #include "oms_factory.hpp"
+#include "../utils/logging/log_helper.hpp"
 #include <algorithm>
-#include <iostream>
 #include <json/json.h>
 #include <sstream>
 
@@ -14,7 +14,7 @@ namespace exchanges {
 std::unique_ptr<IExchangeOMS> OMSFactory::create(const std::string& exchange_name, const std::string& config_json) {
     std::string normalized_name = normalize_exchange_name(exchange_name);
     
-    std::cout << "[OMS_FACTORY] Creating OMS for exchange: " << normalized_name << std::endl;
+    LOG_INFO_COMP("OMS_FACTORY", "Creating OMS for exchange: " + normalized_name);
     
     // Parse configuration JSON
     Json::Value config;
@@ -23,7 +23,7 @@ std::unique_ptr<IExchangeOMS> OMSFactory::create(const std::string& exchange_nam
     std::istringstream config_stream(config_json);
     
     if (!Json::parseFromStream(builder, config_stream, &config, &errors)) {
-        std::cerr << "[OMS_FACTORY] Failed to parse configuration JSON: " << errors << std::endl;
+        LOG_ERROR_COMP("OMS_FACTORY", "Failed to parse configuration JSON: " + errors);
         return nullptr;
     }
     
@@ -37,7 +37,7 @@ std::unique_ptr<IExchangeOMS> OMSFactory::create(const std::string& exchange_nam
         binance_config.timeout_ms = config.get("timeout_ms", 5000).asInt();
         
         if (binance_config.api_key.empty() || binance_config.api_secret.empty() || binance_config.base_url.empty()) {
-            std::cerr << "[OMS_FACTORY] Missing required Binance configuration" << std::endl;
+            LOG_ERROR_COMP("OMS_FACTORY", "Missing required Binance configuration");
             return nullptr;
         }
         
@@ -49,7 +49,7 @@ std::unique_ptr<IExchangeOMS> OMSFactory::create(const std::string& exchange_nam
         deribit_config.testnet = config.get("testnet", false).asBool();
         
         if (deribit_config.client_id.empty() || deribit_config.client_secret.empty()) {
-            std::cerr << "[OMS_FACTORY] Missing required Deribit configuration" << std::endl;
+            LOG_ERROR_COMP("OMS_FACTORY", "Missing required Deribit configuration");
             return nullptr;
         }
         
@@ -60,13 +60,13 @@ std::unique_ptr<IExchangeOMS> OMSFactory::create(const std::string& exchange_nam
         grvt_config.testnet = config.get("testnet", false).asBool();
         
         if (grvt_config.api_key.empty()) {
-            std::cerr << "[OMS_FACTORY] Missing required GRVT configuration" << std::endl;
+            LOG_ERROR_COMP("OMS_FACTORY", "Missing required GRVT configuration");
             return nullptr;
         }
         
         return std::make_unique<grvt::GrvtOMS>(grvt_config);
     } else {
-        std::cerr << "[OMS_FACTORY] Unsupported exchange: " << exchange_name << std::endl;
+        LOG_ERROR_COMP("OMS_FACTORY", "Unsupported exchange: " + exchange_name);
         return nullptr;
     }
 }
@@ -104,7 +104,7 @@ std::string OMSFactory::normalize_exchange_name(const std::string& exchange_name
 std::unique_ptr<IExchangeOMS> OMSFactory::create(const std::string& exchange_name) {
     std::string normalized_name = normalize_exchange_name(exchange_name);
     
-    std::cout << "[OMS_FACTORY] Creating OMS for exchange: " << normalized_name << std::endl;
+    LOG_INFO_COMP("OMS_FACTORY", "Creating OMS for exchange: " + normalized_name);
     
     if (normalized_name == "binance") {
         binance::BinanceConfig config;
@@ -128,7 +128,7 @@ std::unique_ptr<IExchangeOMS> OMSFactory::create(const std::string& exchange_nam
         return std::make_unique<grvt::GrvtOMS>(config);
     }
     
-    std::cerr << "[OMS_FACTORY] Unsupported exchange: " << normalized_name << std::endl;
+    LOG_ERROR_COMP("OMS_FACTORY", "Unsupported exchange: " + normalized_name);
     return nullptr;
 }
 

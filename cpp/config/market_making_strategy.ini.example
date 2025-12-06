@@ -1,0 +1,33 @@
+# Market Making Strategy Configuration
+# Copy this file to market_making_strategy.ini and customize as needed
+
+[market_making_strategy]
+# GLFT Model Parameters
+glft_risk_aversion = 0.1
+glft_target_inventory_ratio = 0.0
+glft_base_spread = 0.0002
+glft_execution_cost = 0.0
+glft_inventory_penalty = 0.024
+glft_terminal_inventory_penalty = 0.05
+glft_max_position_size = 0.5
+glft_inventory_constraint_active = false
+
+# Quote Sizing Parameters (as percentages of leveraged balance)
+leverage = 1.0
+base_quote_size_pct = 0.02
+min_quote_size_pct = 0.005
+max_quote_size_pct = 0.25
+
+# Quote Update Throttling
+min_price_change_bps = 5.0
+min_inventory_change_pct = 1.0
+quote_update_interval_ms = 5000
+min_quote_price_change_bps = 2.0
+
+# Risk Management
+min_spread_bps = 5.0
+max_position_size = 100.0
+
+# Volatility Calculation
+ewma_decay_factor = 0.94
+

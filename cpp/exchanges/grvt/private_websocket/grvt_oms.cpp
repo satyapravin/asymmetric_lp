@@ -1,6 +1,6 @@
 #include "grvt_oms.hpp"
 #include "../grvt_auth.hpp"
-#include <iostream>
+#include "../../../utils/logging/log_helper.hpp"
 #include <sstream>
 #include <chrono>
 #include <thread>
@@ -9,12 +9,12 @@
 namespace grvt {
 
 GrvtOMS::GrvtOMS(const GrvtOMSConfig& config) : config_(config) {
-    std::cout << "[GRVT_OMS] Initializing GRVT OMS" << std::endl;
+    LOG_INFO_COMP("GRVT_OMS", "Initializing GRVT OMS");
     
     // If all credentials are provided in config, mark as authenticated
     if (!config_.api_key.empty() && !config_.session_cookie.empty() && !config_.account_id.empty()) {
         authenticated_.store(true);
-        std::cout << "[GRVT_OMS] Credentials provided in config, marked as authenticated" << std::endl;
+        LOG_INFO_COMP("GRVT_OMS", "Credentials provided in config, marked as authenticated");
     } else {
         authenticated_.store(false);
     }
@@ -25,10 +25,10 @@ GrvtOMS::~GrvtOMS() {
 }
 
 bool GrvtOMS::connect() {
-    std::cout << "[GRVT_OMS] Connecting to GRVT WebSocket..." << std::endl;
+    LOG_INFO_COMP("GRVT_OMS", "Connecting to GRVT WebSocket...");
     
     if (connected_.load()) {
-        std::cout << "[GRVT_OMS] Already connected" << std::endl;
+        LOG_INFO_COMP("GRVT_OMS", "Already connected");
         return true;
     }
     
@@ -39,24 +39,24 @@ bool GrvtOMS::connect() {
         
         // Authenticate
         if (!authenticate_websocket()) {
-            std::cerr << "[GRVT_OMS] Authentication failed" << std::endl;
+            LOG_ERROR_COMP("GRVT_OMS", "Authentication failed");
             return false;
         }
         
         connected_ = true;
         authenticated_ = true;
         
-        std::cout << "[GRVT_OMS] Connected successfully" << std::endl;
+        LOG_INFO_COMP("GRVT_OMS", "Connected successfully");
         return true;
         
     } catch (const std::exception& e) {
-        std::cerr << "[GRVT_OMS] Connection failed: " << e.what() << std::endl;
+        LOG_ERROR_COMP("GRVT_OMS", "Connection failed: " + std::string(e.what()));
         return false;
     }
 }
 
 void GrvtOMS::disconnect() {
-    std::cout << "[GRVT_OMS] Disconnecting..." << std::endl;
+    LOG_INFO_COMP("GRVT_OMS", "Disconnecting...");
     
     websocket_running_ = false;
     connected_ = false;
@@ -66,7 +66,7 @@ void GrvtOMS::disconnect() {
         websocket_thread_.join();
     }
     
-    std::cout << "[GRVT_OMS] Disconnected" << std::endl;
+    LOG_INFO_COMP("GRVT_OMS", "Disconnected");
 }
 
 bool GrvtOMS::is_connected() const {
@@ -92,10 +92,10 @@ void GrvtOMS::set_auth_credentials(const std::string& api_key, const std::string
             config_.session_cookie = auth_result.session_cookie;
             config_.account_id = auth_result.account_id;
             authenticated_.store(true);
-            std::cout << "[GRVT_OMS] Authentication successful via API key" << std::endl;
+            LOG_INFO_COMP("GRVT_OMS", "Authentication successful via API key");
         } else {
             authenticated_.store(false);
-            std::cerr << "[GRVT_OMS] Authentication failed: " << auth_result.error_message << std::endl;
+            LOG_ERROR_COMP("GRVT_OMS", "Authentication failed: " + auth_result.error_message);
         }
     } else {
         authenticated_.store(false);
@@ -108,12 +108,12 @@ bool GrvtOMS::is_authenticated() const {
 
 bool GrvtOMS::cancel_order(const std::string& cl_ord_id, const std::string& exch_ord_id) {
     if (!is_connected() || !is_authenticated()) {
-        std::cerr << "[GRVT_OMS] Not connected or authenticated" << std::endl;
+        LOG_ERROR_COMP("GRVT_OMS", "Not connected or authenticated");
         return false;
     }
     
     std::string cancel_msg = create_cancel_message(cl_ord_id, exch_ord_id);
-    std::cout << "[GRVT_OMS] Sending cancel order: " << cancel_msg << std::endl;
+    LOG_DEBUG_COMP("GRVT_OMS", "Sending cancel order: " + cancel_msg);
     
     // Mock WebSocket send
     handle_websocket_message(R"({"jsonrpc":"2.0","id":)" + std::to_string(request_id_++) + R"(,"result":{"orderId":")" + exch_ord_id + R"(","status":"CANCELED"}})");
@@ -123,12 +123,12 @@ bool GrvtOMS::cancel_order(const std::string& cl_ord_id, const std::string& exch
 
 bool GrvtOMS::replace_order(const std::string& cl_ord_id, const proto::OrderRequest& new_order) {
     if (!is_connected() || !is_authenticated()) {
-        std::cerr << "[GRVT_OMS] Not connected or authenticated" << std::endl;
+        LOG_ERROR_COMP("GRVT_OMS", "Not connected or authenticated");
         return false;
     }
     
     std::string replace_msg = create_replace_message(cl_ord_id, new_order);
-    std::cout << "[GRVT_OMS] Sending replace order: " << replace_msg << std::endl;
+    LOG_DEBUG_COMP("GRVT_OMS", "Sending replace order: " + replace_msg);
     
     // Mock WebSocket send
     handle_websocket_message(R"({"jsonrpc":"2.0","id":)" + std::to_string(request_id_++) + R"(,"result":{"orderId":")" + cl_ord_id + R"(","status":"REPLACED"}})");
@@ -150,12 +150,12 @@ proto::OrderEvent GrvtOMS::get_order_status(const std::string& cl_ord_id, const 
 
 bool GrvtOMS::place_market_order(const std::string& symbol, const std::string& side, double quantity) {
     if (!is_connected() || !is_authenticated()) {
-        std::cerr << "[GRVT_OMS] Not connected or authenticated" << std::endl;
+        LOG_ERROR_COMP("GRVT_OMS", "Not connected or authenticated");
         return false;
     }
     
     std::string order_msg = create_order_message(symbol, side, quantity, 0.0, "MARKET");
-    std::cout << "[GRVT_OMS] Sending market order: " << order_msg << std::endl;
+    LOG_DEBUG_COMP("GRVT_OMS", "Sending market order: " + order_msg);
     
     // Mock WebSocket send
     std::string mock_response = R"({"jsonrpc":"2.0","id":)" + std::to_string(request_id_++) + R"(,"result":{"orderId":")" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) + R"(","status":"NEW","symbol":")" + symbol + R"(","side":")" + side + R"(","quantity":)" + std::to_string(quantity) + R"(}})";
@@ -166,12 +166,12 @@ bool GrvtOMS::place_market_order(const std::string& symbol, const std::string& s
 
 bool GrvtOMS::place_limit_order(const std::string& symbol, const std::string& side, double quantity, double price) {
     if (!is_connected() || !is_authenticated()) {
-        std::cerr << "[GRVT_OMS] Not connected or authenticated" << std::endl;
+        LOG_ERROR_COMP("GRVT_OMS", "Not connected or authenticated");
         return false;
     }
     
     std::string order_msg = create_order_message(symbol, side, quantity, price, "LIMIT");
-    std::cout << "[GRVT_OMS] Sending limit order: " << order_msg << std::endl;
+    LOG_DEBUG_COMP("GRVT_OMS", "Sending limit order: " + order_msg);
     
     // Mock WebSocket send
     std::string mock_response = R"({"jsonrpc":"2.0","id":)" + std::to_string(request_id_++) + R"(,"result":{"orderId":")" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) + R"(","status":"NEW","symbol":")" + symbol + R"(","side":")" + side + R"(","quantity":)" + std::to_string(quantity) + R"(,"price":)" + std::to_string(price) + R"(}})";
@@ -185,7 +185,7 @@ void GrvtOMS::set_order_status_callback(OrderStatusCallback callback) {
 }
 
 void GrvtOMS::websocket_loop() {
-    std::cout << "[GRVT_OMS] WebSocket loop started" << std::endl;
+    LOG_INFO_COMP("GRVT_OMS", "WebSocket loop started");
     
     while (websocket_running_) {
         try {
@@ -200,12 +200,12 @@ void GrvtOMS::websocket_loop() {
             }
             
         } catch (const std::exception& e) {
-            std::cerr << "[GRVT_OMS] WebSocket loop error: " << e.what() << std::endl;
+            LOG_ERROR_COMP("GRVT_OMS", "WebSocket loop error: " + std::string(e.what()));
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
     }
     
-    std::cout << "[GRVT_OMS] WebSocket loop stopped" << std::endl;
+    LOG_INFO_COMP("GRVT_OMS", "WebSocket loop stopped");
 }
 
 void GrvtOMS::handle_websocket_message(const std::string& message) {
@@ -214,7 +214,7 @@ void GrvtOMS::handle_websocket_message(const std::string& message) {
         Json::Reader reader;
         
         if (!reader.parse(message, root)) {
-            std::cerr << "[GRVT_OMS] Failed to parse WebSocket message" << std::endl;
+            LOG_ERROR_COMP("GRVT_OMS", "Failed to parse WebSocket message");
             return;
         }
         
@@ -229,11 +229,11 @@ void GrvtOMS::handle_websocket_message(const std::string& message) {
             }
         } else if (root.isMember("result")) {
             // Handle order response
-            std::cout << "[GRVT_OMS] Order response: " << message << std::endl;
+            LOG_DEBUG_COMP("GRVT_OMS", "Order response: " + message);
         }
         
     } catch (const std::exception& e) {
-        std::cerr << "[GRVT_OMS] Error handling WebSocket message: " << e.what() << std::endl;
+        LOG_ERROR_COMP("GRVT_OMS", "Error handling WebSocket message: " + std::string(e.what()));
     }
 }
 
@@ -253,12 +253,12 @@ void GrvtOMS::handle_order_update(const Json::Value& order_data) {
         order_status_callback_(order_event);
     }
     
-    std::cout << "[GRVT_OMS] Order update: " << order_event.cl_ord_id() 
-              << " status: " << order_data["status"].asString() << std::endl;
+    LOG_DEBUG_COMP("GRVT_OMS", "Order update: " + order_event.cl_ord_id() + 
+                  " status: " + order_data["status"].asString());
 }
 
 void GrvtOMS::handle_trade_update(const Json::Value& trade_data) {
-    std::cout << "[GRVT_OMS] Trade update: " << trade_data.toStyledString() << std::endl;
+    LOG_DEBUG_COMP("GRVT_OMS", "Trade update: " + trade_data.toStyledString());
 }
 
 std::string GrvtOMS::create_order_message(const std::string& symbol, const std::string& side, 
@@ -322,7 +322,7 @@ std::string GrvtOMS::create_replace_message(const std::string& cl_ord_id, const 
 
 bool GrvtOMS::authenticate_websocket() {
     std::string auth_msg = create_auth_message();
-    std::cout << "[GRVT_OMS] Authenticating: " << auth_msg << std::endl;
+    LOG_INFO_COMP("GRVT_OMS", "Authenticating: " + auth_msg);
     
     // Mock authentication response
     std::string mock_auth_response = R"({"jsonrpc":"2.0","id":)" + std::to_string(request_id_++) + R"(,"result":{"authenticated":true}})";

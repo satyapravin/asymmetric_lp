@@ -1,5 +1,5 @@
 #include "trading_engine_lib.hpp"
-#include <iostream>
+#include "../utils/logging/logger.hpp"
 #include <chrono>
 #include <thread>
 #include <algorithm>
@@ -7,7 +7,8 @@
 namespace trading_engine {
 
 TradingEngineLib::TradingEngineLib() {
-    std::cout << "[TRADING_ENGINE] Initializing Trading Engine Library" << std::endl;
+    logging::Logger logger("TRADING_ENGINE");
+    logger.info("Initializing Trading Engine Library");
     
     running_.store(false);
     // exchange_name_ will be set via set_exchange() method
@@ -15,23 +16,25 @@ TradingEngineLib::TradingEngineLib() {
     // Initialize order state machine
     order_state_machine_ = std::make_unique<OrderStateMachine>();
     
-    std::cout << "[TRADING_ENGINE] Trading Engine Library initialized" << std::endl;
+    logger.debug("Trading Engine Library initialized");
 }
 
 TradingEngineLib::~TradingEngineLib() {
-    std::cout << "[TRADING_ENGINE] Destroying Trading Engine Library" << std::endl;
+    logging::Logger logger("TRADING_ENGINE");
+    logger.info("Destroying Trading Engine Library");
     stop();
 }
 
 bool TradingEngineLib::initialize(const std::string& config_file) {
-    std::cout << "[TRADING_ENGINE] Initializing with config: " << config_file << std::endl;
+    logging::Logger logger("TRADING_ENGINE");
+    logger.info("Initializing with config: " + config_file);
     
     try {
         // Initialize configuration manager
         config_manager_ = std::make_unique<config::ProcessConfigManager>();
         if (!config_file.empty()) {
             if (!config_manager_->load_config(config_file)) {
-                std::cerr << "[TRADING_ENGINE] Failed to load config file: " << config_file << std::endl;
+                logger.error("Failed to load config file: " + config_file);
                 return false;
             }
         }
@@ -39,20 +42,21 @@ bool TradingEngineLib::initialize(const std::string& config_file) {
         // Setup exchange OMS
         setup_exchange_oms();
         
-        std::cout << "[TRADING_ENGINE] Initialization complete" << std::endl;
+        logger.info("Initialization complete");
         return true;
         
     } catch (const std::exception& e) {
-        std::cerr << "[TRADING_ENGINE] Initialization failed: " << e.what() << std::endl;
+        logger.error("Initialization failed: " + std::string(e.what()));
         return false;
     }
 }
 
 void TradingEngineLib::start() {
-    std::cout << "[TRADING_ENGINE] Starting Trading Engine" << std::endl;
+    logging::Logger logger("TRADING_ENGINE");
+    logger.info("Starting Trading Engine");
     
     if (running_.load()) {
-        std::cout << "[TRADING_ENGINE] Already running" << std::endl;
+        logger.debug("Already running");
         return;
     }
     
@@ -65,21 +69,22 @@ void TradingEngineLib::start() {
     // Connect to exchange OMS
     if (exchange_oms_) {
         if (!exchange_oms_->connect()) {
-            std::cerr << "[TRADING_ENGINE] Failed to connect to exchange OMS" << std::endl;
+            logger.error("Failed to connect to exchange OMS");
             handle_error("Failed to connect to exchange OMS");
         } else {
-            std::cout << "[TRADING_ENGINE] Connected to exchange OMS" << std::endl;
+            logger.info("Connected to exchange OMS");
         }
     }
     
-    std::cout << "[TRADING_ENGINE] Trading Engine started" << std::endl;
+    logger.info("Trading Engine started");
 }
 
 void TradingEngineLib::stop() {
-    std::cout << "[TRADING_ENGINE] Stopping Trading Engine" << std::endl;
+    logging::Logger logger("TRADING_ENGINE");
+    logger.info("Stopping Trading Engine");
     
     if (!running_.load()) {
-        std::cout << "[TRADING_ENGINE] Already stopped" << std::endl;
+        logger.debug("Already stopped");
         return;
     }
     
@@ -99,22 +104,25 @@ void TradingEngineLib::stop() {
     // Disconnect from exchange OMS
     if (exchange_oms_) {
         exchange_oms_->disconnect();
-        std::cout << "[TRADING_ENGINE] Disconnected from exchange OMS" << std::endl;
+        logger.debug("Disconnected from exchange OMS");
     }
     
-    std::cout << "[TRADING_ENGINE] Trading Engine stopped" << std::endl;
+    logger.info("Trading Engine stopped");
 }
 
 bool TradingEngineLib::send_order(const std::string& cl_ord_id, const std::string& symbol, 
                                  proto::Side side, proto::OrderType type, double qty, double price) {
+    logging::Logger logger("TRADING_ENGINE");
     if (!running_.load() || !exchange_oms_) {
-        std::cerr << "[TRADING_ENGINE] Cannot send order: not running or no exchange OMS" << std::endl;
+        logger.error("Cannot send order: not running or no exchange OMS");
         return false;
     }
     
-    std::cout << "[TRADING_ENGINE] Sending order: " << cl_ord_id << " " << symbol 
-              << " " << (side == proto::Side::BUY ? "BUY" : "SELL") 
-              << " " << qty << "@" << price << std::endl;
+    std::stringstream ss;
+    ss << "Sending order: " << cl_ord_id << " " << symbol 
+       << " " << (side == proto::Side::BUY ? "BUY" : "SELL") 
+       << " " << qty << "@" << price;
+    logger.debug(ss.str());
     
     // Create order request
     proto::OrderRequest order_request;
@@ -157,9 +165,9 @@ bool TradingEngineLib::send_order(const std::string& cl_ord_id, const std::strin
             order_states_[cl_ord_id] = order_state;
         }
         
-        std::cout << "[TRADING_ENGINE] Order sent successfully" << std::endl;
+        logger.debug("Order sent successfully");
     } else {
-        std::cerr << "[TRADING_ENGINE] Failed to send order" << std::endl;
+        logger.error("Failed to send order");
         handle_error("Failed to send order to exchange");
     }
     
@@ -167,20 +175,21 @@ bool TradingEngineLib::send_order(const std::string& cl_ord_id, const std::strin
 }
 
 bool TradingEngineLib::cancel_order(const std::string& cl_ord_id) {
+    logging::Logger logger("TRADING_ENGINE");
     if (!running_.load() || !exchange_oms_) {
-        std::cerr << "[TRADING_ENGINE] Cannot cancel order: not running or no exchange OMS" << std::endl;
+        logger.error("Cannot cancel order: not running or no exchange OMS");
         return false;
     }
     
-    std::cout << "[TRADING_ENGINE] Cancelling order: " << cl_ord_id << std::endl;
+    logger.debug("Cancelling order: " + cl_ord_id);
     
     // Send to exchange OMS
     bool success = exchange_oms_->cancel_order(cl_ord_id, "");
     
     if (success) {
-        std::cout << "[TRADING_ENGINE] Cancel request sent successfully" << std::endl;
+        logger.debug("Cancel request sent successfully");
     } else {
-        std::cerr << "[TRADING_ENGINE] Failed to send cancel request" << std::endl;
+        logger.error("Failed to send cancel request");
         handle_error("Failed to send cancel request to exchange");
     }
     
@@ -188,13 +197,15 @@ bool TradingEngineLib::cancel_order(const std::string& cl_ord_id) {
 }
 
 bool TradingEngineLib::modify_order(const std::string& cl_ord_id, double new_price, double new_qty) {
+    logging::Logger logger("TRADING_ENGINE");
     if (!running_.load() || !exchange_oms_) {
-        std::cerr << "[TRADING_ENGINE] Cannot modify order: not running or no exchange OMS" << std::endl;
+        logger.error("Cannot modify order: not running or no exchange OMS");
         return false;
     }
     
-    std::cout << "[TRADING_ENGINE] Modifying order: " << cl_ord_id 
-              << " new_price=" << new_price << " new_qty=" << new_qty << std::endl;
+    std::stringstream ss;
+    ss << "Modifying order: " << cl_ord_id << " new_price=" << new_price << " new_qty=" << new_qty;
+    logger.debug(ss.str());
     
     // Create modify request
     proto::OrderRequest modify_request;
@@ -206,9 +217,9 @@ bool TradingEngineLib::modify_order(const std::string& cl_ord_id, double new_pri
     bool success = exchange_oms_->replace_order(cl_ord_id, modify_request);
     
     if (success) {
-        std::cout << "[TRADING_ENGINE] Modify request sent successfully" << std::endl;
+        logger.debug("Modify request sent successfully");
     } else {
-        std::cerr << "[TRADING_ENGINE] Failed to send modify request" << std::endl;
+        logger.error("Failed to send modify request");
         handle_error("Failed to send modify request to exchange");
     }
     
@@ -255,15 +266,16 @@ std::vector<OrderStateInfo> TradingEngineLib::get_all_orders() const {
 }
 
 void TradingEngineLib::setup_exchange_oms() {
+    logging::Logger logger("TRADING_ENGINE");
     if (exchange_name_.empty()) {
-        std::cerr << "[TRADING_ENGINE] Exchange name not set. Call set_exchange() first." << std::endl;
+        logger.error("Exchange name not set. Call set_exchange() first.");
         return;
     }
     
-    std::cout << "[TRADING_ENGINE] Setting up exchange OMS for: " << exchange_name_ << std::endl;
+    logger.info("Setting up exchange OMS for: " + exchange_name_);
     
     if (!config_manager_) {
-        std::cerr << "[TRADING_ENGINE] Configuration manager not initialized" << std::endl;
+        logger.error("Configuration manager not initialized");
         return;
     }
     
@@ -271,7 +283,7 @@ void TradingEngineLib::setup_exchange_oms() {
     exchange_oms_ = exchanges::OMSFactory::create(exchange_name_);
     
     if (!exchange_oms_) {
-        std::cerr << "[TRADING_ENGINE] Failed to create exchange OMS for: " << exchange_name_ << std::endl;
+        logger.error("Failed to create exchange OMS for: " + exchange_name_);
         return;
     }
     
@@ -280,11 +292,12 @@ void TradingEngineLib::setup_exchange_oms() {
         handle_order_event(order_event);
     });
     
-    std::cout << "[TRADING_ENGINE] Exchange OMS setup complete" << std::endl;
+    logger.debug("Exchange OMS setup complete");
 }
 
 void TradingEngineLib::message_processing_loop() {
-    std::cout << "[TRADING_ENGINE] Starting message processing loop" << std::endl;
+    logging::Logger logger("TRADING_ENGINE");
+    logger.debug("Starting message processing loop");
     
     while (message_processing_running_.load()) {
         std::unique_lock<std::mutex> lock(message_queue_mutex_);
@@ -311,11 +324,13 @@ void TradingEngineLib::message_processing_loop() {
                     handle_order_request(order_request);
                     statistics_.zmq_messages_received.fetch_add(1);
                 } else {
-                    std::cerr << "[TRADING_ENGINE] Failed to parse order request message" << std::endl;
+                    logging::Logger logger("TRADING_ENGINE");
+                    logger.error("Failed to parse order request message");
                     statistics_.parse_errors.fetch_add(1);
                 }
             } catch (const std::exception& e) {
-                std::cerr << "[TRADING_ENGINE] Error processing message: " << e.what() << std::endl;
+                logging::Logger logger("TRADING_ENGINE");
+                logger.error("Error processing message: " + std::string(e.what()));
                 statistics_.parse_errors.fetch_add(1);
             }
             
@@ -323,11 +338,13 @@ void TradingEngineLib::message_processing_loop() {
         }
     }
     
-    std::cout << "[TRADING_ENGINE] Message processing loop stopped" << std::endl;
+    logging::Logger logger("TRADING_ENGINE");
+    logger.debug("Message processing loop stopped");
 }
 
 void TradingEngineLib::handle_order_request(const proto::OrderRequest& order_request) {
-    std::cout << "[TRADING_ENGINE] Handling order request: " << order_request.cl_ord_id() << std::endl;
+    logging::Logger logger("TRADING_ENGINE");
+    logger.debug("Handling order request: " + order_request.cl_ord_id());
     
     statistics_.orders_received.fetch_add(1);
     
@@ -348,8 +365,9 @@ void TradingEngineLib::handle_order_request(const proto::OrderRequest& order_req
 }
 
 void TradingEngineLib::handle_order_event(const proto::OrderEvent& order_event) {
-    std::cout << "[TRADING_ENGINE] Handling order event: " << order_event.cl_ord_id() 
-              << " event_type=" << order_event.event_type() << std::endl;
+    logging::Logger logger("TRADING_ENGINE");
+    logger.debug("Handling order event: " + order_event.cl_ord_id() + 
+                " event_type=" + std::to_string(static_cast<int>(order_event.event_type())));
     
     // Update order state
     update_order_state(order_event.cl_ord_id(), order_event.event_type());
@@ -382,7 +400,8 @@ void TradingEngineLib::handle_order_event(const proto::OrderEvent& order_event) 
 }
 
 void TradingEngineLib::handle_error(const std::string& error_message) {
-    std::cerr << "[TRADING_ENGINE] Error: " << error_message << std::endl;
+    logging::Logger logger("TRADING_ENGINE");
+    logger.error("Error: " + error_message);
     
     statistics_.connection_errors.fetch_add(1);
     
@@ -393,22 +412,22 @@ void TradingEngineLib::handle_error(const std::string& error_message) {
 }
 
 void TradingEngineLib::publish_order_event(const proto::OrderEvent& order_event) {
+    logging::Logger logger("TRADING_ENGINE");
     if (publisher_) {
         std::string message;
         if (order_event.SerializeToString(&message)) {
             std::string topic = "order_events";
-            std::cout << "[TRADING_ENGINE] Publishing order event to ZMQ topic: " << topic 
-                      << " cl_ord_id: " << order_event.cl_ord_id() 
-                      << " symbol: " << order_event.symbol() 
-                      << " size: " << message.size() << " bytes" << std::endl;
+            logger.debug("Publishing order event to ZMQ topic: " + topic + 
+                        " cl_ord_id: " + order_event.cl_ord_id() + 
+                        " symbol: " + order_event.symbol() + 
+                        " size: " + std::to_string(message.size()) + " bytes");
             publisher_->publish(topic, message);
             statistics_.zmq_messages_sent.fetch_add(1);
-            std::cout << "[TRADING_ENGINE] Order event published successfully" << std::endl;
         } else {
-            std::cerr << "[TRADING_ENGINE] Failed to serialize order event" << std::endl;
+            logger.error("Failed to serialize order event");
         }
     } else {
-        std::cerr << "[TRADING_ENGINE] No publisher available for order event" << std::endl;
+        logger.error("No publisher available for order event");
     }
 }
 

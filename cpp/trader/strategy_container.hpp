@@ -107,6 +107,20 @@ public:
     std::vector<trader::AccountBalanceInfo> get_all_account_balances() const override;
     std::vector<trader::AccountBalanceInfo> get_account_balances_by_exchange(const std::string& exchange) const override;
     std::vector<trader::AccountBalanceInfo> get_account_balances_by_instrument(const std::string& instrument) const override;
+    
+    // Order placement (delegated to MiniOMS for strategies)
+    bool send_order(const std::string& cl_ord_id,
+                   const std::string& symbol,
+                   proto::Side side,
+                   proto::OrderType type,
+                   double qty,
+                   double price);
+    
+    bool cancel_order(const std::string& cl_ord_id);
+    
+    bool modify_order(const std::string& cl_ord_id,
+                     double new_price,
+                     double new_qty);
 
 private:
     std::shared_ptr<AbstractStrategy> strategy_;

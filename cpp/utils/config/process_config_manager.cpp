@@ -1,4 +1,5 @@
 #include "process_config_manager.hpp"
+#include "../logging/log_helper.hpp"
 #include <filesystem>
 #include <stdexcept>
 
@@ -13,7 +14,7 @@ bool ProcessConfigManager::load_config(const std::string& config_file) {
         std::string content = read_file(config_file);
         return load_config_from_string(content);
     } catch (const std::exception& e) {
-        std::cerr << "Error loading config file " << config_file << ": " << e.what() << std::endl;
+        LOG_ERROR_COMP("CONFIG", "Error loading config file " + config_file + ": " + e.what());
         return false;
     }
 }

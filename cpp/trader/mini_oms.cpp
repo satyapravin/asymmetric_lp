@@ -1,5 +1,5 @@
 #include "mini_oms.hpp"
-#include <iostream>
+#include "../utils/logging/logger.hpp"
 #include <random>
 #include <sstream>
 #include <iomanip>
@@ -26,7 +26,8 @@ void MiniOMS::start() {
         return;
     }
     
-    std::cout << "[MINI_OMS] Starting Mini OMS with state management" << std::endl;
+    logging::Logger logger("MINI_OMS");
+    logger.info("Starting Mini OMS with state management");
     running_.store(true);
 }
 
@@ -35,7 +36,8 @@ void MiniOMS::stop() {
         return;
     }
     
-    std::cout << "[MINI_OMS] Stopping Mini OMS" << std::endl;
+    logging::Logger logger("MINI_OMS");
+    logger.info("Stopping Mini OMS");
     running_.store(false);
     
     // Cancel all pending orders
@@ -43,7 +45,8 @@ void MiniOMS::stop() {
     for (const auto& [cl_ord_id, order_info] : orders_) {
         if (order_info.state == OrderState::PENDING || 
             order_info.state == OrderState::ACKNOWLEDGED) {
-            std::cout << "[MINI_OMS] Cancelling pending order: " << cl_ord_id << std::endl;
+            logging::Logger logger("MINI_OMS");
+            logger.debug("Cancelling pending order: " + cl_ord_id);
             // Note: Actual cancellation would be handled by ZMQ adapter
         }
     }
@@ -61,12 +64,14 @@ bool MiniOMS::send_order(const std::string& cl_ord_id,
     
     // Validate parameters
     if (qty <= 0.0) {
-        std::cerr << "[MINI_OMS] Invalid order quantity: " << qty << std::endl;
+        logging::Logger logger("MINI_OMS");
+        logger.error("Invalid order quantity: " + std::to_string(qty));
         return false;
     }
     
     if (type == proto::LIMIT && price <= 0.0) {
-        std::cerr << "[MINI_OMS] Invalid price for limit order: " << price << std::endl;
+        logging::Logger logger("MINI_OMS");
+        logger.error("Invalid price for limit order: " + std::to_string(price));
         return false;
     }
     
@@ -95,16 +100,20 @@ bool MiniOMS::send_order(const std::string& cl_ord_id,
     // Send order via ZMQ adapter
     if (oms_adapter_) {
         // Note: This would need to be implemented in ZmqOMSAdapter
-        std::cout << "[MINI_OMS] Sending order: " << cl_ord_id << " " << symbol 
-                  << " " << (side == proto::BUY ? "BUY" : "SELL")
-                  << " " << qty << " @ " << price << std::endl;
+        logging::Logger logger("MINI_OMS");
+        std::stringstream ss;
+        ss << "Sending order: " << cl_ord_id << " " << symbol 
+           << " " << (side == proto::BUY ? "BUY" : "SELL")
+           << " " << qty << " @ " << price;
+        logger.debug(ss.str());
         
         // Notify state change
         notify_order_state_change(order_info);
         return true;
     }
     
-    std::cerr << "[MINI_OMS] No OMS adapter available" << std::endl;
+    logging::Logger logger("MINI_OMS");
+    logger.error("No OMS adapter available");
     return false;
 }
 
@@ -116,7 +125,8 @@ bool MiniOMS::cancel_order(const std::string& cl_ord_id) {
     std::lock_guard<std::mutex> lock(orders_mutex_);
     auto it = orders_.find(cl_ord_id);
     if (it == orders_.end()) {
-        std::cerr << "[MINI_OMS] Order not found: " << cl_ord_id << std::endl;
+        logging::Logger logger("MINI_OMS");
+        logger.error("Order not found: " + cl_ord_id);
         return false;
     }
     
@@ -124,8 +134,10 @@ bool MiniOMS::cancel_order(const std::string& cl_ord_id) {
     
     // Check if order can be cancelled
     if (!is_valid_order_transition(cl_ord_id, OrderState::CANCELLED)) {
-        std::cerr << "[MINI_OMS] Cannot cancel order in state: " 
-                  << to_string(order_info.state) << std::endl;
+        logging::Logger logger("MINI_OMS");
+        std::stringstream ss;
+        ss << "Cannot cancel order in state: " << to_string(order_info.state);
+        logger.warn(ss.str());
         return false;
     }
     
@@ -134,7 +146,8 @@ bool MiniOMS::cancel_order(const std::string& cl_ord_id) {
     
     // Send cancel request via ZMQ adapter
     if (oms_adapter_) {
-        std::cout << "[MINI_OMS] Cancelling order: " << cl_ord_id << std::endl;
+        logging::Logger logger("MINI_OMS");
+        logger.debug("Cancelling order: " + cl_ord_id);
         // Note: This would need to be implemented in ZmqOMSAdapter
         return true;
     }
@@ -150,7 +163,8 @@ bool MiniOMS::modify_order(const std::string& cl_ord_id, double new_price, doubl
     std::lock_guard<std::mutex> lock(orders_mutex_);
     auto it = orders_.find(cl_ord_id);
     if (it == orders_.end()) {
-        std::cerr << "[MINI_OMS] Order not found: " << cl_ord_id << std::endl;
+        logging::Logger logger("MINI_OMS");
+        logger.error("Order not found: " + cl_ord_id);
         return false;
     }
     
@@ -158,8 +172,10 @@ bool MiniOMS::modify_order(const std::string& cl_ord_id, double new_price, doubl
     
     // Check if order can be modified
     if (order_info.state != OrderState::ACKNOWLEDGED) {
-        std::cerr << "[MINI_OMS] Cannot modify order in state: " 
-                  << to_string(order_info.state) << std::endl;
+        logging::Logger logger("MINI_OMS");
+        std::stringstream ss;
+        ss << "Cannot modify order in state: " << to_string(order_info.state);
+        logger.warn(ss.str());
         return false;
     }
     
@@ -170,8 +186,10 @@ bool MiniOMS::modify_order(const std::string& cl_ord_id, double new_price, doubl
     
     // Send modify request via ZMQ adapter
     if (oms_adapter_) {
-        std::cout << "[MINI_OMS] Modifying order: " << cl_ord_id 
-                  << " new_price=" << new_price << " new_qty=" << new_qty << std::endl;
+        logging::Logger logger("MINI_OMS");
+        std::stringstream ss;
+        ss << "Modifying order: " << cl_ord_id << " new_price=" << new_price << " new_qty=" << new_qty;
+        logger.debug(ss.str());
         // Note: This would need to be implemented in ZmqOMSAdapter
         return true;
     }
@@ -267,7 +285,8 @@ void MiniOMS::on_order_event(const proto::OrderEvent& order_event) {
             new_state = OrderState::REJECTED;
             break;
         default:
-            std::cerr << "[MINI_OMS] Unknown event type: " << order_event.event_type() << std::endl;
+            logging::Logger logger("MINI_OMS");
+            logger.error("Unknown event type: " + std::to_string(static_cast<int>(order_event.event_type())));
             return;
     }
     
@@ -310,8 +329,10 @@ void MiniOMS::on_trade_execution(const proto::Trade& trade) {
     double current_volume = statistics_.total_volume.load();
     statistics_.total_volume.store(current_volume + trade_value);
     
-    std::cout << "[MINI_OMS] Trade execution: " << trade.symbol() 
-              << " " << trade.qty() << " @ " << trade.price() << std::endl;
+    logging::Logger logger("MINI_OMS");
+    std::stringstream ss;
+    ss << "Trade execution: " << trade.symbol() << " " << trade.qty() << " @ " << trade.price();
+    logger.debug(ss.str());
 }
 
 void MiniOMS::update_order_state(const std::string& cl_ord_id, OrderState new_state, 
@@ -319,7 +340,8 @@ void MiniOMS::update_order_state(const std::string& cl_ord_id, OrderState new_st
     std::lock_guard<std::mutex> lock(orders_mutex_);
     auto it = orders_.find(cl_ord_id);
     if (it == orders_.end()) {
-        std::cerr << "[MINI_OMS] Order not found for state update: " << cl_ord_id << std::endl;
+        logging::Logger logger("MINI_OMS");
+        logger.error("Order not found for state update: " + cl_ord_id);
         return;
     }
     
@@ -328,8 +350,10 @@ void MiniOMS::update_order_state(const std::string& cl_ord_id, OrderState new_st
     
     // Validate transition
     if (!OrderStateMachine::isValidTransition(old_state, new_state)) {
-        std::cerr << "[MINI_OMS] Invalid state transition from " << to_string(old_state) 
-                  << " to " << to_string(new_state) << std::endl;
+        logging::Logger logger("MINI_OMS");
+        std::stringstream ss;
+        ss << "Invalid state transition from " << to_string(old_state) << " to " << to_string(new_state);
+        logger.error(ss.str());
         return;
     }
     
@@ -376,8 +400,10 @@ void MiniOMS::update_order_state(const std::string& cl_ord_id, OrderState new_st
     // Notify callback
     notify_order_state_change(order_info);
     
-    std::cout << "[MINI_OMS] Order " << cl_ord_id << " state: " 
-              << to_string(old_state) << " -> " << to_string(new_state) << std::endl;
+    logging::Logger logger("MINI_OMS");
+    std::stringstream ss;
+    ss << "Order " << cl_ord_id << " state: " << to_string(old_state) << " -> " << to_string(new_state);
+    logger.debug(ss.str());
 }
 
 void MiniOMS::notify_order_state_change(const OrderStateInfo& order_info) {

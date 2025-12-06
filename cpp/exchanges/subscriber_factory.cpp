@@ -1,6 +1,6 @@
 #include "subscriber_factory.hpp"
+#include "../utils/logging/log_helper.hpp"
 #include <algorithm>
-#include <iostream>
 #include <stdexcept>
 
 std::unique_ptr<IExchangeSubscriber> SubscriberFactory::create_subscriber(const std::string& exchange_name) {
@@ -37,8 +37,8 @@ std::unique_ptr<IExchangeSubscriber> SubscriberFactory::create_subscriber(const 
         return std::make_unique<deribit::DeribitSubscriber>(config);
     }
     else {
-        std::string error_msg = "[SUBSCRIBER_FACTORY] Unknown or unsupported exchange: " + exchange_name;
-        std::cerr << error_msg << std::endl;
+        std::string error_msg = "Unknown or unsupported exchange: " + exchange_name;
+        LOG_ERROR_COMP("SUBSCRIBER_FACTORY", error_msg);
         throw std::runtime_error(error_msg);
     }
 }

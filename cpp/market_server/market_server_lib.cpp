@@ -2,7 +2,7 @@
 #include "../exchanges/subscriber_factory.hpp"
 #include "../utils/zmq/zmq_publisher.hpp"
 #include "../utils/config/process_config_manager.hpp"
-#include <iostream>
+#include "../utils/logging/logger.hpp"
 #include <thread>
 #include <stdexcept>
 
@@ -17,13 +17,14 @@ MarketServerLib::~MarketServerLib() {
 }
 
 bool MarketServerLib::initialize(const std::string& config_file) {
+    logging::Logger logger("MARKET_SERVER_LIB");
     if (config_file.empty()) {
-        std::cout << "[MARKET_SERVER_LIB] Using default configuration" << std::endl;
+        logger.debug("Using default configuration");
     } else {
-        std::cout << "[MARKET_SERVER_LIB] Loading configuration from: " << config_file << std::endl;
+        logger.info("Loading configuration from: " + config_file);
         config_manager_ = std::make_unique<config::ProcessConfigManager>();
         if (!config_manager_->load_config(config_file)) {
-            std::cerr << "[MARKET_SERVER_LIB] Failed to load configuration from: " << config_file << std::endl;
+            logger.error("Failed to load configuration from: " + config_file);
             return false;
         }
         
@@ -38,14 +39,12 @@ bool MarketServerLib::initialize(const std::string& config_file) {
     
     // Validate required configuration
     if (exchange_name_.empty()) {
-        std::cerr << "[MARKET_SERVER_LIB] ERROR: Exchange name not configured. "
-                  << "Set it via set_exchange() or config file (market_server.exchange)" << std::endl;
+        logger.error("ERROR: Exchange name not configured. Set it via set_exchange() or config file (market_server.exchange)");
         throw std::runtime_error("Exchange name not configured");
     }
     
     if (symbol_.empty()) {
-        std::cerr << "[MARKET_SERVER_LIB] ERROR: Symbol not configured. "
-                  << "Set it via set_symbol() or config file (market_server.symbol)" << std::endl;
+        logger.error("ERROR: Symbol not configured. Set it via set_symbol() or config file (market_server.symbol)");
         throw std::runtime_error("Symbol not configured");
     }
     
@@ -55,42 +54,43 @@ bool MarketServerLib::initialize(const std::string& config_file) {
     // Setup exchange subscriber
     setup_exchange_subscriber();
     
-    std::cout << "[MARKET_SERVER_LIB] Initialized with exchange: " << exchange_name_ 
-              << ", symbol: " << symbol_ << std::endl;
+    logger.info("Initialized with exchange: " + exchange_name_ + ", symbol: " + symbol_);
     return true;
 }
 
 void MarketServerLib::start() {
+    logging::Logger logger("MARKET_SERVER_LIB");
     if (running_.load()) {
-        std::cout << "[MARKET_SERVER_LIB] Already running" << std::endl;
+        logger.debug("Already running");
         return;
     }
     
     running_.store(true);
     
     if (exchange_subscriber_) {
-        std::cout << "[MARKET_SERVER_LIB] Starting exchange subscriber..." << std::endl;
+        logger.info("Starting exchange subscriber...");
         
         // Connect and subscribe to orderbook
         if (exchange_subscriber_->connect()) {
-            std::cout << "[MARKET_SERVER_LIB] Connected to exchange" << std::endl;
+            logger.info("Connected to exchange");
             
             // Subscribe to orderbook for the configured symbol
             if (!symbol_.empty()) {
                 exchange_subscriber_->subscribe_orderbook(symbol_, 20, 100);
-                std::cout << "[MARKET_SERVER_LIB] Subscribed to orderbook for: " << symbol_ << std::endl;
+                logger.info("Subscribed to orderbook for: " + symbol_);
             }
         } else {
-            std::cerr << "[MARKET_SERVER_LIB] Failed to connect to exchange" << std::endl;
+            logger.error("Failed to connect to exchange");
         }
         
         exchange_subscriber_->start();
     }
     
-    std::cout << "[MARKET_SERVER_LIB] Started successfully" << std::endl;
+    logger.info("Started successfully");
 }
 
 void MarketServerLib::stop() {
+    logging::Logger logger("MARKET_SERVER_LIB");
     if (!running_.load()) {
         return;
     }
@@ -98,11 +98,11 @@ void MarketServerLib::stop() {
     running_.store(false);
     
     if (exchange_subscriber_) {
-        std::cout << "[MARKET_SERVER_LIB] Stopping exchange subscriber..." << std::endl;
+        logger.info("Stopping exchange subscriber...");
         exchange_subscriber_->stop();
     }
     
-    std::cout << "[MARKET_SERVER_LIB] Stopped" << std::endl;
+    logger.info("Stopped");
 }
 
 bool MarketServerLib::is_connected_to_exchange() const {
@@ -110,7 +110,8 @@ bool MarketServerLib::is_connected_to_exchange() const {
 }
 
 void MarketServerLib::set_websocket_transport(std::unique_ptr<websocket_transport::IWebSocketTransport> transport) {
-    std::cout << "[MARKET_SERVER_LIB] Setting custom WebSocket transport for testing" << std::endl;
+    logging::Logger logger("MARKET_SERVER_LIB");
+    logger.debug("Setting custom WebSocket transport for testing");
     
     // Store the transport for later use when creating the exchange subscriber
     custom_transport_ = std::move(transport);
@@ -120,12 +121,13 @@ void MarketServerLib::set_websocket_transport(std::unique_ptr<websocket_transpor
 }
 
 void MarketServerLib::setup_exchange_subscriber() {
-    std::cout << "[MARKET_SERVER_LIB] Setting up exchange subscriber for: " << exchange_name_ << std::endl;
+    logging::Logger logger("MARKET_SERVER_LIB");
+    logger.info("Setting up exchange subscriber for: " + exchange_name_);
     
     // Create exchange subscriber using factory
     exchange_subscriber_ = SubscriberFactory::create_subscriber(exchange_name_);
     if (!exchange_subscriber_) {
-        std::cerr << "[MARKET_SERVER_LIB] Failed to create exchange subscriber for: " << exchange_name_ << std::endl;
+        logger.error("Failed to create exchange subscriber for: " + exchange_name_);
         return;
     }
     
@@ -144,18 +146,20 @@ void MarketServerLib::setup_exchange_subscriber() {
     
     // If we have a custom transport, inject it into the exchange subscriber
     if (custom_transport_) {
-        std::cout << "[MARKET_SERVER_LIB] Injecting custom WebSocket transport" << std::endl;
+        logger.debug("Injecting custom WebSocket transport");
         exchange_subscriber_->set_websocket_transport(std::move(custom_transport_));
     }
     
-    std::cout << "[MARKET_SERVER_LIB] Exchange subscriber setup complete" << std::endl;
+    logger.debug("Exchange subscriber setup complete");
 }
 
 void MarketServerLib::handle_orderbook_update(const proto::OrderBookSnapshot& orderbook) {
     statistics_.orderbook_updates++;
     
-    std::cout << "[MARKET_SERVER_LIB] Orderbook update: " << orderbook.symbol() 
-              << " bids: " << orderbook.bids_size() << " asks: " << orderbook.asks_size() << std::endl;
+    logging::Logger logger("MARKET_SERVER_LIB");
+    logger.debug("Orderbook update: " + orderbook.symbol() + 
+                " bids: " + std::to_string(orderbook.bids_size()) + 
+                " asks: " + std::to_string(orderbook.asks_size()));
     
     // Call the testing callback if set
     if (market_data_callback_) {
@@ -169,8 +173,10 @@ void MarketServerLib::handle_orderbook_update(const proto::OrderBookSnapshot& or
 void MarketServerLib::handle_trade_update(const proto::Trade& trade) {
     statistics_.trade_updates++;
     
-    std::cout << "[MARKET_SERVER_LIB] Trade update: " << trade.symbol() 
-              << " @ " << trade.price() << " qty: " << trade.qty() << std::endl;
+    logging::Logger logger("MARKET_SERVER_LIB");
+    std::stringstream ss;
+    ss << "Trade update: " << trade.symbol() << " @ " << trade.price() << " qty: " << trade.qty();
+    logger.debug(ss.str());
     
     // Call the testing callback if set
     if (trade_callback_) {
@@ -184,7 +190,8 @@ void MarketServerLib::handle_trade_update(const proto::Trade& trade) {
 void MarketServerLib::handle_error(const std::string& error_message) {
     statistics_.connection_errors++;
     
-    std::cerr << "[MARKET_SERVER_LIB] Error: " << error_message << std::endl;
+    logging::Logger logger("MARKET_SERVER_LIB");
+    logger.error("Error: " + error_message);
     
     // Call the error callback if set
     if (error_callback_) {
@@ -193,13 +200,13 @@ void MarketServerLib::handle_error(const std::string& error_message) {
 }
 
 void MarketServerLib::publish_to_zmq(const std::string& topic, const std::string& message) {
+    logging::Logger logger("MARKET_SERVER_LIB");
     if (publisher_) {
-        std::cout << "[MARKET_SERVER_LIB] Publishing to 0MQ topic: " << topic << " size: " << message.size() << " bytes" << std::endl;
+        logger.debug("Publishing to 0MQ topic: " + topic + " size: " + std::to_string(message.size()) + " bytes");
         publisher_->publish(topic, message);
         statistics_.zmq_messages_sent++;
-        std::cout << "[MARKET_SERVER_LIB] Published successfully" << std::endl;
     } else {
-        std::cerr << "[MARKET_SERVER_LIB] No publisher available!" << std::endl;
+        logger.error("No publisher available!");
     }
 }
 

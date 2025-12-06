@@ -5,6 +5,7 @@
 #include <atomic>
 #include "../utils/mds/market_data.hpp"
 #include "../utils/zmq/zmq_subscriber.hpp"
+#include "../utils/logging/log_helper.hpp"
 #include "../proto/market_data.pb.h"
 
 class ZmqMDSAdapter : public IExchangeMD {
@@ -25,14 +26,14 @@ public:
   }
 
   void stop() {
-    std::cout << "[MDS_ADAPTER] Stopping MDS adapter" << std::endl;
+    LOG_INFO_COMP("MDS_ADAPTER", "Stopping MDS adapter");
     running_.store(false);
     if (subscriber_) {
       subscriber_.reset(); // This will call the destructor and close the ZMQ socket
     }
     if (worker_.joinable()) {
       worker_.join();
-      std::cout << "[MDS_ADAPTER] MDS adapter stopped" << std::endl;
+      LOG_INFO_COMP("MDS_ADAPTER", "MDS adapter stopped");
     }
   }
 
@@ -41,26 +42,28 @@ public:
 private:
   void run() {
     subscriber_ = std::make_unique<ZmqSubscriber>(endpoint_, topic_);
-    std::cout << "[MDS_ADAPTER] Starting to listen on " << endpoint_ << " topic: " << topic_ << std::endl;
+    LOG_INFO_COMP("MDS_ADAPTER", "Starting to listen on " + endpoint_ + " topic: " + topic_);
     
     while (running_.load()) {
       auto msg = subscriber_->receive();
       if (!msg) continue;
       
-      std::cout << "[MDS_ADAPTER] Received message of size: " << msg->size() << " bytes" << std::endl;
+      LOG_INFO_COMP("MDS_ADAPTER", "Received message of size: " + std::to_string(msg->size()) + " bytes");
       
       // Deserialize protobuf OrderBookSnapshot
       proto::OrderBookSnapshot proto_orderbook;
       if (!proto_orderbook.ParseFromString(*msg)) {
-        std::cerr << "[MDS_ADAPTER] Failed to parse protobuf message" << std::endl;
+        LOG_ERROR_COMP("MDS_ADAPTER", "Failed to parse protobuf message");
         continue;
       }
       
-      std::cout << "[MDS_ADAPTER] Parsed protobuf: " << proto_orderbook.symbol() 
-                << " bids: " << proto_orderbook.bids_size() << " asks: " << proto_orderbook.asks_size() << std::endl;
+      std::string log_msg = "Parsed protobuf: " + proto_orderbook.symbol() + 
+                            " bids: " + std::to_string(proto_orderbook.bids_size()) + 
+                            " asks: " + std::to_string(proto_orderbook.asks_size());
+      LOG_DEBUG_COMP("MDS_ADAPTER", log_msg);
       
       if (on_snapshot) {
-        std::cout << "[MDS_ADAPTER] Calling on_snapshot callback" << std::endl;
+        LOG_DEBUG_COMP("MDS_ADAPTER", "Calling on_snapshot callback");
         on_snapshot(proto_orderbook);
       }
     }

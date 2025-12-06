@@ -10,6 +10,7 @@
 #include "../base_strategy/abstract_strategy.hpp"
 #include "../../utils/oms/order_state.hpp"
 #include "models/glft_target.hpp"
+#include "market_making_strategy_config.hpp"
 
 // Market Making Strategy that inherits from AbstractStrategy
 class MarketMakingStrategy : public AbstractStrategy {
@@ -19,6 +20,21 @@ public:
   // Constructor with GLFT model
   MarketMakingStrategy(const std::string& symbol,
                       std::shared_ptr<GlftTarget> glft_model);
+  
+  // Constructor with config (creates GLFT model from config)
+  MarketMakingStrategy(const std::string& symbol,
+                      const MarketMakingStrategyConfig& config);
+  
+  // Load configuration from config manager
+  void load_config(const config::ProcessConfigManager& config_manager,
+                   const std::string& section = "market_making_strategy");
+  
+  // Load configuration from file
+  bool load_config_from_file(const std::string& config_file,
+                            const std::string& section = "market_making_strategy");
+  
+  // Apply configuration to strategy
+  void apply_config(const MarketMakingStrategyConfig& config);
   
   ~MarketMakingStrategy() = default;
   
@@ -46,7 +62,54 @@ public:
   void set_inventory_delta(double delta) { current_inventory_delta_.store(delta); }
   void set_min_spread_bps(double bps) { min_spread_bps_ = bps; }
   void set_max_position_size(double size) { max_position_size_ = size; }
-  void set_quote_size(double size) { quote_size_ = size; }
+  void set_leverage(double leverage) { leverage_ = std::max(1.0, leverage); }  // Minimum leverage is 1.0x
+  void set_base_quote_size_pct(double pct) { base_quote_size_pct_ = pct; }  // Percentage of balance
+  void set_min_quote_size_pct(double pct) { min_quote_size_pct_ = pct; }  // Percentage of balance
+  void set_max_quote_size_pct(double pct) { max_quote_size_pct_ = pct; }  // Percentage of balance
+  
+  // Legacy setters for backward compatibility (now set percentages)
+  void set_quote_size(double size) { base_quote_size_pct_ = size; }  // Deprecated: use set_base_quote_size_pct
+  void set_min_quote_size(double size) { min_quote_size_pct_ = size; }  // Deprecated: use set_min_quote_size_pct
+  void set_max_quote_size(double size) { max_quote_size_pct_ = size; }  // Deprecated: use set_max_quote_size_pct
+  
+  // Quote update throttling configuration
+  void set_min_price_change_bps(double bps) { min_price_change_bps_ = bps; }
+  void set_min_inventory_change_pct(double pct) { min_inventory_change_pct_ = pct; }
+  void set_quote_update_interval_ms(int ms) { quote_update_interval_ms_ = ms; }
+  void set_min_quote_price_change_bps(double bps) { min_quote_price_change_bps_ = bps; }
+  
+  // DeFi position management (Uniswap V3 LP positions)
+  struct DefiPosition {
+    std::string pool_address;  // Uniswap V3 pool address
+    std::string token0_address;
+    std::string token1_address;
+    double token0_amount;      // Amount of token0 in LP position
+    double token1_amount;      // Amount of token1 in LP position
+    double liquidity;          // Liquidity amount
+    double range_lower;        // Lower price bound
+    double range_upper;        // Upper price bound
+    int fee_tier;              // Fee tier (e.g., 500 = 0.05%)
+    
+    DefiPosition() : token0_amount(0.0), token1_amount(0.0), liquidity(0.0),
+                     range_lower(0.0), range_upper(0.0), fee_tier(0) {}
+  };
+  
+  // Register/update DeFi position
+  void update_defi_position(const DefiPosition& position);
+  void remove_defi_position(const std::string& pool_address);
+  std::vector<DefiPosition> get_defi_positions() const;
+  
+  // Combined inventory calculation
+  struct CombinedInventory {
+    double token0_total{0.0};  // Combined token0 (CeFi + DeFi)
+    double token1_total{0.0};  // Combined token1 (CeFi + DeFi)
+    double token0_cefi{0.0};   // CeFi token0 only
+    double token1_cefi{0.0};   // CeFi token1 only
+    double token0_defi{0.0};   // DeFi token0 only
+    double token1_defi{0.0};   // DeFi token1 only
+  };
+  
+  CombinedInventory calculate_combined_inventory(double spot_price) const;
   
   // Order state queries (delegated to Mini OMS)
   OrderStateInfo get_order_state(const std::string& cl_ord_id);
@@ -100,7 +163,44 @@ private:
   std::atomic<double> current_inventory_delta_{0.0};
   double min_spread_bps_{5.0};  // 5 basis points minimum spread
   double max_position_size_{100.0};
-  double quote_size_{1.0};
+  double leverage_{1.0};              // Leverage multiplier (1.0 = no leverage, 2.0 = 2x, etc.)
+  double base_quote_size_pct_{0.02};   // Base quote size as % of leveraged balance (2%)
+  double min_quote_size_pct_{0.005};   // Minimum quote size as % of leveraged balance (0.5%)
+  double max_quote_size_pct_{0.25};    // Maximum quote size as % of leveraged balance (25%)
+  
+  // DeFi position tracking
+  mutable std::mutex defi_positions_mutex_;
+  std::map<std::string, DefiPosition> defi_positions_;  // pool_address -> DefiPosition
+  
+  // Market data for GLFT calculations
+  std::atomic<double> current_spot_price_{0.0};
+  std::atomic<double> current_volatility_{0.02};  // Default 2% volatility
+  
+  // Best bid/ask from orderbook (for quote validation)
+  mutable std::mutex orderbook_mutex_;
+  double best_bid_{0.0};
+  double best_ask_{0.0};
+  
+  // EWMA volatility calculation
+  mutable std::mutex volatility_mutex_;
+  double ewma_variance_{0.0};  // EWMA variance estimate
+  double last_price_{0.0};     // Last price for return calculation
+  bool volatility_initialized_{false};
+  double ewma_decay_factor_{0.94};  // λ (lambda) - typically 0.94-0.97 for daily data
+  
+  // Quote update throttling (to avoid excessive order cancellations)
+  mutable std::mutex quote_update_mutex_;
+  std::chrono::system_clock::time_point last_quote_update_time_;
+  double last_quote_bid_price_{0.0};
+  double last_quote_ask_price_{0.0};
+  double last_mid_price_{0.0};
+  std::vector<std::string> active_order_ids_;  // Track active order IDs for cancellation
+  
+  // Quote update thresholds
+  double min_price_change_bps_{5.0};      // Minimum price change (5 bps) to trigger update
+  double min_inventory_change_pct_{1.0};  // Minimum inventory change (1%) to trigger update
+  int quote_update_interval_ms_{5000};   // Minimum time between updates (5 seconds - reduces flickering)
+  double min_quote_price_change_bps_{2.0}; // Minimum bid/ask price change (2 bps) to actually update quotes
   
   // Statistics
   Statistics statistics_;
@@ -113,4 +213,19 @@ private:
   void update_quotes();
   void manage_inventory();
   std::string generate_order_id() const;
+  
+  // Helper methods for inventory calculation
+  double calculate_volatility_from_orderbook(const proto::OrderBookSnapshot& orderbook) const;
+  void update_spot_price_from_orderbook(const proto::OrderBookSnapshot& orderbook);
+  void update_ewma_volatility(double current_price);
+  
+  // Configuration for volatility
+  void set_ewma_decay_factor(double lambda) { ewma_decay_factor_ = lambda; }
+  double get_ewma_decay_factor() const { return ewma_decay_factor_; }
+  
+  // Quote update throttling logic
+  bool should_update_quotes(double current_mid_price) const;
+  
+  // Configuration access
+  MarketMakingStrategyConfig get_config() const;
 };

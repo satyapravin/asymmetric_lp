@@ -1,6 +1,6 @@
 #include "parser_factory.hpp"
+#include "../logging/log_helper.hpp"
 #include <algorithm>
-#include <iostream>
 
 std::unique_ptr<IExchangeParser> create_exchange_parser(const std::string& parser_name,
                                                         const std::string& symbol_for_mock) {
@@ -14,7 +14,7 @@ std::unique_ptr<IExchangeParser> create_exchange_parser(const std::string& parse
   }
   
   // For unsupported exchanges, return nullptr instead of mock
-  std::cerr << "[PARSER_FACTORY] Unsupported exchange parser: " << parser_name << std::endl;
+  LOG_ERROR_COMP("PARSER_FACTORY", "Unsupported exchange parser: " + parser_name);
   return nullptr;
 }
 

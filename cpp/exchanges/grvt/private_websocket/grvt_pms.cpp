@@ -1,6 +1,6 @@
 #include "grvt_pms.hpp"
 #include "../grvt_auth.hpp"
-#include <iostream>
+#include "../../../utils/logging/log_helper.hpp"
 #include <sstream>
 #include <chrono>
 #include <thread>
@@ -9,7 +9,7 @@
 namespace grvt {
 
 GrvtPMS::GrvtPMS(const GrvtPMSConfig& config) : config_(config) {
-    std::cout << "[GRVT_PMS] Initializing GRVT PMS" << std::endl;
+    LOG_INFO_COMP("GRVT_PMS", "Initializing GRVT PMS");
 }
 
 GrvtPMS::~GrvtPMS() {
@@ -17,10 +17,10 @@ GrvtPMS::~GrvtPMS() {
 }
 
 bool GrvtPMS::connect() {
-    std::cout << "[GRVT_PMS] Connecting to GRVT WebSocket..." << std::endl;
+    LOG_INFO_COMP("GRVT_PMS", "Connecting to GRVT WebSocket...");
     
     if (connected_.load()) {
-        std::cout << "[GRVT_PMS] Already connected" << std::endl;
+        LOG_INFO_COMP("GRVT_PMS", "Already connected");
         return true;
     }
     
@@ -35,24 +35,24 @@ bool GrvtPMS::connect() {
         
         // Authenticate
         if (!authenticate_websocket()) {
-            std::cerr << "[GRVT_PMS] Authentication failed" << std::endl;
+            LOG_ERROR_COMP("GRVT_PMS", "Authentication failed");
             return false;
         }
         
         connected_ = true;
         authenticated_ = true;
         
-        std::cout << "[GRVT_PMS] Connected successfully" << std::endl;
+        LOG_INFO_COMP("GRVT_PMS", "Connected successfully");
         return true;
         
     } catch (const std::exception& e) {
-        std::cerr << "[GRVT_PMS] Connection failed: " << e.what() << std::endl;
+        LOG_ERROR_COMP("GRVT_PMS", "Connection failed: " + std::string(e.what()));
         return false;
     }
 }
 
 void GrvtPMS::disconnect() {
-    std::cout << "[GRVT_PMS] Disconnecting..." << std::endl;
+    LOG_INFO_COMP("GRVT_PMS", "Disconnecting...");
     
     websocket_running_ = false;
     polling_running_ = false;
@@ -68,7 +68,7 @@ void GrvtPMS::disconnect() {
     connected_ = false;
     authenticated_ = false;
     
-    std::cout << "[GRVT_PMS] Disconnected" << std::endl;
+    LOG_INFO_COMP("GRVT_PMS", "Disconnected");
 }
 
 bool GrvtPMS::is_connected() const {
@@ -92,10 +92,10 @@ void GrvtPMS::set_auth_credentials(const std::string& api_key, const std::string
             config_.session_cookie = auth_result.session_cookie;
             config_.account_id = auth_result.account_id;
             authenticated_.store(true);
-            std::cout << "[GRVT_PMS] Authentication successful via API key" << std::endl;
+            LOG_INFO_COMP("GRVT_PMS", "Authentication successful via API key");
         } else {
             authenticated_.store(false);
-            std::cerr << "[GRVT_PMS] Authentication failed: " << auth_result.error_message << std::endl;
+            LOG_ERROR_COMP("GRVT_PMS", "Authentication failed: " + auth_result.error_message);
         }
     } else {
         authenticated_.store(false);
@@ -112,16 +112,16 @@ void GrvtPMS::set_position_update_callback(PositionUpdateCallback callback) {
 
 void GrvtPMS::set_account_balance_update_callback(AccountBalanceUpdateCallback callback) {
     account_balance_update_callback_ = callback;
-    std::cout << "[GRVT_PMS] Account balance update callback set" << std::endl;
+    LOG_INFO_COMP("GRVT_PMS", "Account balance update callback set");
 }
 
 void GrvtPMS::set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport) {
     // GRVT uses REST API polling, not WebSocket for balance updates
-    std::cout << "[GRVT_PMS] WebSocket transport injection not supported (uses REST API polling)" << std::endl;
+    LOG_INFO_COMP("GRVT_PMS", "WebSocket transport injection not supported (uses REST API polling)");
 }
 
 void GrvtPMS::websocket_loop() {
-    std::cout << "[GRVT_PMS] WebSocket loop started" << std::endl;
+    LOG_INFO_COMP("GRVT_PMS", "WebSocket loop started");
     
     while (websocket_running_) {
         try {
@@ -142,12 +142,12 @@ void GrvtPMS::websocket_loop() {
             }
             
         } catch (const std::exception& e) {
-            std::cerr << "[GRVT_PMS] WebSocket loop error: " << e.what() << std::endl;
+            LOG_ERROR_COMP("GRVT_PMS", "WebSocket loop error: " + std::string(e.what()));
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
     }
     
-    std::cout << "[GRVT_PMS] WebSocket loop stopped" << std::endl;
+    LOG_INFO_COMP("GRVT_PMS", "WebSocket loop stopped");
 }
 
 void GrvtPMS::handle_websocket_message(const std::string& message) {
@@ -156,7 +156,7 @@ void GrvtPMS::handle_websocket_message(const std::string& message) {
         Json::Reader reader;
         
         if (!reader.parse(message, root)) {
-            std::cerr << "[GRVT_PMS] Failed to parse WebSocket message" << std::endl;
+            LOG_ERROR_COMP("GRVT_PMS", "Failed to parse WebSocket message");
             return;
         }
         
@@ -172,7 +172,7 @@ void GrvtPMS::handle_websocket_message(const std::string& message) {
         }
         
     } catch (const std::exception& e) {
-        std::cerr << "[GRVT_PMS] Error handling WebSocket message: " << e.what() << std::endl;
+        LOG_ERROR_COMP("GRVT_PMS", "Error handling WebSocket message: " + std::string(e.what()));
     }
 }
 
@@ -194,14 +194,15 @@ void GrvtPMS::handle_position_update(const Json::Value& position_data) {
         position_update_callback_(position);
     }
     
-    std::cout << "[GRVT_PMS] Position update: " << position.symbol() 
-              << " qty: " << position.qty() 
-              << " price: " << position.avg_price() 
-              << " pnl: N/A" << std::endl;
+    std::string log_msg = "Position update: " + position.symbol() + 
+                          " qty: " + std::to_string(position.qty()) + 
+                          " price: " + std::to_string(position.avg_price()) + 
+                          " pnl: N/A";
+    LOG_DEBUG_COMP("GRVT_PMS", log_msg);
 }
 
 void GrvtPMS::handle_account_update(const Json::Value& account_data) {
-    std::cout << "[GRVT_PMS] Account update: " << account_data.toStyledString() << std::endl;
+    LOG_DEBUG_COMP("GRVT_PMS", "Account update: " + account_data.toStyledString());
     
     // Note: Balance updates are now handled via REST API polling, not WebSocket
     // This method only handles position updates from WebSocket
@@ -231,12 +232,12 @@ void GrvtPMS::handle_balance_update(const Json::Value& balance_data) {
         account_balance_update_callback_(balance_update);
     }
     
-    std::cout << "[GRVT_PMS] Balance update: " << balance_update.balances_size() << " balances" << std::endl;
+    LOG_DEBUG_COMP("GRVT_PMS", "Balance update: " + std::to_string(balance_update.balances_size()) + " balances");
 }
 
 bool GrvtPMS::authenticate_websocket() {
     std::string auth_msg = create_auth_message();
-    std::cout << "[GRVT_PMS] Authenticating: " << auth_msg << std::endl;
+    LOG_INFO_COMP("GRVT_PMS", "Authenticating: " + auth_msg);
     
     // Mock authentication response
     std::string mock_auth_response = R"({"jsonrpc":"2.0","id":)" + std::to_string(request_id_++) + R"(,"result":{"authenticated":true}})";
@@ -268,7 +269,7 @@ std::string GrvtPMS::generate_request_id() {
 
 // Balance polling methods
 void GrvtPMS::polling_loop() {
-    std::cout << "[GRVT_PMS] Balance polling loop started" << std::endl;
+    LOG_INFO_COMP("GRVT_PMS", "Balance polling loop started");
     
     while (polling_running_.load()) {
         try {
@@ -278,12 +279,12 @@ void GrvtPMS::polling_loop() {
             std::this_thread::sleep_for(std::chrono::seconds(config_.polling_interval_seconds));
             
         } catch (const std::exception& e) {
-            std::cerr << "[GRVT_PMS] Polling error: " << e.what() << std::endl;
+            LOG_ERROR_COMP("GRVT_PMS", "Polling error: " + std::string(e.what()));
             std::this_thread::sleep_for(std::chrono::seconds(5)); // Wait 5 seconds on error
         }
     }
     
-    std::cout << "[GRVT_PMS] Balance polling loop stopped" << std::endl;
+    LOG_INFO_COMP("GRVT_PMS", "Balance polling loop stopped");
 }
 
 void GrvtPMS::poll_account_balances() {
@@ -292,7 +293,7 @@ void GrvtPMS::poll_account_balances() {
     }
     
     std::string request = create_balance_request();
-    std::cout << "[GRVT_PMS] Polling account balances: " << request << std::endl;
+    LOG_DEBUG_COMP("GRVT_PMS", "Polling account balances: " + request);
     
     // Mock REST API response for now
     // In real implementation, this would make HTTP request to GRVT API
@@ -340,7 +341,7 @@ bool GrvtPMS::parse_balance_response(const std::string& response) {
         Json::Reader reader;
         
         if (!reader.parse(response, root)) {
-            std::cerr << "[GRVT_PMS] Failed to parse balance response" << std::endl;
+            LOG_ERROR_COMP("GRVT_PMS", "Failed to parse balance response");
             return false;
         }
         
@@ -348,12 +349,12 @@ bool GrvtPMS::parse_balance_response(const std::string& response) {
             handle_balance_update(root["result"]);
             return true;
         } else if (root.isMember("error")) {
-            std::cerr << "[GRVT_PMS] API error: " << root["error"].toStyledString() << std::endl;
+            LOG_ERROR_COMP("GRVT_PMS", "API error: " + root["error"].toStyledString());
             return false;
         }
         
     } catch (const std::exception& e) {
-        std::cerr << "[GRVT_PMS] Error parsing balance response: " << e.what() << std::endl;
+        LOG_ERROR_COMP("GRVT_PMS", "Error parsing balance response: " + std::string(e.what()));
         return false;
     }
     

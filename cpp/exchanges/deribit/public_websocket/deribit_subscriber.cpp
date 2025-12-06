@@ -1,5 +1,5 @@
 #include "deribit_subscriber.hpp"
-#include <iostream>
+#include "../../../utils/logging/log_helper.hpp"
 #include <sstream>
 #include <chrono>
 #include <thread>
@@ -9,7 +9,7 @@
 namespace deribit {
 
 DeribitSubscriber::DeribitSubscriber(const DeribitSubscriberConfig& config) : config_(config) {
-    std::cout << "[DERIBIT_SUBSCRIBER] Initializing Deribit Subscriber" << std::endl;
+    LOG_INFO_COMP("DERIBIT_SUBSCRIBER", "Initializing Deribit Subscriber");
 }
 
 DeribitSubscriber::~DeribitSubscriber() {
@@ -17,17 +17,17 @@ DeribitSubscriber::~DeribitSubscriber() {
 }
 
 bool DeribitSubscriber::connect() {
-    std::cout << "[DERIBIT_SUBSCRIBER] Connecting to Deribit WebSocket..." << std::endl;
+    LOG_INFO_COMP("DERIBIT_SUBSCRIBER", "Connecting to Deribit WebSocket...");
     
     if (connected_.load()) {
-        std::cout << "[DERIBIT_SUBSCRIBER] Already connected" << std::endl;
+        LOG_INFO_COMP("DERIBIT_SUBSCRIBER", "Already connected");
         return true;
     }
     
     try {
         // If custom transport is set, use it (for testing)
         if (custom_transport_) {
-            std::cout << "[DERIBIT_SUBSCRIBER] Using custom WebSocket transport" << std::endl;
+            LOG_INFO_COMP("DERIBIT_SUBSCRIBER", "Using custom WebSocket transport");
             
             // Set up message callback BEFORE connecting
             custom_transport_->set_message_callback([this](const websocket_transport::WebSocketMessage& ws_msg) {
@@ -46,10 +46,10 @@ bool DeribitSubscriber::connect() {
                 }
                 
                 websocket_thread_ = std::thread(&DeribitSubscriber::websocket_loop, this);
-                std::cout << "[DERIBIT_SUBSCRIBER] Connected successfully using injected transport" << std::endl;
+                LOG_INFO_COMP("DERIBIT_SUBSCRIBER", "Connected successfully using injected transport");
                 return true;
             } else {
-                std::cerr << "[DERIBIT_SUBSCRIBER] Failed to connect using custom transport" << std::endl;
+                LOG_ERROR_COMP("DERIBIT_SUBSCRIBER", "Failed to connect using custom transport");
                 return false;
             }
         }
@@ -60,17 +60,17 @@ bool DeribitSubscriber::connect() {
         
         connected_ = true;
         
-        std::cout << "[DERIBIT_SUBSCRIBER] Connected successfully" << std::endl;
+        LOG_INFO_COMP("DERIBIT_SUBSCRIBER", "Connected successfully");
         return true;
         
     } catch (const std::exception& e) {
-        std::cerr << "[DERIBIT_SUBSCRIBER] Connection failed: " << e.what() << std::endl;
+        LOG_ERROR_COMP("DERIBIT_SUBSCRIBER", "Connection failed: " + std::string(e.what()));
         return false;
     }
 }
 
 void DeribitSubscriber::disconnect() {
-    std::cout << "[DERIBIT_SUBSCRIBER] Disconnecting..." << std::endl;
+    LOG_INFO_COMP("DERIBIT_SUBSCRIBER", "Disconnecting...");
     
     websocket_running_ = false;
     connected_ = false;
@@ -85,7 +85,7 @@ void DeribitSubscriber::disconnect() {
         custom_transport_->stop_event_loop();
     }
     
-    std::cout << "[DERIBIT_SUBSCRIBER] Disconnected" << std::endl;
+    LOG_INFO_COMP("DERIBIT_SUBSCRIBER", "Disconnected");
 }
 
 bool DeribitSubscriber::is_connected() const {
@@ -94,7 +94,7 @@ bool DeribitSubscriber::is_connected() const {
 
 bool DeribitSubscriber::subscribe_orderbook(const std::string& symbol, int top_n, int frequency_ms) {
     if (!is_connected()) {
-        std::cerr << "[DERIBIT_SUBSCRIBER] Not connected" << std::endl;
+        LOG_ERROR_COMP("DERIBIT_SUBSCRIBER", "Not connected");
         return false;
     }
     
@@ -102,8 +102,9 @@ bool DeribitSubscriber::subscribe_orderbook(const std::string& symbol, int top_n
     // Interval can be "raw", "100ms", "1s", etc.
     std::string interval = get_interval_string(frequency_ms);
     std::string sub_msg = create_subscription_message(symbol, "book", interval);
-    std::cout << "[DERIBIT_SUBSCRIBER] Subscribing to orderbook: " << symbol 
-              << " top_n: " << top_n << " frequency: " << frequency_ms << "ms (interval: " << interval << ")" << std::endl;
+    std::string log_msg = "Subscribing to orderbook: " + symbol + " top_n: " + std::to_string(top_n) + 
+                          " frequency: " + std::to_string(frequency_ms) + "ms (interval: " + interval + ")";
+    LOG_INFO_COMP("DERIBIT_SUBSCRIBER", log_msg);
     
     // Add to subscribed symbols
     {
@@ -122,13 +123,13 @@ bool DeribitSubscriber::subscribe_orderbook(const std::string& symbol, int top_n
 
 bool DeribitSubscriber::subscribe_trades(const std::string& symbol) {
     if (!is_connected()) {
-        std::cerr << "[DERIBIT_SUBSCRIBER] Not connected" << std::endl;
+        LOG_ERROR_COMP("DERIBIT_SUBSCRIBER", "Not connected");
         return false;
     }
     
     // Deribit API: trades.{instrument_name}.raw
     std::string sub_msg = create_subscription_message(symbol, "trades", "raw");
-    std::cout << "[DERIBIT_SUBSCRIBER] Subscribing to trades: " << symbol << std::endl;
+    LOG_INFO_COMP("DERIBIT_SUBSCRIBER", "Subscribing to trades: " + symbol);
     
     // Add to subscribed symbols
     {
@@ -147,14 +148,14 @@ bool DeribitSubscriber::subscribe_trades(const std::string& symbol) {
 
 bool DeribitSubscriber::unsubscribe(const std::string& symbol) {
     if (!is_connected()) {
-        std::cerr << "[DERIBIT_SUBSCRIBER] Not connected" << std::endl;
+        LOG_ERROR_COMP("DERIBIT_SUBSCRIBER", "Not connected");
         return false;
     }
     
     // Unsubscribe from both book and trades channels
     std::string unsub_msg_book = create_unsubscription_message(symbol, "book", "raw");
     std::string unsub_msg_trades = create_unsubscription_message(symbol, "trades", "raw");
-    std::cout << "[DERIBIT_SUBSCRIBER] Unsubscribing from: " << symbol << std::endl;
+    LOG_INFO_COMP("DERIBIT_SUBSCRIBER", "Unsubscribing from: " + symbol);
     
     // Remove from subscribed symbols
     {
@@ -181,14 +182,14 @@ void DeribitSubscriber::set_trade_callback(TradeCallback callback) {
 
 void DeribitSubscriber::set_error_callback(std::function<void(const std::string&)> callback) {
     error_callback_ = callback;
-    std::cout << "[DERIBIT_SUBSCRIBER] Setting error callback" << std::endl;
+    LOG_INFO_COMP("DERIBIT_SUBSCRIBER", "Setting error callback");
 }
 
 void DeribitSubscriber::websocket_loop() {
-    std::cout << "[DERIBIT_SUBSCRIBER] WebSocket loop started" << std::endl;
+    LOG_INFO_COMP("DERIBIT_SUBSCRIBER", "WebSocket loop started");
     
     if (custom_transport_) {
-        std::cout << "[DERIBIT_SUBSCRIBER] Using custom transport - messages will arrive via callback" << std::endl;
+        LOG_INFO_COMP("DERIBIT_SUBSCRIBER", "Using custom transport - messages will arrive via callback");
         // The custom transport's event loop will handle message reception and callbacks
         // We just need to keep this thread alive while the custom transport is running
         while (websocket_running_.load()) {
@@ -217,13 +218,13 @@ void DeribitSubscriber::websocket_loop() {
                 }
                 
             } catch (const std::exception& e) {
-                std::cerr << "[DERIBIT_SUBSCRIBER] WebSocket loop error: " << e.what() << std::endl;
+                LOG_ERROR_COMP("DERIBIT_SUBSCRIBER", "WebSocket loop error: " + std::string(e.what()));
                 std::this_thread::sleep_for(std::chrono::milliseconds(1000));
             }
         }
     }
     
-    std::cout << "[DERIBIT_SUBSCRIBER] WebSocket loop stopped" << std::endl;
+    LOG_INFO_COMP("DERIBIT_SUBSCRIBER", "WebSocket loop stopped");
 }
 
 void DeribitSubscriber::handle_websocket_message(const std::string& message) {
@@ -232,7 +233,7 @@ void DeribitSubscriber::handle_websocket_message(const std::string& message) {
         Json::Reader reader;
         
         if (!reader.parse(message, root)) {
-            std::cerr << "[DERIBIT_SUBSCRIBER] Failed to parse WebSocket message" << std::endl;
+            LOG_ERROR_COMP("DERIBIT_SUBSCRIBER", "Failed to parse WebSocket message");
             return;
         }
         
@@ -260,18 +261,18 @@ void DeribitSubscriber::handle_websocket_message(const std::string& message) {
             }
         } else if (root.isMember("result")) {
             // Handle subscription responses
-            std::cout << "[DERIBIT_SUBSCRIBER] Subscription response: " << message << std::endl;
+            LOG_INFO_COMP("DERIBIT_SUBSCRIBER", "Subscription response: " + message);
         } else if (root.isMember("error")) {
             // Handle errors
             std::string error_msg = "Deribit API error: " + root["error"].toStyledString();
-            std::cerr << "[DERIBIT_SUBSCRIBER] " << error_msg << std::endl;
+            LOG_ERROR_COMP("DERIBIT_SUBSCRIBER", error_msg);
             if (error_callback_) {
                 error_callback_(error_msg);
             }
         }
         
     } catch (const std::exception& e) {
-        std::cerr << "[DERIBIT_SUBSCRIBER] Error handling WebSocket message: " << e.what() << std::endl;
+        LOG_ERROR_COMP("DERIBIT_SUBSCRIBER", "Error handling WebSocket message: " + std::string(e.what()));
         if (error_callback_) {
             error_callback_(std::string("Error parsing message: ") + e.what());
         }
@@ -338,9 +339,10 @@ void DeribitSubscriber::handle_orderbook_update(const Json::Value& orderbook_dat
         orderbook_callback_(orderbook);
     }
     
-    std::cout << "[DERIBIT_SUBSCRIBER] Orderbook update: " << orderbook.symbol() 
-              << " bids: " << orderbook.bids_size() 
-              << " asks: " << orderbook.asks_size() << std::endl;
+    std::string log_msg = "Orderbook update: " + orderbook.symbol() + 
+                          " bids: " + std::to_string(orderbook.bids_size()) + 
+                          " asks: " + std::to_string(orderbook.asks_size());
+    LOG_INFO_COMP("DERIBIT_SUBSCRIBER", log_msg);
 }
 
 void DeribitSubscriber::handle_trade_update(const Json::Value& trade_data, const std::string& symbol) {
@@ -397,9 +399,10 @@ void DeribitSubscriber::handle_trade_update(const Json::Value& trade_data, const
             trade_callback_(trade);
         }
         
-        std::cout << "[DERIBIT_SUBSCRIBER] Trade update: " << trade.symbol() 
-                  << " " << trade.qty() << "@" << trade.price() 
-                  << " side: " << (trade.is_buyer_maker() ? "SELL" : "BUY") << std::endl;
+        std::string log_msg = "Trade update: " + trade.symbol() + 
+                              " " + std::to_string(trade.qty()) + "@" + std::to_string(trade.price()) + 
+                              " side: " + (trade.is_buyer_maker() ? "SELL" : "BUY");
+        LOG_INFO_COMP("DERIBIT_SUBSCRIBER", log_msg);
     }
 }
 
@@ -458,16 +461,16 @@ std::string DeribitSubscriber::get_interval_string(int frequency_ms) {
 }
 
 void DeribitSubscriber::start() {
-    std::cout << "[DERIBIT_SUBSCRIBER] Starting subscriber" << std::endl;
+    LOG_INFO_COMP("DERIBIT_SUBSCRIBER", "Starting subscriber");
 }
 
 void DeribitSubscriber::stop() {
-    std::cout << "[DERIBIT_SUBSCRIBER] Stopping subscriber" << std::endl;
+    LOG_INFO_COMP("DERIBIT_SUBSCRIBER", "Stopping subscriber");
     disconnect();
 }
 
 void DeribitSubscriber::set_websocket_transport(std::unique_ptr<websocket_transport::IWebSocketTransport> transport) {
-    std::cout << "[DERIBIT_SUBSCRIBER] Setting custom WebSocket transport for testing" << std::endl;
+    LOG_INFO_COMP("DERIBIT_SUBSCRIBER", "Setting custom WebSocket transport for testing");
     custom_transport_ = std::move(transport);
 }
 

@@ -113,6 +113,30 @@ public:
     void set_order_callback(OrderCallback callback) { order_callback_ = callback; }
     void set_position_callback(PositionCallback callback) { position_callback_ = callback; }
     void set_error_callback(ErrorCallback callback) { error_callback_ = callback; }
+    
+    // Order placement interface
+    // These methods use callbacks set by StrategyContainer
+    using OrderSender = std::function<bool(const std::string&, const std::string&, proto::Side, proto::OrderType, double, double)>;
+    using OrderCanceller = std::function<bool(const std::string&)>;
+    using OrderModifier = std::function<bool(const std::string&, double, double)>;
+    
+    void set_order_sender(OrderSender sender) { order_sender_ = sender; }
+    void set_order_canceller(OrderCanceller canceller) { order_canceller_ = canceller; }
+    void set_order_modifier(OrderModifier modifier) { order_modifier_ = modifier; }
+    
+    // Order placement methods (use callbacks if set, otherwise return false)
+    bool send_order(const std::string& cl_ord_id,
+                   const std::string& symbol,
+                   proto::Side side,
+                   proto::OrderType type,
+                   double qty,
+                   double price);
+    
+    bool cancel_order(const std::string& cl_ord_id);
+    
+    bool modify_order(const std::string& cl_ord_id,
+                     double new_price,
+                     double new_qty);
 
 protected:
     // Constructor for derived classes
@@ -158,4 +182,9 @@ protected:
     OrderCallback order_callback_;
     PositionCallback position_callback_;
     ErrorCallback error_callback_;
+    
+    // Order placement callbacks (set by StrategyContainer)
+    OrderSender order_sender_;
+    OrderCanceller order_canceller_;
+    OrderModifier order_modifier_;
 };

@@ -1,4 +1,3 @@
-#include <iostream>
 #include <string>
 #include <thread>
 #include <chrono>
@@ -12,6 +11,7 @@
 #include "../trader/zmq_mds_adapter.hpp"
 #include "../trader/zmq_pms_adapter.hpp"
 #include "../utils/config/process_config_manager.hpp"
+#include "../utils/logging/log_helper.hpp"
 
 using namespace trader;
 
@@ -21,7 +21,7 @@ std::unique_ptr<TraderLib> g_trader;
 
 // Signal handler for graceful shutdown
 void signal_handler(int signal) {
-    std::cout << "[TRADER] Received signal " << signal << ", shutting down..." << std::endl;
+    LOG_INFO_COMP("TRADER", "Received signal " + std::to_string(signal) + ", shutting down...");
     g_running.store(false);
     
     if (g_trader) {
@@ -30,7 +30,7 @@ void signal_handler(int signal) {
 }
 
 int main(int argc, char** argv) {
-    std::cout << "=== Trader Process ===" << std::endl;
+    LOG_INFO_COMP("TRADER", "=== Trader Process ===");
     
     // Parse command line arguments
     std::string config_file = "trader.ini";
@@ -51,10 +51,10 @@ int main(int argc, char** argv) {
         exchange = argv[4];
     }
     
-    std::cout << "Config file: " << config_file << std::endl;
-    std::cout << "Strategy: " << strategy_name << std::endl;
-    std::cout << "Symbol: " << symbol << std::endl;
-    std::cout << "Exchange: " << exchange << std::endl;
+    LOG_INFO_COMP("TRADER", "Config file: " + config_file);
+    LOG_INFO_COMP("TRADER", "Strategy: " + strategy_name);
+    LOG_INFO_COMP("TRADER", "Symbol: " + symbol);
+    LOG_INFO_COMP("TRADER", "Exchange: " + exchange);
     
     // Set up signal handlers
     signal(SIGINT, signal_handler);
@@ -65,7 +65,7 @@ int main(int argc, char** argv) {
         // Initialize configuration
         auto config_manager = std::make_unique<config::ProcessConfigManager>();
         if (!config_manager->load_config(config_file)) {
-            std::cerr << "Failed to load configuration from " << config_file << std::endl;
+            LOG_ERROR_COMP("TRADER", "Failed to load configuration from " + config_file);
             return 1;
         }
         
@@ -75,9 +75,9 @@ int main(int argc, char** argv) {
         std::string mds_subscribe_endpoint = config_manager->get_string("zmq.mds_subscribe_endpoint", "tcp://localhost:5555");
         std::string pms_subscribe_endpoint = config_manager->get_string("zmq.pms_subscribe_endpoint", "tcp://localhost:5556");
         
-        std::cout << "OMS subscribe endpoint: " << oms_subscribe_endpoint << std::endl;
-        std::cout << "MDS subscribe endpoint: " << mds_subscribe_endpoint << std::endl;
-        std::cout << "PMS subscribe endpoint: " << pms_subscribe_endpoint << std::endl;
+        LOG_INFO_COMP("TRADER", "OMS subscribe endpoint: " + oms_subscribe_endpoint);
+        LOG_INFO_COMP("TRADER", "MDS subscribe endpoint: " + mds_subscribe_endpoint);
+        LOG_INFO_COMP("TRADER", "PMS subscribe endpoint: " + pms_subscribe_endpoint);
         
         // Initialize ZMQ adapters
         auto oms_adapter = std::make_shared<ZmqOMSAdapter>(oms_publish_endpoint, "orders", oms_subscribe_endpoint, "order_events");
@@ -103,29 +103,29 @@ int main(int argc, char** argv) {
             auto strategy = std::make_shared<MarketMakingStrategy>(symbol, glft_model);
             
             g_trader->set_strategy(strategy);
-            std::cout << "[TRADER] Market making strategy configured" << std::endl;
+            LOG_INFO_COMP("TRADER", "Market making strategy configured");
         } else {
-            std::cerr << "Unknown strategy: " << strategy_name << std::endl;
+            LOG_ERROR_COMP("TRADER", "Unknown strategy: " + strategy_name);
             return 1;
         }
         
         // Initialize the library
         if (!g_trader->initialize(config_file)) {
-            std::cerr << "Failed to initialize trader library" << std::endl;
+            LOG_ERROR_COMP("TRADER", "Failed to initialize trader library");
             return 1;
         }
         
         // Start the trader
         g_trader->start();
         
-        std::cout << "[TRADER] Trader started successfully" << std::endl;
-        std::cout << "[TRADER] Running " << strategy_name << " strategy on " << exchange << ":" << symbol << std::endl;
+        LOG_INFO_COMP("TRADER", "Trader started successfully");
+        LOG_INFO_COMP("TRADER", "Running " + strategy_name + " strategy on " + exchange + ":" + symbol);
         
         // Main processing loop
         while (g_running.load()) {
             // Check if trader is still running
             if (!g_trader->is_running()) {
-                std::cerr << "[TRADER] Trader stopped unexpectedly" << std::endl;
+                LOG_ERROR_COMP("TRADER", "Trader stopped unexpectedly");
                 break;
             }
             
@@ -134,14 +134,15 @@ int main(int argc, char** argv) {
             auto now = std::chrono::system_clock::now();
             if (std::chrono::duration_cast<std::chrono::seconds>(now - last_stats_time).count() >= 30) {
                 const auto& stats = g_trader->get_statistics();
-                std::cout << "[STATS] Orders sent: " << stats.orders_sent.load()
-                          << ", Orders cancelled: " << stats.orders_cancelled.load()
-                          << ", Market data received: " << stats.market_data_received.load()
-                          << ", Position updates: " << stats.position_updates.load()
-                          << ", Balance updates: " << stats.balance_updates.load()
-                          << ", Trade executions: " << stats.trade_executions.load()
-                          << ", ZMQ messages received: " << stats.zmq_messages_received.load()
-                          << ", ZMQ messages sent: " << stats.zmq_messages_sent.load() << std::endl;
+                std::string stats_msg = "Orders sent: " + std::to_string(stats.orders_sent.load()) +
+                                       ", Orders cancelled: " + std::to_string(stats.orders_cancelled.load()) +
+                                       ", Market data received: " + std::to_string(stats.market_data_received.load()) +
+                                       ", Position updates: " + std::to_string(stats.position_updates.load()) +
+                                       ", Balance updates: " + std::to_string(stats.balance_updates.load()) +
+                                       ", Trade executions: " + std::to_string(stats.trade_executions.load()) +
+                                       ", ZMQ messages received: " + std::to_string(stats.zmq_messages_received.load()) +
+                                       ", ZMQ messages sent: " + std::to_string(stats.zmq_messages_sent.load());
+                LOG_INFO_COMP("STATS", stats_msg);
                 last_stats_time = now;
             }
             
@@ -149,7 +150,7 @@ int main(int argc, char** argv) {
         }
         
     } catch (const std::exception& e) {
-        std::cerr << "[TRADER] Exception: " << e.what() << std::endl;
+        LOG_ERROR_COMP("TRADER", "Exception: " + std::string(e.what()));
         return 1;
     }
     
@@ -158,6 +159,6 @@ int main(int argc, char** argv) {
         g_trader->stop();
     }
     
-    std::cout << "[TRADER] Trader stopped" << std::endl;
+    LOG_INFO_COMP("TRADER", "Trader stopped");
     return 0;
 }

@@ -1,5 +1,5 @@
 #include "exchange_monitor.hpp"
-#include <iostream>
+#include "../logging/log_helper.hpp"
 #include <iomanip>
 #include <sstream>
 
@@ -7,14 +7,14 @@ ExchangeMonitor::ExchangeMonitor() {
   // Set up default alert thresholds
   health_alert_callback_ = [](const std::string& exchange, HealthStatus status) {
     if (status == HealthStatus::UNHEALTHY) {
-      std::cout << "[MONITOR] ALERT: Exchange " << exchange << " is UNHEALTHY!" << std::endl;
+      LOG_ERROR_COMP("MONITOR", "ALERT: Exchange " + exchange + " is UNHEALTHY!");
     } else if (status == HealthStatus::DEGRADED) {
-      std::cout << "[MONITOR] WARNING: Exchange " << exchange << " is DEGRADED" << std::endl;
+      LOG_WARN_COMP("MONITOR", "WARNING: Exchange " + exchange + " is DEGRADED");
     }
   };
   
   performance_alert_callback_ = [](const std::string& exchange, const std::string& message) {
-    std::cout << "[MONITOR] PERFORMANCE ALERT: " << exchange << " - " << message << std::endl;
+    LOG_WARN_COMP("MONITOR", "PERFORMANCE ALERT: " + exchange + " - " + message);
   };
 }
 
@@ -108,29 +108,31 @@ void ExchangeMonitor::set_performance_alert_callback(std::function<void(const st
 }
 
 void ExchangeMonitor::print_metrics_summary() const {
-  std::cout << "\n=== Exchange Performance Metrics ===" << std::endl;
+  LOG_INFO_COMP("MONITOR", "\n=== Exchange Performance Metrics ===");
   
   auto all_metrics = get_all_metrics();
   for (const auto& [exchange, metrics] : all_metrics) {
-    std::cout << "\n[" << exchange << "]" << std::endl;
-    std::cout << "  Total Orders: " << metrics.total_orders << std::endl;
-    std::cout << "  Success Rate: " << std::fixed << std::setprecision(2) 
-              << metrics.get_success_rate() * 100 << "%" << std::endl;
-    std::cout << "  Fill Rate: " << std::fixed << std::setprecision(2) 
-              << metrics.get_fill_rate() * 100 << "%" << std::endl;
-    std::cout << "  Avg Latency: " << std::fixed << std::setprecision(2) 
-              << metrics.get_avg_latency_us() / 1000.0 << " ms" << std::endl;
-    std::cout << "  Total Volume: " << std::fixed << std::setprecision(2) 
-              << metrics.total_volume << std::endl;
-    std::cout << "  Filled Volume: " << std::fixed << std::setprecision(2) 
-              << metrics.filled_volume << std::endl;
-    std::cout << "  Uptime: " << std::fixed << std::setprecision(1) 
-              << metrics.get_uptime_seconds() << " seconds" << std::endl;
+    std::stringstream ss;
+    ss << "\n[" << exchange << "]\n"
+       << "  Total Orders: " << metrics.total_orders << "\n"
+       << "  Success Rate: " << std::fixed << std::setprecision(2) 
+       << metrics.get_success_rate() * 100 << "%\n"
+       << "  Fill Rate: " << std::fixed << std::setprecision(2) 
+       << metrics.get_fill_rate() * 100 << "%\n"
+       << "  Avg Latency: " << std::fixed << std::setprecision(2) 
+       << metrics.get_avg_latency_us() / 1000.0 << " ms\n"
+       << "  Total Volume: " << std::fixed << std::setprecision(2) 
+       << metrics.total_volume << "\n"
+       << "  Filled Volume: " << std::fixed << std::setprecision(2) 
+       << metrics.filled_volume << "\n"
+       << "  Uptime: " << std::fixed << std::setprecision(1) 
+       << metrics.get_uptime_seconds() << " seconds";
+    LOG_INFO_COMP("MONITOR", ss.str());
   }
 }
 
 void ExchangeMonitor::print_health_summary() const {
-  std::cout << "\n=== Exchange Health Status ===" << std::endl;
+  LOG_INFO_COMP("MONITOR", "\n=== Exchange Health Status ===");
   
   auto all_health = get_all_health_status();
   for (const auto& [exchange, health] : all_health) {
@@ -142,7 +144,7 @@ void ExchangeMonitor::print_health_summary() const {
       case HealthStatus::UNKNOWN: status_str = "UNKNOWN"; break;
     }
     
-    std::cout << "[" << exchange << "] " << status_str << " - " << health.message << std::endl;
+    LOG_INFO_COMP("MONITOR", "[" + exchange + "] " + status_str + " - " + health.message);
   }
 }
 

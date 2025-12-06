@@ -1,5 +1,5 @@
 #include "binance_pms.hpp"
-#include <iostream>
+#include "../../../utils/logging/log_helper.hpp"
 #include <sstream>
 #include <chrono>
 #include <thread>
@@ -8,7 +8,7 @@
 namespace binance {
 
 BinancePMS::BinancePMS(const BinancePMSConfig& config) : config_(config) {
-    std::cout << "[BINANCE_PMS] Initializing Binance PMS" << std::endl;
+    LOG_INFO_COMP("BINANCE_PMS", "Initializing Binance PMS");
 }
 
 BinancePMS::~BinancePMS() {
@@ -16,17 +16,17 @@ BinancePMS::~BinancePMS() {
 }
 
 bool BinancePMS::connect() {
-    std::cout << "[BINANCE_PMS] Connecting to Binance WebSocket..." << std::endl;
+    LOG_INFO_COMP("BINANCE_PMS", "Connecting to Binance WebSocket...");
     
     if (connected_.load()) {
-        std::cout << "[BINANCE_PMS] Already connected" << std::endl;
+        LOG_INFO_COMP("BINANCE_PMS", "Already connected");
         return true;
     }
     
     try {
         if (custom_transport_) {
             // Use injected transport for testing
-            std::cout << "[BINANCE_PMS] Using custom WebSocket transport for testing" << std::endl;
+            LOG_INFO_COMP("BINANCE_PMS", "Using custom WebSocket transport for testing");
             custom_transport_->connect("wss://fstream.binance.com/ws");
             
             // Set up message callback
@@ -37,7 +37,7 @@ bool BinancePMS::connect() {
             connected_ = true;
             authenticated_ = true;
             
-            std::cout << "[BINANCE_PMS] Connected successfully using injected transport" << std::endl;
+            LOG_INFO_COMP("BINANCE_PMS", "Connected successfully using injected transport");
             return true;
         } else {
             // Use mock implementation for production/testing without injection
@@ -46,25 +46,25 @@ bool BinancePMS::connect() {
             
             // Authenticate
             if (!authenticate_websocket()) {
-                std::cerr << "[BINANCE_PMS] Authentication failed" << std::endl;
+                LOG_ERROR_COMP("BINANCE_PMS", "Authentication failed");
                 return false;
             }
             
             connected_ = true;
             authenticated_ = true;
             
-            std::cout << "[BINANCE_PMS] Connected successfully" << std::endl;
+            LOG_INFO_COMP("BINANCE_PMS", "Connected successfully");
             return true;
         }
         
     } catch (const std::exception& e) {
-        std::cerr << "[BINANCE_PMS] Connection failed: " << e.what() << std::endl;
+        LOG_ERROR_COMP("BINANCE_PMS", "Connection failed: " + std::string(e.what()));
         return false;
     }
 }
 
 void BinancePMS::disconnect() {
-    std::cout << "[BINANCE_PMS] Disconnecting..." << std::endl;
+    LOG_INFO_COMP("BINANCE_PMS", "Disconnecting...");
     
     websocket_running_ = false;
     connected_ = false;
@@ -72,12 +72,12 @@ void BinancePMS::disconnect() {
     
     if (custom_transport_) {
         custom_transport_->disconnect();
-        std::cout << "[BINANCE_PMS] Disconnected from custom transport" << std::endl;
+        LOG_INFO_COMP("BINANCE_PMS", "Disconnected from custom transport");
     } else {
         if (websocket_thread_.joinable()) {
             websocket_thread_.join();
         }
-        std::cout << "[BINANCE_PMS] Disconnected" << std::endl;
+        LOG_INFO_COMP("BINANCE_PMS", "Disconnected");
     }
 }
 
@@ -96,7 +96,7 @@ bool BinancePMS::is_authenticated() const {
 }
 
 void BinancePMS::websocket_loop() {
-    std::cout << "[BINANCE_PMS] WebSocket loop started" << std::endl;
+    LOG_INFO_COMP("BINANCE_PMS", "WebSocket loop started");
     
     while (websocket_running_) {
         try {
@@ -117,12 +117,12 @@ void BinancePMS::websocket_loop() {
             }
             
         } catch (const std::exception& e) {
-            std::cerr << "[BINANCE_PMS] WebSocket loop error: " << e.what() << std::endl;
+            LOG_ERROR_COMP("BINANCE_PMS", "WebSocket loop error: " + std::string(e.what()));
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
     }
     
-    std::cout << "[BINANCE_PMS] WebSocket loop stopped" << std::endl;
+    LOG_INFO_COMP("BINANCE_PMS", "WebSocket loop stopped");
 }
 
 void BinancePMS::handle_websocket_message(const std::string& message) {
@@ -131,7 +131,7 @@ void BinancePMS::handle_websocket_message(const std::string& message) {
         Json::Reader reader;
         
         if (!reader.parse(message, root)) {
-            std::cerr << "[BINANCE_PMS] Failed to parse WebSocket message" << std::endl;
+            LOG_ERROR_COMP("BINANCE_PMS", "Failed to parse WebSocket message");
             return;
         }
         
@@ -158,7 +158,7 @@ void BinancePMS::handle_websocket_message(const std::string& message) {
         }
         
     } catch (const std::exception& e) {
-        std::cerr << "[BINANCE_PMS] Error handling WebSocket message: " << e.what() << std::endl;
+        LOG_ERROR_COMP("BINANCE_PMS", "Error handling WebSocket message: " + std::string(e.what()));
     }
 }
 
@@ -179,14 +179,15 @@ void BinancePMS::handle_position_update(const Json::Value& position_data) {
         position_update_callback_(position);
     }
     
-    std::cout << "[BINANCE_PMS] Position update: " << position.symbol() 
-              << " qty: " << position.qty() 
-              << " price: " << position.avg_price() 
-              << " pnl: N/A" << std::endl;
+    std::string log_msg = "Position update: " + position.symbol() + 
+                          " qty: " + std::to_string(position.qty()) + 
+                          " price: " + std::to_string(position.avg_price()) + 
+                          " pnl: N/A";
+    LOG_DEBUG_COMP("BINANCE_PMS", log_msg);
 }
 
 void BinancePMS::handle_account_update(const Json::Value& account_data) {
-    std::cout << "[BINANCE_PMS] Account update: " << account_data.toStyledString() << std::endl;
+    LOG_DEBUG_COMP("BINANCE_PMS", "Account update: " + account_data.toStyledString());
     
     // Handle balance updates
     if (account_data.isMember("B")) {
@@ -218,12 +219,12 @@ void BinancePMS::handle_balance_update(const Json::Value& balance_data) {
         account_balance_update_callback_(balance_update);
     }
     
-    std::cout << "[BINANCE_PMS] Balance update: " << balance_update.balances_size() << " balances" << std::endl;
+    LOG_DEBUG_COMP("BINANCE_PMS", "Balance update: " + std::to_string(balance_update.balances_size()) + " balances");
 }
 
 bool BinancePMS::authenticate_websocket() {
     std::string auth_msg = create_auth_message();
-    std::cout << "[BINANCE_PMS] Authenticating: " << auth_msg << std::endl;
+    LOG_INFO_COMP("BINANCE_PMS", "Authenticating: " + auth_msg);
     
     // Mock authentication response
     std::string mock_auth_response = R"({"result":null,"id":)" + std::to_string(request_id_++) + R"(})";
@@ -252,17 +253,17 @@ std::string BinancePMS::generate_request_id() {
 
 void BinancePMS::set_position_update_callback(PositionUpdateCallback callback) {
     position_update_callback_ = callback;
-    std::cout << "[BINANCE_PMS] Position update callback set" << std::endl;
+    LOG_INFO_COMP("BINANCE_PMS", "Position update callback set");
 }
 
 void BinancePMS::set_account_balance_update_callback(AccountBalanceUpdateCallback callback) {
     account_balance_update_callback_ = callback;
-    std::cout << "[BINANCE_PMS] Account balance update callback set" << std::endl;
+    LOG_INFO_COMP("BINANCE_PMS", "Account balance update callback set");
 }
 
 void BinancePMS::set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport) {
     custom_transport_ = transport;
-    std::cout << "[BINANCE_PMS] Custom WebSocket transport set for testing" << std::endl;
+    LOG_INFO_COMP("BINANCE_PMS", "Custom WebSocket transport set for testing");
 }
 
 } // namespace binance

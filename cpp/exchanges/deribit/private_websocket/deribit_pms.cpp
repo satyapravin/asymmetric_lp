@@ -1,5 +1,5 @@
 #include "deribit_pms.hpp"
-#include <iostream>
+#include "../../../utils/logging/log_helper.hpp"
 #include <sstream>
 #include <chrono>
 #include <thread>
@@ -8,12 +8,12 @@
 namespace deribit {
 
 DeribitPMS::DeribitPMS(const DeribitPMSConfig& config) : config_(config) {
-    std::cout << "[DERIBIT_PMS] Initializing Deribit PMS" << std::endl;
+    LOG_INFO_COMP("DERIBIT_PMS", "Initializing Deribit PMS");
     
     // If credentials are provided in config, mark as authenticated
     if (!config_.client_id.empty() && !config_.client_secret.empty()) {
         authenticated_.store(true);
-        std::cout << "[DERIBIT_PMS] Credentials provided in config, marked as authenticated" << std::endl;
+        LOG_INFO_COMP("DERIBIT_PMS", "Credentials provided in config, marked as authenticated");
     } else {
         authenticated_.store(false);
     }
@@ -24,17 +24,17 @@ DeribitPMS::~DeribitPMS() {
 }
 
 bool DeribitPMS::connect() {
-    std::cout << "[DERIBIT_PMS] Connecting to Deribit WebSocket..." << std::endl;
+    LOG_INFO_COMP("DERIBIT_PMS", "Connecting to Deribit WebSocket...");
     
     if (connected_.load()) {
-        std::cout << "[DERIBIT_PMS] Already connected" << std::endl;
+        LOG_INFO_COMP("DERIBIT_PMS", "Already connected");
         return true;
     }
     
     try {
         // If custom transport is set, use it (for testing)
         if (custom_transport_) {
-            std::cout << "[DERIBIT_PMS] Using custom WebSocket transport" << std::endl;
+            LOG_INFO_COMP("DERIBIT_PMS", "Using custom WebSocket transport");
             
             // Set up message callback BEFORE connecting
             custom_transport_->set_message_callback([this](const websocket_transport::WebSocketMessage& ws_msg) {
@@ -56,15 +56,15 @@ bool DeribitPMS::connect() {
                 
                 // Authenticate
                 if (!authenticate_websocket()) {
-                    std::cerr << "[DERIBIT_PMS] Authentication failed" << std::endl;
+                    LOG_ERROR_COMP("DERIBIT_PMS", "Authentication failed");
                     return false;
                 }
                 
                 authenticated_.store(true);
-                std::cout << "[DERIBIT_PMS] Connected successfully using injected transport" << std::endl;
+                LOG_INFO_COMP("DERIBIT_PMS", "Connected successfully using injected transport");
                 return true;
             } else {
-                std::cerr << "[DERIBIT_PMS] Failed to connect using custom transport" << std::endl;
+                LOG_ERROR_COMP("DERIBIT_PMS", "Failed to connect using custom transport");
                 return false;
             }
         }
@@ -75,24 +75,24 @@ bool DeribitPMS::connect() {
         
         // Authenticate
         if (!authenticate_websocket()) {
-            std::cerr << "[DERIBIT_PMS] Authentication failed" << std::endl;
+            LOG_ERROR_COMP("DERIBIT_PMS", "Authentication failed");
             return false;
         }
         
         connected_ = true;
         authenticated_.store(true);
         
-        std::cout << "[DERIBIT_PMS] Connected successfully" << std::endl;
+        LOG_INFO_COMP("DERIBIT_PMS", "Connected successfully");
         return true;
         
     } catch (const std::exception& e) {
-        std::cerr << "[DERIBIT_PMS] Connection failed: " << e.what() << std::endl;
+        LOG_ERROR_COMP("DERIBIT_PMS", "Connection failed: " + std::string(e.what()));
         return false;
     }
 }
 
 void DeribitPMS::disconnect() {
-    std::cout << "[DERIBIT_PMS] Disconnecting..." << std::endl;
+    LOG_INFO_COMP("DERIBIT_PMS", "Disconnecting...");
     
     websocket_running_ = false;
     connected_ = false;
@@ -106,7 +106,7 @@ void DeribitPMS::disconnect() {
         websocket_thread_.join();
     }
     
-    std::cout << "[DERIBIT_PMS] Disconnected" << std::endl;
+    LOG_INFO_COMP("DERIBIT_PMS", "Disconnected");
 }
 
 bool DeribitPMS::is_connected() const {
@@ -129,19 +129,19 @@ void DeribitPMS::set_position_update_callback(PositionUpdateCallback callback) {
 
 void DeribitPMS::set_account_balance_update_callback(AccountBalanceUpdateCallback callback) {
     account_balance_update_callback_ = callback;
-    std::cout << "[DERIBIT_PMS] Account balance update callback set" << std::endl;
+    LOG_INFO_COMP("DERIBIT_PMS", "Account balance update callback set");
 }
 
 void DeribitPMS::set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport) {
-    std::cout << "[DERIBIT_PMS] Setting custom WebSocket transport for testing" << std::endl;
+    LOG_INFO_COMP("DERIBIT_PMS", "Setting custom WebSocket transport for testing");
     custom_transport_ = transport;
 }
 
 void DeribitPMS::websocket_loop() {
-    std::cout << "[DERIBIT_PMS] WebSocket loop started" << std::endl;
+    LOG_INFO_COMP("DERIBIT_PMS", "WebSocket loop started");
     
     if (custom_transport_) {
-        std::cout << "[DERIBIT_PMS] Using custom transport - messages will arrive via callback" << std::endl;
+        LOG_INFO_COMP("DERIBIT_PMS", "Using custom transport - messages will arrive via callback");
         // The custom transport's event loop will handle message reception and callbacks
         // We just need to keep this thread alive while the custom transport is running
         while (websocket_running_.load()) {
@@ -171,18 +171,18 @@ void DeribitPMS::websocket_loop() {
                 }
                 
             } catch (const std::exception& e) {
-                std::cerr << "[DERIBIT_PMS] WebSocket loop error: " << e.what() << std::endl;
+                LOG_ERROR_COMP("DERIBIT_PMS", "WebSocket loop error: " + std::string(e.what()));
                 std::this_thread::sleep_for(std::chrono::milliseconds(1000));
             }
         }
     }
     
     if (custom_transport_) {
-        std::cout << "[DERIBIT_PMS] Stopping custom transport event loop" << std::endl;
+        LOG_INFO_COMP("DERIBIT_PMS", "Stopping custom transport event loop");
         custom_transport_->stop_event_loop();
     }
     
-    std::cout << "[DERIBIT_PMS] WebSocket loop stopped" << std::endl;
+    LOG_INFO_COMP("DERIBIT_PMS", "WebSocket loop stopped");
 }
 
 void DeribitPMS::handle_websocket_message(const std::string& message) {
@@ -191,7 +191,7 @@ void DeribitPMS::handle_websocket_message(const std::string& message) {
         Json::Reader reader;
         
         if (!reader.parse(message, root)) {
-            std::cerr << "[DERIBIT_PMS] Failed to parse WebSocket message" << std::endl;
+            LOG_ERROR_COMP("DERIBIT_PMS", "Failed to parse WebSocket message");
             return;
         }
         
@@ -215,15 +215,15 @@ void DeribitPMS::handle_websocket_message(const std::string& message) {
             // Handle subscription responses
             Json::Value result = root["result"];
             if (result.isArray() && result.size() > 0) {
-                std::cout << "[DERIBIT_PMS] Subscription response: " << message << std::endl;
+                LOG_INFO_COMP("DERIBIT_PMS", "Subscription response: " + message);
             } else if (result.isMember("access_token")) {
                 // Authentication response
-                std::cout << "[DERIBIT_PMS] Authentication successful" << std::endl;
+                LOG_INFO_COMP("DERIBIT_PMS", "Authentication successful");
             }
         }
         
     } catch (const std::exception& e) {
-        std::cerr << "[DERIBIT_PMS] Error handling WebSocket message: " << e.what() << std::endl;
+        LOG_ERROR_COMP("DERIBIT_PMS", "Error handling WebSocket message: " + std::string(e.what()));
     }
 }
 
@@ -286,9 +286,10 @@ void DeribitPMS::handle_position_update(const Json::Value& position_data) {
             position_update_callback_(position);
         }
         
-        std::cout << "[DERIBIT_PMS] Position update: " << position.symbol() 
-                  << " qty: " << position.qty() 
-                  << " price: " << position.avg_price() << std::endl;
+        std::string log_msg = "Position update: " + position.symbol() + 
+                              " qty: " + std::to_string(position.qty()) + 
+                              " price: " + std::to_string(position.avg_price());
+        LOG_DEBUG_COMP("DERIBIT_PMS", log_msg);
     }
 }
 
@@ -357,22 +358,22 @@ void DeribitPMS::handle_balance_update(const Json::Value& portfolio_data) {
     }
     
     if (balance_update.balances_size() > 0) {
-        std::cout << "[DERIBIT_PMS] Balance update: " << balance_update.balances_size() << " balances" << std::endl;
+        LOG_DEBUG_COMP("DERIBIT_PMS", "Balance update: " + std::to_string(balance_update.balances_size()) + " balances");
     }
 }
 
 bool DeribitPMS::authenticate_websocket() {
     if (config_.client_id.empty() || config_.client_secret.empty()) {
-        std::cerr << "[DERIBIT_PMS] Cannot authenticate: credentials not set" << std::endl;
+        LOG_ERROR_COMP("DERIBIT_PMS", "Cannot authenticate: credentials not set");
         return false;
     }
     
     std::string auth_msg = create_auth_message();
-    std::cout << "[DERIBIT_PMS] Authenticating: " << auth_msg << std::endl;
+    LOG_INFO_COMP("DERIBIT_PMS", "Authenticating: " + auth_msg);
     
     // Subscribe to portfolio channel for balance updates
     std::string portfolio_subscription = create_portfolio_subscription();
-    std::cout << "[DERIBIT_PMS] Subscribing to portfolio channel: " << portfolio_subscription << std::endl;
+    LOG_INFO_COMP("DERIBIT_PMS", "Subscribing to portfolio channel: " + portfolio_subscription);
     
     // Note: Authentication and subscription messages are handled by the mock transport's automatic replay
     // For real WebSocket connections, the messages would be sent here

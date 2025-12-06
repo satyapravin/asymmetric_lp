@@ -2,7 +2,7 @@
 #include "../exchanges/pms_factory.hpp"
 #include "../utils/zmq/zmq_publisher.hpp"
 #include "../utils/config/process_config_manager.hpp"
-#include <iostream>
+#include "../utils/logging/logger.hpp"
 #include <thread>
 
 namespace position_server {
@@ -16,13 +16,14 @@ PositionServerLib::~PositionServerLib() {
 }
 
 bool PositionServerLib::initialize(const std::string& config_file) {
+    logging::Logger logger("POSITION_SERVER_LIB");
     if (config_file.empty()) {
-        std::cout << "[POSITION_SERVER_LIB] Using default configuration" << std::endl;
+        logger.debug("Using default configuration");
     } else {
-        std::cout << "[POSITION_SERVER_LIB] Loading configuration from: " << config_file << std::endl;
+        logger.info("Loading configuration from: " + config_file);
         config_manager_ = std::make_unique<config::ProcessConfigManager>();
         if (!config_manager_->load_config(config_file)) {
-            std::cerr << "[POSITION_SERVER_LIB] Failed to load configuration from: " << config_file << std::endl;
+            logger.error("Failed to load configuration from: " + config_file);
             return false;
         }
         
@@ -34,35 +35,36 @@ bool PositionServerLib::initialize(const std::string& config_file) {
     
     // Validate required configuration
     if (exchange_name_.empty()) {
-        std::cerr << "[POSITION_SERVER_LIB] ERROR: Exchange name not configured. "
-                  << "Set it via set_exchange() or config file (position_server.exchange)" << std::endl;
+        logger.error("ERROR: Exchange name not configured. Set it via set_exchange() or config file (position_server.exchange)");
         throw std::runtime_error("Exchange name not configured");
     }
     
     // Setup exchange PMS
     setup_exchange_pms();
     
-    std::cout << "[POSITION_SERVER_LIB] Initialized with exchange: " << exchange_name_ << std::endl;
+    logger.info("Initialized with exchange: " + exchange_name_);
     return true;
 }
 
 void PositionServerLib::start() {
+    logging::Logger logger("POSITION_SERVER_LIB");
     if (running_.load()) {
-        std::cout << "[POSITION_SERVER_LIB] Already running" << std::endl;
+        logger.debug("Already running");
         return;
     }
     
     running_.store(true);
     
     if (exchange_pms_) {
-        std::cout << "[POSITION_SERVER_LIB] Starting exchange PMS..." << std::endl;
+        logger.info("Starting exchange PMS...");
         exchange_pms_->connect();
     }
     
-    std::cout << "[POSITION_SERVER_LIB] Started successfully" << std::endl;
+    logger.info("Started successfully");
 }
 
 void PositionServerLib::stop() {
+    logging::Logger logger("POSITION_SERVER_LIB");
     if (!running_.load()) {
         return;
     }
@@ -70,11 +72,11 @@ void PositionServerLib::stop() {
     running_.store(false);
     
     if (exchange_pms_) {
-        std::cout << "[POSITION_SERVER_LIB] Stopping exchange PMS..." << std::endl;
+        logger.info("Stopping exchange PMS...");
         exchange_pms_->disconnect();
     }
     
-    std::cout << "[POSITION_SERVER_LIB] Stopped" << std::endl;
+    logger.info("Stopped");
 }
 
 bool PositionServerLib::is_connected_to_exchange() const {
@@ -82,22 +84,23 @@ bool PositionServerLib::is_connected_to_exchange() const {
 }
 
 void PositionServerLib::setup_exchange_pms() {
+    logging::Logger logger("POSITION_SERVER_LIB");
     if (exchange_name_.empty()) {
-        std::cerr << "[POSITION_SERVER_LIB] Cannot setup PMS: exchange name not set" << std::endl;
+        logger.error("Cannot setup PMS: exchange name not set");
         return;
     }
     
-    std::cout << "[POSITION_SERVER_LIB] Setting up exchange PMS for: " << exchange_name_ << std::endl;
+    logger.info("Setting up exchange PMS for: " + exchange_name_);
     
     try {
         // Create exchange PMS using factory
         exchange_pms_ = PMSFactory::create_pms(exchange_name_);
         if (!exchange_pms_) {
-            std::cerr << "[POSITION_SERVER_LIB] Failed to create exchange PMS for: " << exchange_name_ << std::endl;
+            logger.error("Failed to create exchange PMS for: " + exchange_name_);
             return;
         }
     } catch (const std::exception& e) {
-        std::cerr << "[POSITION_SERVER_LIB] Exception creating PMS: " << e.what() << std::endl;
+        logger.error("Exception creating PMS: " + std::string(e.what()));
         throw;
     }
     
@@ -110,14 +113,16 @@ void PositionServerLib::setup_exchange_pms() {
         handle_balance_update(balance);
     });
     
-    std::cout << "[POSITION_SERVER_LIB] Exchange PMS setup complete" << std::endl;
+    logger.debug("Exchange PMS setup complete");
 }
 
 void PositionServerLib::handle_position_update(const proto::PositionUpdate& position) {
     statistics_.position_updates++;
     
-    std::cout << "[POSITION_SERVER_LIB] Position update: " << position.symbol() 
-              << " qty: " << position.qty() << " avg_price: " << position.avg_price() << std::endl;
+    logging::Logger logger("POSITION_SERVER_LIB");
+    std::stringstream ss;
+    ss << "Position update: " << position.symbol() << " qty: " << position.qty() << " avg_price: " << position.avg_price();
+    logger.debug(ss.str());
     
     // Publish to ZMQ
     publish_to_zmq("position_updates", position.SerializeAsString());
@@ -126,8 +131,8 @@ void PositionServerLib::handle_position_update(const proto::PositionUpdate& posi
 void PositionServerLib::handle_balance_update(const proto::AccountBalanceUpdate& balance) {
     statistics_.balance_updates++;
     
-    std::cout << "[POSITION_SERVER_LIB] Balance update: " 
-              << " balances: " << balance.balances_size() << std::endl;
+    logging::Logger logger("POSITION_SERVER_LIB");
+    logger.debug("Balance update: balances: " + std::to_string(balance.balances_size()));
     
     // Publish to ZMQ
     publish_to_zmq("balance_updates", balance.SerializeAsString());
@@ -136,23 +141,26 @@ void PositionServerLib::handle_balance_update(const proto::AccountBalanceUpdate&
 void PositionServerLib::handle_error(const std::string& error_message) {
     statistics_.connection_errors++;
     
-    std::cerr << "[POSITION_SERVER_LIB] Error: " << error_message << std::endl;
+    logging::Logger logger("POSITION_SERVER_LIB");
+    logger.error("Error: " + error_message);
 }
 
 void PositionServerLib::publish_to_zmq(const std::string& topic, const std::string& message) {
+    logging::Logger logger("POSITION_SERVER_LIB");
     if (publisher_) {
         publisher_->publish(topic, message);
         statistics_.zmq_messages_sent++;
-        std::cout << "[POSITION_SERVER_LIB] Published to ZMQ topic: " << topic << " size: " << message.size() << " bytes" << std::endl;
+        logger.debug("Published to ZMQ topic: " + topic + " size: " + std::to_string(message.size()) + " bytes");
     } else {
-        std::cout << "[POSITION_SERVER_LIB] No ZMQ publisher available!" << std::endl;
+        logger.error("No ZMQ publisher available!");
     }
 }
 
 void PositionServerLib::set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport) {
     if (exchange_pms_) {
         exchange_pms_->set_websocket_transport(transport);
-        std::cout << "[POSITION_SERVER_LIB] WebSocket transport injected for testing" << std::endl;
+        logging::Logger logger("POSITION_SERVER_LIB");
+        logger.debug("WebSocket transport injected for testing");
     }
 }
 

@@ -1,6 +1,6 @@
 #include "message_handler.hpp"
 #include "../zmq/zmq_subscriber.hpp"
-#include <iostream>
+#include "../logging/log_helper.hpp"
 #include <chrono>
 
 MessageHandler::MessageHandler(const std::string& name, 
@@ -8,8 +8,8 @@ MessageHandler::MessageHandler(const std::string& name,
                               const std::string& topic)
     : name_(name), endpoint_(endpoint), topic_(topic) {
   subscriber_ = std::make_unique<ZmqSubscriber>(endpoint_, topic_);
-  std::cout << "[MESSAGE_HANDLER] Created handler '" << name_ 
-            << "' for topic '" << topic_ << "' at " << endpoint_ << std::endl;
+  LOG_INFO_COMP("MESSAGE_HANDLER", "Created handler '" + name_ + 
+                "' for topic '" + topic_ + "' at " + endpoint_);
 }
 
 MessageHandler::~MessageHandler() {
@@ -24,7 +24,7 @@ void MessageHandler::start() {
     process_messages();
   });
   
-  std::cout << "[MESSAGE_HANDLER] Started handler '" << name_ << "'" << std::endl;
+  LOG_INFO_COMP("MESSAGE_HANDLER", "Started handler '" + name_ + "'");
 }
 
 void MessageHandler::stop() {
@@ -36,7 +36,7 @@ void MessageHandler::stop() {
     handler_thread_->join();
   }
   
-  std::cout << "[MESSAGE_HANDLER] Stopped handler '" << name_ << "'" << std::endl;
+  LOG_INFO_COMP("MESSAGE_HANDLER", "Stopped handler '" + name_ + "'");
 }
 
 void MessageHandler::process_messages() {

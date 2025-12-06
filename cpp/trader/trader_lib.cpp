@@ -1,27 +1,30 @@
 #include "trader_lib.hpp"
 #include "../utils/config/process_config_manager.hpp"
-#include <iostream>
+#include "../utils/logging/logger.hpp"
 #include <mutex>
 
 namespace trader {
 
 TraderLib::TraderLib() : running_(false), oms_event_running_(false) {
-    std::cout << "[TRADER_LIB] Initializing Trader Library" << std::endl;
+    logging::Logger logger("TRADER_LIB");
+    logger.info("Initializing Trader Library");
 }
 
 TraderLib::~TraderLib() {
     stop();
-    std::cout << "[TRADER_LIB] Destroying Trader Library" << std::endl;
+    logging::Logger logger("TRADER_LIB");
+    logger.info("Destroying Trader Library");
 }
 
 bool TraderLib::initialize(const std::string& config_file) {
-    std::cout << "[TRADER_LIB] Initializing with config: " << config_file << std::endl;
+    logging::Logger logger("TRADER_LIB");
+    logger.info("Initializing with config: " + config_file);
     
     // Initialize configuration manager
     config_manager_ = std::make_unique<config::ProcessConfigManager>();
     if (!config_file.empty()) {
         if (!config_manager_->load_config(config_file)) {
-            std::cerr << "[TRADER_LIB] Failed to load config file: " << config_file << std::endl;
+            logger.error("Failed to load config file: " + config_file);
             return false;
         }
     }
@@ -46,24 +49,25 @@ bool TraderLib::initialize(const std::string& config_file) {
     
     // Create MDS adapter
     mds_adapter_ = std::make_shared<ZmqMDSAdapter>(mds_endpoint, "market_data", exchange_);
-    std::cout << "[TRADER_LIB] Created MDS adapter for endpoint: " << mds_endpoint << std::endl;
+    logger.debug("Created MDS adapter for endpoint: " + mds_endpoint);
     
     // Create PMS adapter
     pms_adapter_ = std::make_shared<ZmqPMSAdapter>(pms_endpoint, "position_updates");
-    std::cout << "[TRADER_LIB] Created PMS adapter for endpoint: " << pms_endpoint << std::endl;
+    logger.debug("Created PMS adapter for endpoint: " + pms_endpoint);
     
     // Create OMS adapter
     oms_adapter_ = std::make_shared<ZmqOMSAdapter>(oms_publish_endpoint, "orders", oms_subscribe_endpoint, "order_events");
-    std::cout << "[TRADER_LIB] Created OMS adapter for endpoints: " << oms_publish_endpoint << " / " << oms_subscribe_endpoint << std::endl;
+    logger.debug("Created OMS adapter for endpoints: " + oms_publish_endpoint + " / " + oms_subscribe_endpoint);
     
     return true;
 }
 
 void TraderLib::start() {
-    std::cout << "[TRADER_LIB] Starting Trader Library" << std::endl;
+    logging::Logger logger("TRADER_LIB");
+    logger.info("Starting Trader Library");
     
     if (running_.load()) {
-        std::cout << "[TRADER_LIB] Already running" << std::endl;
+        logger.debug("Already running");
         return;
     }
     
@@ -74,10 +78,11 @@ void TraderLib::start() {
     
     // Start OMS adapter polling
     if (oms_adapter_) {
-        std::cout << "[TRADER_LIB] Starting OMS adapter polling" << std::endl;
+        logger.debug("Starting OMS adapter polling");
         oms_event_running_.store(true);
         oms_event_thread_ = std::thread([this]() {
-            std::cout << "[TRADER_LIB] OMS event polling thread started" << std::endl;
+            logging::Logger thread_logger("TRADER_LIB");
+            thread_logger.debug("OMS event polling thread started");
             int poll_count = 0;
             constexpr int OMS_POLL_INTERVAL_MS = 50;  // Poll interval for responsive event handling
             constexpr int OMS_LOG_INTERVAL = 100;      // Log polling count every N iterations
@@ -85,23 +90,24 @@ void TraderLib::start() {
                 oms_adapter_->poll_events();
                 poll_count++;
                 if (poll_count % OMS_LOG_INTERVAL == 0) {
-                    std::cout << "[TRADER_LIB] OMS polling count: " << poll_count << std::endl;
+                    thread_logger.debug("OMS polling count: " + std::to_string(poll_count));
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(OMS_POLL_INTERVAL_MS));
             }
-            std::cout << "[TRADER_LIB] OMS event polling thread stopped" << std::endl;
+            thread_logger.debug("OMS event polling thread stopped");
         });
     }
     
     running_.store(true);
-    std::cout << "[TRADER_LIB] Started successfully" << std::endl;
+    logger.info("Started successfully");
 }
 
 void TraderLib::stop() {
-    std::cout << "[TRADER_LIB] Stopping Trader Library" << std::endl;
+    logging::Logger logger("TRADER_LIB");
+    logger.info("Stopping Trader Library");
     
     if (!running_.load()) {
-        std::cout << "[TRADER_LIB] Already stopped" << std::endl;
+        logger.debug("Already stopped");
         return;
     }
     
@@ -112,7 +118,7 @@ void TraderLib::stop() {
     
     // Stop OMS event polling thread
     if (oms_event_running_.load()) {
-        std::cout << "[TRADER_LIB] Stopping OMS event polling" << std::endl;
+        logger.debug("Stopping OMS event polling");
         oms_event_running_.store(false);
         if (oms_event_thread_.joinable()) {
             oms_event_thread_.join();
@@ -121,26 +127,27 @@ void TraderLib::stop() {
     
     // Stop ZMQ adapters
     if (mds_adapter_) {
-        std::cout << "[TRADER_LIB] Stopping MDS adapter" << std::endl;
+        logger.debug("Stopping MDS adapter");
         mds_adapter_->stop();
     }
     if (oms_adapter_) {
         // TODO: Add stop() method to OMS adapter
     }
     if (pms_adapter_) {
-        std::cout << "[TRADER_LIB] Stopping PMS adapter" << std::endl;
+        logger.debug("Stopping PMS adapter");
         pms_adapter_->stop();
     }
     
     running_.store(false);
-    std::cout << "[TRADER_LIB] Stopped successfully" << std::endl;
+    logger.info("Stopped successfully");
 }
 
 void TraderLib::set_strategy(std::shared_ptr<AbstractStrategy> strategy) {
-    std::cout << "[TRADER_LIB] Setting strategy" << std::endl;
+    logging::Logger logger("TRADER_LIB");
+    logger.info("Setting strategy");
     
     if (!strategy_container_) {
-        std::cerr << "[TRADER_LIB] Strategy container not initialized!" << std::endl;
+        logger.error("Strategy container not initialized!");
         return;
     }
     
@@ -148,10 +155,12 @@ void TraderLib::set_strategy(std::shared_ptr<AbstractStrategy> strategy) {
     
     // Set up MDS adapter callback to forward market data to strategy container
     if (mds_adapter_) {
-        std::cout << "[TRADER_LIB] Setting up MDS adapter callback" << std::endl;
+        logger.debug("Setting up MDS adapter callback");
         mds_adapter_->on_snapshot = [this](const proto::OrderBookSnapshot& orderbook) {
-            std::cout << "[TRADER_LIB] MDS adapter received orderbook: " << orderbook.symbol() 
-                      << " bids: " << orderbook.bids_size() << " asks: " << orderbook.asks_size() << std::endl;
+            logging::Logger callback_logger("TRADER_LIB");
+            callback_logger.debug("MDS adapter received orderbook: " + orderbook.symbol() + 
+                                 " bids: " + std::to_string(orderbook.bids_size()) + 
+                                 " asks: " + std::to_string(orderbook.asks_size()));
             
             // Forward proto::OrderBookSnapshot directly to strategy container
             strategy_container_->on_market_data(orderbook);
@@ -160,10 +169,11 @@ void TraderLib::set_strategy(std::shared_ptr<AbstractStrategy> strategy) {
     
     // Set up PMS adapter callback to forward position updates to strategy container
     if (pms_adapter_) {
-        std::cout << "[TRADER_LIB] Setting up PMS adapter callback" << std::endl;
+        logger.debug("Setting up PMS adapter callback");
         pms_adapter_->set_position_callback([this](const proto::PositionUpdate& position) {
-            std::cout << "[TRADER_LIB] PMS adapter received position update: " << position.symbol() 
-                      << " qty: " << position.qty() << std::endl;
+            logging::Logger callback_logger("TRADER_LIB");
+            callback_logger.debug("PMS adapter received position update: " + position.symbol() + 
+                                 " qty: " + std::to_string(position.qty()));
             
             // Forward position update to strategy container
             strategy_container_->on_position_update(position);
@@ -172,12 +182,13 @@ void TraderLib::set_strategy(std::shared_ptr<AbstractStrategy> strategy) {
     
     // Set up OMS adapter callback to forward order events to strategy container
     if (oms_adapter_) {
-        std::cout << "[TRADER_LIB] Setting up OMS adapter callback" << std::endl;
+        logger.debug("Setting up OMS adapter callback");
         oms_adapter_->set_event_callback([this](const std::string& cl_ord_id, const std::string& exch, 
                                                 const std::string& symbol, uint32_t event_type, 
                                                 double fill_qty, double fill_price, const std::string& text) {
-            std::cout << "[TRADER_LIB] OMS adapter received order event: " << cl_ord_id 
-                      << " symbol: " << symbol << " type: " << event_type << std::endl;
+            logging::Logger callback_logger("TRADER_LIB");
+            callback_logger.debug("OMS adapter received order event: " + cl_ord_id + 
+                                 " symbol: " + symbol + " type: " + std::to_string(event_type));
             
             // Convert to protobuf OrderEvent and forward to strategy container
             proto::OrderEvent order_event;
@@ -280,7 +291,8 @@ void TraderLib::handle_error(const std::string& error_message) {
     statistics_.strategy_errors.fetch_add(1);
     
     // Log error
-    std::cerr << "[TRADER_LIB] Error: " << error_message << std::endl;
+    logging::Logger logger("TRADER_LIB");
+    logger.error("Error: " + error_message);
 }
 
 } // namespace trader

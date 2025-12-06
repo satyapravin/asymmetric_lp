@@ -25,6 +25,8 @@ target_compile_definitions(base_strategy PRIVATE PROTO_ENABLED)
 # Market Making Strategy
 add_library(market_making_strategy STATIC
     mm_strategy/market_making_strategy.cpp
+    mm_strategy/market_making_strategy_config.cpp
+    mm_strategy/models/glft_target.cpp
 )
 
 target_include_directories(market_making_strategy PUBLIC

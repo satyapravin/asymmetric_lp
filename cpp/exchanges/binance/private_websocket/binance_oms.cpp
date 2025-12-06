@@ -1,5 +1,5 @@
 #include "binance_oms.hpp"
-#include <iostream>
+#include "../../../utils/logging/log_helper.hpp"
 #include <chrono>
 #include <iomanip>
 #include <sstream>
@@ -50,14 +50,14 @@ static size_t OMSWriteCallback(void* contents, size_t size, size_t nmemb, std::s
 
 BinanceOMS::BinanceOMS(const BinanceConfig& config) 
     : config_(config), connected_(false), authenticated_(false) {
-    std::cout << "[BINANCE] Initializing Binance OMS" << std::endl;
+    LOG_INFO_COMP("BINANCE", "Initializing Binance OMS");
     
     // Initialize CURL with reference counting
     ensure_curl_initialized();
 }
 
 BinanceOMS::~BinanceOMS() {
-    std::cout << "[BINANCE] Destroying Binance OMS" << std::endl;
+    LOG_INFO_COMP("BINANCE", "Destroying Binance OMS");
     // Cleanup CURL with reference counting
     ensure_curl_cleanup();
 }
@@ -65,25 +65,25 @@ BinanceOMS::~BinanceOMS() {
 bool BinanceOMS::connect() {
     if (custom_transport_) {
         // If a custom transport is injected (for testing)
-        std::cout << "[BINANCE] Connected using injected transport" << std::endl;
+        LOG_INFO_COMP("BINANCE", "Connected using injected transport");
         connected_.store(true);
         authenticated_.store(true); // Assume authenticated for mock transport
         return true;
     }
     
     if (!is_authenticated()) {
-        std::cerr << "[BINANCE] Cannot connect without authentication" << std::endl;
+        LOG_ERROR_COMP("BINANCE", "Cannot connect without authentication");
         return false;
     }
     
     connected_.store(true);
-    std::cout << "[BINANCE] Connected to Binance" << std::endl;
+    LOG_INFO_COMP("BINANCE", "Connected to Binance");
     return true;
 }
 
 void BinanceOMS::disconnect() {
     connected_.store(false);
-    std::cout << "[BINANCE] Disconnected from Binance" << std::endl;
+    LOG_INFO_COMP("BINANCE", "Disconnected from Binance");
 }
 
 bool BinanceOMS::is_connected() const {
@@ -102,7 +102,7 @@ bool BinanceOMS::is_authenticated() const {
 
 bool BinanceOMS::cancel_order(const std::string& cl_ord_id, const std::string& exch_ord_id) {
     if (!is_connected() || !is_authenticated()) {
-        std::cerr << "[BINANCE] Not connected or authenticated" << std::endl;
+        LOG_ERROR_COMP("BINANCE", "Not connected or authenticated");
         return false;
     }
     
@@ -111,7 +111,7 @@ bool BinanceOMS::cancel_order(const std::string& cl_ord_id, const std::string& e
     
     std::string response = make_request(endpoint, "DELETE", params, true);
     if (response.empty()) {
-        std::cerr << "[BINANCE] Failed to cancel order" << std::endl;
+        LOG_ERROR_COMP("BINANCE", "Failed to cancel order");
         return false;
     }
     
@@ -128,13 +128,13 @@ bool BinanceOMS::cancel_order(const std::string& cl_ord_id, const std::string& e
 
 bool BinanceOMS::replace_order(const std::string& cl_ord_id, const proto::OrderRequest& new_order) {
     if (!is_connected() || !is_authenticated()) {
-        std::cerr << "[BINANCE] Not connected or authenticated" << std::endl;
+        LOG_ERROR_COMP("BINANCE", "Not connected or authenticated");
         return false;
     }
     
     // First cancel the existing order
     if (!cancel_order(cl_ord_id, "")) {  // We don't have exch_order_id in OrderRequest
-        std::cerr << "[BINANCE] Failed to cancel existing order for replace" << std::endl;
+        LOG_ERROR_COMP("BINANCE", "Failed to cancel existing order for replace");
         return false;
     }
     
@@ -157,7 +157,7 @@ proto::OrderEvent BinanceOMS::get_order_status(const std::string& cl_ord_id, con
     proto::OrderEvent order_event;
     
     if (!is_connected() || !is_authenticated()) {
-        std::cerr << "[BINANCE] Not connected or authenticated" << std::endl;
+        LOG_ERROR_COMP("BINANCE", "Not connected or authenticated");
         order_event.set_text("Not connected or authenticated");
         return order_event;
     }
@@ -167,7 +167,7 @@ proto::OrderEvent BinanceOMS::get_order_status(const std::string& cl_ord_id, con
     
     std::string response = make_request(endpoint, "GET", params, true);
     if (response.empty()) {
-        std::cerr << "[BINANCE] Failed to get order status" << std::endl;
+        LOG_ERROR_COMP("BINANCE", "Failed to get order status");
         order_event.set_text("Failed to get order status");
         return order_event;
     }
@@ -177,7 +177,7 @@ proto::OrderEvent BinanceOMS::get_order_status(const std::string& cl_ord_id, con
 
 bool BinanceOMS::place_market_order(const std::string& symbol, const std::string& side, double quantity) {
     if (!is_connected() || !is_authenticated()) {
-        std::cerr << "[BINANCE] Not connected or authenticated" << std::endl;
+        LOG_ERROR_COMP("BINANCE", "Not connected or authenticated");
         return false;
     }
     
@@ -189,7 +189,7 @@ bool BinanceOMS::place_market_order(const std::string& symbol, const std::string
     
     std::string response = make_request(endpoint, "POST", params, true);
     if (response.empty()) {
-        std::cerr << "[BINANCE] Failed to place market order" << std::endl;
+        LOG_ERROR_COMP("BINANCE", "Failed to place market order");
         return false;
     }
     
@@ -206,7 +206,7 @@ bool BinanceOMS::place_market_order(const std::string& symbol, const std::string
 
 bool BinanceOMS::place_limit_order(const std::string& symbol, const std::string& side, double quantity, double price) {
     if (!is_connected() || !is_authenticated()) {
-        std::cerr << "[BINANCE] Not connected or authenticated" << std::endl;
+        LOG_ERROR_COMP("BINANCE", "Not connected or authenticated");
         return false;
     }
     
@@ -220,7 +220,7 @@ bool BinanceOMS::place_limit_order(const std::string& symbol, const std::string&
     
     std::string response = make_request(endpoint, "POST", params, true);
     if (response.empty()) {
-        std::cerr << "[BINANCE] Failed to place limit order" << std::endl;
+        LOG_ERROR_COMP("BINANCE", "Failed to place limit order");
         return false;
     }
     
@@ -243,7 +243,7 @@ std::string BinanceOMS::make_request(const std::string& endpoint, const std::str
                                    const std::string& body, bool is_signed) {
     CURL* curl = curl_easy_init();
     if (!curl) {
-        std::cerr << "[BINANCE] Failed to initialize CURL" << std::endl;
+        LOG_ERROR_COMP("BINANCE", "Failed to initialize CURL");
         return "";
     }
     
@@ -289,7 +289,7 @@ std::string BinanceOMS::make_request(const std::string& endpoint, const std::str
     curl_easy_cleanup(curl);
     
     if (res != CURLE_OK) {
-        std::cerr << "[BINANCE] CURL error: " << curl_easy_strerror(res) << std::endl;
+        LOG_ERROR_COMP("BINANCE", "CURL error: " + std::string(curl_easy_strerror(res)));
         return "";
     }
     
@@ -330,7 +330,7 @@ proto::OrderEvent BinanceOMS::parse_order_from_json(const std::string& json_str)
     Json::Reader reader;
     
     if (!reader.parse(json_str, root)) {
-        std::cerr << "[BINANCE] Failed to parse order JSON" << std::endl;
+        LOG_ERROR_COMP("BINANCE", "Failed to parse order JSON");
         order_event.set_text("Failed to parse order JSON");
         return order_event;
     }

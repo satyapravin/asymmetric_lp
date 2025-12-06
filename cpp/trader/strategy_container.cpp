@@ -1,6 +1,6 @@
 #include "strategy_container.hpp"
 #include "../strategies/base_strategy/abstract_strategy.hpp"
-#include <iostream>
+#include "../utils/logging/log_helper.hpp"
 
 /**
  * Strategy Container Implementation
@@ -20,6 +20,28 @@ StrategyContainer::~StrategyContainer() = default;
 void StrategyContainer::set_strategy(std::shared_ptr<AbstractStrategy> strategy) {
     strategy_ = strategy;
     // Strategy doesn't know about adapters - it delegates to container
+    
+    // Set order placement callbacks so strategy can send orders
+    if (strategy_) {
+        strategy_->set_order_sender([this](const std::string& cl_ord_id,
+                                          const std::string& symbol,
+                                          proto::Side side,
+                                          proto::OrderType type,
+                                          double qty,
+                                          double price) -> bool {
+            return this->send_order(cl_ord_id, symbol, side, type, qty, price);
+        });
+        
+        strategy_->set_order_canceller([this](const std::string& cl_ord_id) -> bool {
+            return this->cancel_order(cl_ord_id);
+        });
+        
+        strategy_->set_order_modifier([this](const std::string& cl_ord_id,
+                                            double new_price,
+                                            double new_qty) -> bool {
+            return this->modify_order(cl_ord_id, new_price, new_qty);
+        });
+    }
 }
 
 // IStrategyContainer interface implementation
@@ -31,7 +53,7 @@ void StrategyContainer::start() {
         mini_pms_->start();
     }
     running_.store(true);
-    std::cout << "[STRATEGY_CONTAINER] Started" << std::endl;
+    LOG_INFO_COMP("STRATEGY_CONTAINER", "Started");
 }
 
 void StrategyContainer::stop() {
@@ -42,7 +64,7 @@ void StrategyContainer::stop() {
     if (mini_pms_) {
         mini_pms_->stop();
     }
-    std::cout << "[STRATEGY_CONTAINER] Stopped" << std::endl;
+    LOG_INFO_COMP("STRATEGY_CONTAINER", "Stopped");
 }
 
 bool StrategyContainer::is_running() const {
@@ -171,4 +193,33 @@ std::vector<trader::AccountBalanceInfo> StrategyContainer::get_account_balances_
         return mini_pms_->get_account_balances_by_instrument(instrument);
     }
     return {};
+}
+
+// Order placement - delegate to MiniOMS
+bool StrategyContainer::send_order(const std::string& cl_ord_id,
+                                  const std::string& symbol,
+                                  proto::Side side,
+                                  proto::OrderType type,
+                                  double qty,
+                                  double price) {
+    if (mini_oms_) {
+        return mini_oms_->send_order(cl_ord_id, symbol, side, type, qty, price);
+    }
+    return false;
+}
+
+bool StrategyContainer::cancel_order(const std::string& cl_ord_id) {
+    if (mini_oms_) {
+        return mini_oms_->cancel_order(cl_ord_id);
+    }
+    return false;
+}
+
+bool StrategyContainer::modify_order(const std::string& cl_ord_id,
+                                    double new_price,
+                                    double new_qty) {
+    if (mini_oms_) {
+        return mini_oms_->modify_order(cl_ord_id, new_price, new_qty);
+    }
+    return false;
 }

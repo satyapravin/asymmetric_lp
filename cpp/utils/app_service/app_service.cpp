@@ -1,10 +1,12 @@
 #include "app_service.hpp"
-#include <iostream>
+#include "../logging/log_helper.hpp"
 #include <iomanip>
 #include <sstream>
 #include <unistd.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <thread>
+#include <chrono>
 
 namespace app_service {
 
@@ -38,12 +40,12 @@ bool AppService::initialize(int argc, char** argv) {
         } else if (arg == "--stats-interval" && i + 1 < argc) {
             stats_interval_seconds_ = std::stoi(argv[++i]);
         } else if (arg == "--help") {
-            std::cout << "Usage: " << service_name_ << " [options]" << std::endl;
-            std::cout << "Options:" << std::endl;
-            std::cout << "  --config <file>     Configuration file path" << std::endl;
-            std::cout << "  --daemon           Run as daemon" << std::endl;
-            std::cout << "  --stats-interval <seconds>  Statistics reporting interval" << std::endl;
-            std::cout << "  --help             Show this help message" << std::endl;
+            LOG_INFO_COMP("APP_SERVICE", "Usage: " + service_name_ + " [options]");
+            LOG_INFO_COMP("APP_SERVICE", "Options:");
+            LOG_INFO_COMP("APP_SERVICE", "  --config <file>     Configuration file path");
+            LOG_INFO_COMP("APP_SERVICE", "  --daemon           Run as daemon");
+            LOG_INFO_COMP("APP_SERVICE", "  --stats-interval <seconds>  Statistics reporting interval");
+            LOG_INFO_COMP("APP_SERVICE", "  --help             Show this help message");
             return false;
         }
     }
@@ -53,14 +55,14 @@ bool AppService::initialize(int argc, char** argv) {
         config_file_ = service_name_ + ".ini";
     }
 
-    std::cout << "[APP_SERVICE] Service: " << service_name_ << std::endl;
-    std::cout << "[APP_SERVICE] Config file: " << config_file_ << std::endl;
-    std::cout << "[APP_SERVICE] Daemon mode: " << (daemon_mode_ ? "enabled" : "disabled") << std::endl;
+    LOG_INFO_COMP("APP_SERVICE", "Service: " + service_name_);
+    LOG_INFO_COMP("APP_SERVICE", "Config file: " + config_file_);
+    LOG_INFO_COMP("APP_SERVICE", "Daemon mode: " + std::string(daemon_mode_ ? "enabled" : "disabled"));
 
     // Initialize configuration manager
     config_manager_ = std::make_unique<config::ProcessConfigManager>();
     if (!config_manager_->load_config(config_file_)) {
-        std::cerr << "[APP_SERVICE] Failed to load configuration from " << config_file_ << std::endl;
+        LOG_ERROR_COMP("APP_SERVICE", "Failed to load configuration from " + config_file_);
         return false;
     }
 
@@ -69,23 +71,23 @@ bool AppService::initialize(int argc, char** argv) {
 
     // Configure the specific service
     if (!configure_service()) {
-        std::cerr << "[APP_SERVICE] Service configuration failed" << std::endl;
+        LOG_ERROR_COMP("APP_SERVICE", "Service configuration failed");
         return false;
     }
 
     initialized_.store(true);
-    std::cout << "[APP_SERVICE] Service initialized successfully" << std::endl;
+    LOG_INFO_COMP("APP_SERVICE", "Service initialized successfully");
     return true;
 }
 
 void AppService::start() {
     if (!initialized_.load()) {
-        std::cerr << "[APP_SERVICE] Service not initialized" << std::endl;
+        LOG_ERROR_COMP("APP_SERVICE", "Service not initialized");
         return;
     }
 
     if (running_.load()) {
-        std::cout << "[APP_SERVICE] Service already running" << std::endl;
+        LOG_INFO_COMP("APP_SERVICE", "Service already running");
         return;
     }
 
@@ -93,13 +95,13 @@ void AppService::start() {
     if (daemon_mode_) {
         pid_t pid = fork();
         if (pid < 0) {
-            std::cerr << "[APP_SERVICE] Failed to fork for daemonization" << std::endl;
+            LOG_ERROR_COMP("APP_SERVICE", "Failed to fork for daemonization");
             return;
         }
         
         if (pid > 0) {
             // Parent process - exit
-            std::cout << "[APP_SERVICE] Daemon started with PID: " << pid << std::endl;
+            LOG_INFO_COMP("APP_SERVICE", "Daemon started with PID: " + std::to_string(pid));
             exit(0);
         }
         
@@ -124,7 +126,7 @@ void AppService::start() {
 
     // Start the specific service
     if (!start_service()) {
-        std::cerr << "[APP_SERVICE] Failed to start service" << std::endl;
+        LOG_ERROR_COMP("APP_SERVICE", "Failed to start service");
         stop();
         return;
     }
@@ -132,7 +134,7 @@ void AppService::start() {
     running_.store(true);
     statistics_.start_time = std::chrono::system_clock::now();
     
-    std::cout << "[APP_SERVICE] Service started successfully" << std::endl;
+    LOG_INFO_COMP("APP_SERVICE", "Service started successfully");
 
     // Main processing loop
     while (running_.load()) {
@@ -150,7 +152,7 @@ void AppService::stop() {
         return;
     }
 
-    std::cout << "[APP_SERVICE] Stopping service..." << std::endl;
+    LOG_INFO_COMP("APP_SERVICE", "Stopping service...");
     
     running_.store(false);
     
@@ -201,36 +203,36 @@ void AppService::handle_signal(int signal) {
     switch (signal) {
         case SIGINT:
         case SIGTERM:
-            std::cout << "[APP_SERVICE] Received signal " << signal << ", shutting down..." << std::endl;
+            LOG_INFO_COMP("APP_SERVICE", "Received signal " + std::to_string(signal) + ", shutting down...");
             stop();
             break;
             
         case SIGHUP:
-            std::cout << "[APP_SERVICE] Received SIGHUP, reloading configuration..." << std::endl;
+            LOG_INFO_COMP("APP_SERVICE", "Received SIGHUP, reloading configuration...");
             // TODO: Implement configuration reload
             break;
             
         case SIGUSR1:
-            std::cout << "[APP_SERVICE] Received SIGUSR1, dumping statistics..." << std::endl;
+            LOG_INFO_COMP("APP_SERVICE", "Received SIGUSR1, dumping statistics...");
             print_service_stats();
             break;
             
         default:
-            std::cout << "[APP_SERVICE] Received unknown signal " << signal << std::endl;
+            LOG_WARN_COMP("APP_SERVICE", "Received unknown signal " + std::to_string(signal));
             break;
     }
 }
 
 void AppService::print_startup_banner() {
-    std::cout << "=========================================" << std::endl;
-    std::cout << "  " << service_name_ << " Service Starting" << std::endl;
-    std::cout << "=========================================" << std::endl;
+    LOG_INFO_COMP("APP_SERVICE", "=========================================");
+    LOG_INFO_COMP("APP_SERVICE", "  " + service_name_ + " Service Starting");
+    LOG_INFO_COMP("APP_SERVICE", "=========================================");
 }
 
 void AppService::print_shutdown_banner() {
-    std::cout << "=========================================" << std::endl;
-    std::cout << "  " << service_name_ << " Service Stopped" << std::endl;
-    std::cout << "=========================================" << std::endl;
+    LOG_INFO_COMP("APP_SERVICE", "=========================================");
+    LOG_INFO_COMP("APP_SERVICE", "  " + service_name_ + " Service Stopped");
+    LOG_INFO_COMP("APP_SERVICE", "=========================================");
 }
 
 } // namespace app_service

@@ -1,5 +1,5 @@
 #include "binance_subscriber.hpp"
-#include <iostream>
+#include "../../../utils/logging/logger.hpp"
 #include <sstream>
 #include <chrono>
 #include <thread>
@@ -8,7 +8,8 @@
 namespace binance {
 
 BinanceSubscriber::BinanceSubscriber(const BinanceSubscriberConfig& config) : config_(config) {
-    std::cout << "[BINANCE_SUBSCRIBER] Initializing Binance Subscriber" << std::endl;
+    logging::Logger logger("BINANCE_SUBSCRIBER");
+    logger.info("Initializing Binance Subscriber");
 }
 
 BinanceSubscriber::~BinanceSubscriber() {
@@ -16,15 +17,16 @@ BinanceSubscriber::~BinanceSubscriber() {
 }
 
 bool BinanceSubscriber::connect() {
-    std::cout << "[BINANCE_SUBSCRIBER] Connecting to Binance WebSocket..." << std::endl;
+    logging::Logger logger("BINANCE_SUBSCRIBER");
+    logger.info("Connecting to Binance WebSocket...");
     
     if (connected_.load()) {
-        std::cout << "[BINANCE_SUBSCRIBER] Already connected" << std::endl;
+        logger.debug("Already connected");
         return true;
     }
     
     if (!custom_transport_) {
-        std::cerr << "[BINANCE_SUBSCRIBER] No WebSocket transport injected!" << std::endl;
+        logger.error("No WebSocket transport injected!");
         return false;
     }
     
@@ -32,20 +34,21 @@ bool BinanceSubscriber::connect() {
         // Use injected transport
         if (custom_transport_->connect(config_.websocket_url)) {
             connected_.store(true);
-            std::cout << "[BINANCE_SUBSCRIBER] Connected successfully using injected transport" << std::endl;
+            logger.info("Connected successfully using injected transport");
             return true;
         } else {
-            std::cerr << "[BINANCE_SUBSCRIBER] Failed to connect using injected transport" << std::endl;
+            logger.error("Failed to connect using injected transport");
             return false;
         }
     } catch (const std::exception& e) {
-        std::cerr << "[BINANCE_SUBSCRIBER] Connection error: " << e.what() << std::endl;
+        logger.error("Connection error: " + std::string(e.what()));
         return false;
     }
 }
 
 void BinanceSubscriber::disconnect() {
-    std::cout << "[BINANCE_SUBSCRIBER] Disconnecting..." << std::endl;
+    logging::Logger logger("BINANCE_SUBSCRIBER");
+    logger.info("Disconnecting...");
     
     if (custom_transport_) {
         custom_transport_->disconnect();
@@ -53,7 +56,7 @@ void BinanceSubscriber::disconnect() {
     
     connected_.store(false);
     
-    std::cout << "[BINANCE_SUBSCRIBER] Disconnected" << std::endl;
+    logger.info("Disconnected");
 }
 
 bool BinanceSubscriber::is_connected() const {
@@ -61,15 +64,17 @@ bool BinanceSubscriber::is_connected() const {
 }
 
 bool BinanceSubscriber::subscribe_orderbook(const std::string& symbol, int top_n, int frequency_ms) {
+    logging::Logger logger("BINANCE_SUBSCRIBER");
     if (!is_connected()) {
-        std::cerr << "[BINANCE_SUBSCRIBER] Not connected" << std::endl;
+        logger.error("Not connected");
         return false;
     }
     
     std::string binance_symbol = convert_symbol_to_binance(symbol);
     std::string sub_msg = create_subscription_message(binance_symbol, "depth");
-    std::cout << "[BINANCE_SUBSCRIBER] Subscribing to orderbook: " << binance_symbol 
-              << " top_n: " << top_n << " frequency: " << frequency_ms << "ms" << std::endl;
+    logger.info("Subscribing to orderbook: " + binance_symbol + 
+               " top_n: " + std::to_string(top_n) + 
+               " frequency: " + std::to_string(frequency_ms) + "ms");
     
     // Add to subscribed symbols
     {
@@ -88,14 +93,15 @@ bool BinanceSubscriber::subscribe_orderbook(const std::string& symbol, int top_n
 }
 
 bool BinanceSubscriber::subscribe_trades(const std::string& symbol) {
+    logging::Logger logger("BINANCE_SUBSCRIBER");
     if (!is_connected()) {
-        std::cerr << "[BINANCE_SUBSCRIBER] Not connected" << std::endl;
+        logger.error("Not connected");
         return false;
     }
     
     std::string binance_symbol = convert_symbol_to_binance(symbol);
     std::string sub_msg = create_subscription_message(binance_symbol, "trade");
-    std::cout << "[BINANCE_SUBSCRIBER] Subscribing to trades: " << binance_symbol << std::endl;
+    logger.info("Subscribing to trades: " + binance_symbol);
     
     // Add to subscribed symbols
     {
@@ -114,14 +120,15 @@ bool BinanceSubscriber::subscribe_trades(const std::string& symbol) {
 }
 
 bool BinanceSubscriber::unsubscribe(const std::string& symbol) {
+    logging::Logger logger("BINANCE_SUBSCRIBER");
     if (!is_connected()) {
-        std::cerr << "[BINANCE_SUBSCRIBER] Not connected" << std::endl;
+        logger.error("Not connected");
         return false;
     }
     
     std::string binance_symbol = convert_symbol_to_binance(symbol);
     std::string unsub_msg = create_unsubscription_message(binance_symbol, "depth");
-    std::cout << "[BINANCE_SUBSCRIBER] Unsubscribing from: " << binance_symbol << std::endl;
+    logger.debug("Unsubscribing from: " + binance_symbol);
     
     // Remove from subscribed symbols
     {
@@ -148,7 +155,8 @@ void BinanceSubscriber::set_trade_callback(TradeCallback callback) {
 }
 
 void BinanceSubscriber::websocket_loop() {
-    std::cout << "[BINANCE_SUBSCRIBER] WebSocket loop started" << std::endl;
+    logging::Logger logger("BINANCE_SUBSCRIBER");
+    logger.debug("WebSocket loop started");
     
     while (websocket_running_) {
         try {
@@ -168,21 +176,22 @@ void BinanceSubscriber::websocket_loop() {
             }
             
         } catch (const std::exception& e) {
-            std::cerr << "[BINANCE_SUBSCRIBER] WebSocket loop error: " << e.what() << std::endl;
+            logger.error("WebSocket loop error: " + std::string(e.what()));
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
     }
     
-    std::cout << "[BINANCE_SUBSCRIBER] WebSocket loop stopped" << std::endl;
+    logger.debug("WebSocket loop stopped");
 }
 
 void BinanceSubscriber::handle_websocket_message(const std::string& message) {
+    logging::Logger logger("BINANCE_SUBSCRIBER");
     try {
         Json::Value root;
         Json::Reader reader;
         
         if (!reader.parse(message, root)) {
-            std::cerr << "[BINANCE_SUBSCRIBER] Failed to parse WebSocket message" << std::endl;
+            logger.error("Failed to parse WebSocket message");
             return;
         }
         
@@ -198,11 +207,11 @@ void BinanceSubscriber::handle_websocket_message(const std::string& message) {
             }
         } else if (root.isMember("method")) {
             // Handle subscription responses
-            std::cout << "[BINANCE_SUBSCRIBER] Subscription response: " << message << std::endl;
+            logger.debug("Subscription response: " + message);
         }
         
     } catch (const std::exception& e) {
-        std::cerr << "[BINANCE_SUBSCRIBER] Error handling WebSocket message: " << e.what() << std::endl;
+        logger.error("Error handling WebSocket message: " + std::string(e.what()));
     }
 }
 
@@ -236,9 +245,10 @@ void BinanceSubscriber::handle_orderbook_update(const Json::Value& orderbook_dat
         orderbook_callback_(orderbook);
     }
     
-    std::cout << "[BINANCE_SUBSCRIBER] Orderbook update: " << orderbook.symbol() 
-              << " bids: " << orderbook.bids_size() 
-              << " asks: " << orderbook.asks_size() << std::endl;
+    logging::Logger logger("BINANCE_SUBSCRIBER");
+    logger.debug("Orderbook update: " + orderbook.symbol() + 
+                " bids: " + std::to_string(orderbook.bids_size()) + 
+                " asks: " + std::to_string(orderbook.asks_size()));
 }
 
 void BinanceSubscriber::handle_trade_update(const Json::Value& trade_data) {
@@ -255,9 +265,11 @@ void BinanceSubscriber::handle_trade_update(const Json::Value& trade_data) {
         trade_callback_(trade);
     }
     
-    std::cout << "[BINANCE_SUBSCRIBER] Trade update: " << trade.symbol() 
-              << " " << trade.qty() << "@" << trade.price() 
-              << " side: " << (trade.is_buyer_maker() ? "SELL" : "BUY") << std::endl;
+    logging::Logger logger("BINANCE_SUBSCRIBER");
+    std::stringstream ss;
+    ss << "Trade update: " << trade.symbol() << " " << trade.qty() << "@" << trade.price() 
+       << " side: " << (trade.is_buyer_maker() ? "SELL" : "BUY");
+    logger.debug(ss.str());
 }
 
 std::string BinanceSubscriber::create_subscription_message(const std::string& symbol, const std::string& channel) {
@@ -309,21 +321,24 @@ std::string BinanceSubscriber::convert_symbol_to_binance(const std::string& symb
 }
 
 void BinanceSubscriber::set_websocket_transport(std::unique_ptr<websocket_transport::IWebSocketTransport> transport) {
-    std::cout << "[BINANCE_SUBSCRIBER] Setting custom WebSocket transport for testing" << std::endl;
+    logging::Logger logger("BINANCE_SUBSCRIBER");
+    logger.debug("Setting custom WebSocket transport for testing");
     custom_transport_ = std::move(transport);
 }
 
 void BinanceSubscriber::start() {
-    std::cout << "[BINANCE_SUBSCRIBER] Starting subscriber" << std::endl;
+    logging::Logger logger("BINANCE_SUBSCRIBER");
+    logger.info("Starting subscriber");
     
     if (!custom_transport_) {
-        std::cerr << "[BINANCE_SUBSCRIBER] No WebSocket transport injected!" << std::endl;
+        logger.error("No WebSocket transport injected!");
         return;
     }
     
     // Set up message callback to handle incoming messages
     custom_transport_->set_message_callback([this](const websocket_transport::WebSocketMessage& message) {
-        std::cout << "[BINANCE_SUBSCRIBER] Received message: " << message.data << std::endl;
+        logging::Logger callback_logger("BINANCE_SUBSCRIBER");
+        callback_logger.debug("Received message: " + message.data);
         
         // Parse the message and call appropriate handlers
         Json::Value root;
@@ -352,12 +367,14 @@ void BinanceSubscriber::start() {
 }
 
 void BinanceSubscriber::stop() {
-    std::cout << "[BINANCE_SUBSCRIBER] Stopping subscriber" << std::endl;
+    logging::Logger logger("BINANCE_SUBSCRIBER");
+    logger.info("Stopping subscriber");
     disconnect();
 }
 
 void BinanceSubscriber::set_error_callback(std::function<void(const std::string&)> callback) {
-    std::cout << "[BINANCE_SUBSCRIBER] Setting error callback" << std::endl;
+    logging::Logger logger("BINANCE_SUBSCRIBER");
+    logger.debug("Setting error callback");
     error_callback_ = callback;
 }
 

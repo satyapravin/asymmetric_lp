@@ -1,5 +1,5 @@
 #include "market_server_service.hpp"
-#include <iostream>
+#include "../utils/logging/log_helper.hpp"
 
 namespace market_server {
 
@@ -13,14 +13,14 @@ bool MarketServerService::configure_service() {
     symbol_ = get_config_manager()->get_string("market.symbol", "BTCUSDT");
     zmq_publish_endpoint_ = get_config_manager()->get_string("zmq.publish_endpoint", "tcp://*:5555");
     
-    std::cout << "[MARKET_SERVER] Exchange: " << exchange_ << std::endl;
-    std::cout << "[MARKET_SERVER] Symbol: " << symbol_ << std::endl;
-    std::cout << "[MARKET_SERVER] ZMQ publish endpoint: " << zmq_publish_endpoint_ << std::endl;
+    LOG_INFO_COMP("MARKET_SERVER", "Exchange: " + exchange_);
+    LOG_INFO_COMP("MARKET_SERVER", "Symbol: " + symbol_);
+    LOG_INFO_COMP("MARKET_SERVER", "ZMQ publish endpoint: " + zmq_publish_endpoint_);
     
     // Initialize ZMQ publisher
     publisher_ = std::make_shared<ZmqPublisher>(zmq_publish_endpoint_);
     if (!publisher_->bind()) {
-        std::cerr << "[MARKET_SERVER] Failed to bind ZMQ publisher" << std::endl;
+        LOG_ERROR_COMP("MARKET_SERVER", "Failed to bind ZMQ publisher");
         return false;
     }
     
@@ -32,7 +32,7 @@ bool MarketServerService::configure_service() {
     
     // Initialize the library
     if (!market_server_lib_->initialize(get_config_file())) {
-        std::cerr << "[MARKET_SERVER] Failed to initialize market server library" << std::endl;
+        LOG_ERROR_COMP("MARKET_SERVER", "Failed to initialize market server library");
         return false;
     }
     
@@ -46,7 +46,7 @@ bool MarketServerService::start_service() {
     
     market_server_lib_->start();
     
-    std::cout << "[MARKET_SERVER] Processing market data for " << exchange_ << ":" << symbol_ << std::endl;
+    LOG_INFO_COMP("MARKET_SERVER", "Processing market data for " + exchange_ + ":" + symbol_);
     return true;
 }
 
@@ -64,12 +64,13 @@ void MarketServerService::print_service_stats() {
     const auto& stats = market_server_lib_->get_statistics();
     const auto& app_stats = get_statistics();
     
-    std::cout << "[STATS] " << get_service_name() << " - "
-              << "Orderbook updates: " << stats.orderbook_updates.load()
-              << ", Trade updates: " << stats.trade_updates.load()
-              << ", ZMQ messages sent: " << stats.zmq_messages_sent.load()
-              << ", Connection errors: " << stats.connection_errors.load()
-              << ", Uptime: " << app_stats.uptime_seconds.load() << "s" << std::endl;
+    std::string stats_msg = get_service_name() + " - " +
+                            "Orderbook updates: " + std::to_string(stats.orderbook_updates.load()) +
+                            ", Trade updates: " + std::to_string(stats.trade_updates.load()) +
+                            ", ZMQ messages sent: " + std::to_string(stats.zmq_messages_sent.load()) +
+                            ", Connection errors: " + std::to_string(stats.connection_errors.load()) +
+                            ", Uptime: " + std::to_string(app_stats.uptime_seconds.load()) + "s";
+    LOG_INFO_COMP("STATS", stats_msg);
 }
 
 } // namespace market_server

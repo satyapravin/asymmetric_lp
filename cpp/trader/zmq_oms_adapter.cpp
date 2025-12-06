@@ -1,5 +1,5 @@
 #include "zmq_oms_adapter.hpp"
-#include <iostream>
+#include "../utils/logging/log_helper.hpp"
 #ifdef PROTO_ENABLED
 #include "../proto/order.pb.h"
 #endif
@@ -11,8 +11,8 @@ ZmqOMSAdapter::ZmqOMSAdapter(const std::string& order_pub_endpoint,
     : order_topic_(order_topic), event_topic_(event_topic) {
   order_publisher_ = std::make_unique<ZmqPublisher>(order_pub_endpoint);
   event_subscriber_ = std::make_unique<ZmqSubscriber>(event_sub_endpoint, event_topic);
-  std::cout << "[ZmqOMSAdapter] Created OMS adapter - subscribing to: " << event_sub_endpoint 
-            << " topic: " << event_topic << std::endl;
+  LOG_INFO_COMP("ZmqOMSAdapter", "Created OMS adapter - subscribing to: " + event_sub_endpoint + 
+                " topic: " + event_topic);
 }
 
 ZmqOMSAdapter::~ZmqOMSAdapter() = default;
@@ -46,14 +46,14 @@ bool ZmqOMSAdapter::send_order(const std::string& cl_ord_id,
 bool ZmqOMSAdapter::cancel_order(const std::string& cl_ord_id,
                           const std::string& exch) {
   // For now, just log the cancel request
-  std::cout << "[ZmqOMSAdapter] Cancel order: " << cl_ord_id << " on " << exch << std::endl;
+  LOG_DEBUG_COMP("ZmqOMSAdapter", "Cancel order: " + cl_ord_id + " on " + exch);
   return true;
 }
 
 void ZmqOMSAdapter::poll_events() {
   auto msg = event_subscriber_->receive_blocking(100); // 100ms timeout
   if (msg) {
-    std::cout << "[ZmqOMSAdapter] Received message of size: " << msg->size() << " bytes" << std::endl;
+    LOG_INFO_COMP("ZmqOMSAdapter", "Received message of size: " + std::to_string(msg->size()) + " bytes");
     process_event_message(*msg);
   }
 }
@@ -63,8 +63,8 @@ void ZmqOMSAdapter::process_event_message(const std::string& msg) {
   // Try to parse as protobuf first
   proto::OrderEvent order_event;
   if (order_event.ParseFromString(msg)) {
-    std::cout << "[ZmqOMSAdapter] Successfully parsed protobuf order event: " 
-              << order_event.cl_ord_id() << " " << order_event.symbol() << std::endl;
+    LOG_DEBUG_COMP("ZmqOMSAdapter", "Successfully parsed protobuf order event: " + 
+                  order_event.cl_ord_id() + " " + order_event.symbol());
     if (event_callback_) {
       // Convert protobuf to legacy callback format for compatibility
       std::string cl_ord_id = order_event.cl_ord_id();
@@ -75,14 +75,14 @@ void ZmqOMSAdapter::process_event_message(const std::string& msg) {
       double fill_price = order_event.fill_price();
       std::string text = order_event.text();
       
-      std::cout << "[ZmqOMSAdapter] Calling event callback for: " << cl_ord_id << std::endl;
+      LOG_DEBUG_COMP("ZmqOMSAdapter", "Calling event callback for: " + cl_ord_id);
       event_callback_(cl_ord_id, exch, symbol, event_type, fill_qty, fill_price, text);
     } else {
-      std::cout << "[ZmqOMSAdapter] No event callback set!" << std::endl;
+      LOG_WARN_COMP("ZmqOMSAdapter", "No event callback set!");
     }
     return;
   } else {
-    std::cout << "[ZmqOMSAdapter] Failed to parse as protobuf, trying binary format" << std::endl;
+    LOG_WARN_COMP("ZmqOMSAdapter", "Failed to parse as protobuf, trying binary format");
   }
 #endif
   
