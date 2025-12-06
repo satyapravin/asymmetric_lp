@@ -1,5 +1,7 @@
 # CeFi C++ Components Architecture Diagram
 
+> **Note**: This diagram uses Mermaid syntax and will render automatically on GitHub.
+
 ## System Architecture Overview
 
 ```mermaid

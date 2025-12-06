@@ -4,6 +4,15 @@
 
 A comprehensive multi-process trading system for centralized exchange market making with sophisticated order management, real-time position tracking, and strategy framework.
 
+## Recent Updates
+
+✅ **Logging System Migration Complete**
+- All `std::cout` and `std::cerr` statements replaced with centralized logging macros
+- Normal trading flow uses `LOG_DEBUG_COMP` for operational messages
+- Errors and warnings use `LOG_ERROR_COMP` and `LOG_WARN_COMP`
+- Initialization and lifecycle events use `LOG_INFO_COMP`
+- See `docs/architecture_diagram.md` for complete system architecture diagram
+
 ## Architecture Overview
 
 The C++ system implements a clean, multi-process architecture where each exchange runs specialized processes communicating via ZeroMQ:
@@ -282,9 +291,17 @@ See `../DEPLOY.md` for complete Docker deployment instructions.
 
 ## Development Guides
 
+### Architecture Overview
+
+See **[Architecture Diagram](../docs/architecture_diagram.md)** for a complete visual representation of:
+- Component relationships and data flows
+- Process architecture and communication patterns
+- Exchange integration layers
+- ZMQ message routing
+
 ### Exchange Integration
 
-To add support for a new exchange, see **[Exchange Integration Guide](exchange_guide.md)** for:
+To add support for a new exchange, see **[Exchange Integration Guide](../docs/exchange_guide.md)** for:
 - Implementing the 4 required interfaces (OMS, PMS, DataFetcher, Subscriber)
 - WebSocket client development
 - Message parsing and normalization
@@ -292,11 +309,12 @@ To add support for a new exchange, see **[Exchange Integration Guide](exchange_g
 
 ### Strategy Development
 
-To implement a new trading strategy, see **[Strategy Development Guide](strategy_guide.md)** for:
+To implement a new trading strategy, see **[Strategy Development Guide](../docs/strategy_guide.md)** for:
 - Inheriting from AbstractStrategy
 - Implementing strategy logic
 - Order management and risk controls
 - Integration with Mini OMS
+- Using logging macros for strategy events
 
 ## Key Features
 
@@ -314,7 +332,11 @@ To implement a new trading strategy, see **[Strategy Development Guide](strategy
 ### **Production Ready**
 - **Comprehensive Error Handling**: Retry policies, circuit breakers, graceful degradation
 - **Health Monitoring**: Process health checks and status reporting
-- **Structured Logging**: JSON-formatted logs with configurable levels
+- **Structured Logging**: Centralized logging system with DEBUG/INFO/WARN/ERROR levels
+  - All production code uses logging macros (`LOG_INFO_COMP`, `LOG_DEBUG_COMP`, `LOG_ERROR_COMP`, `LOG_WARN_COMP`)
+  - Normal trading flow (orders, positions, market data) logs at DEBUG level
+  - Errors, warnings, and lifecycle events log at appropriate levels
+  - JSON-formatted logs with metadata and configurable levels
 - **Configuration Management**: Per-process configuration with validation
 
 ### **Extensible Design**
@@ -346,11 +368,15 @@ To implement a new trading strategy, see **[Strategy Development Guide](strategy
 ```bash
 # Run specific process in debug mode
 ./build/trader config/trader.ini --log-level DEBUG
-./build/market_server BINANCE config/market_server_binance.ini --verbose
+./build/market_server BINANCE config/market_server_binance.ini --log-level DEBUG
 
-# Enable debug output
-export CPP_DEBUG=1
-export ZMQ_DEBUG=1
+# Enable debug output (shows DEBUG level logs)
+export LOG_LEVEL=DEBUG
+
+# View logs with different levels
+tail -f logs/trader.log | grep "\[DEBUG\]"  # Normal trading flow
+tail -f logs/trader.log | grep "\[INFO\]"   # Lifecycle events
+tail -f logs/trader.log | grep "\[ERROR\]"  # Errors only
 ```
 
 ### Sanitizer Support

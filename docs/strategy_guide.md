@@ -154,6 +154,13 @@ private:
     void manage_risk();
     std::string generate_order_id() const;
     void log_strategy_event(const std::string& event);
+    
+    // Note: Use logging macros instead of std::cout/std::cerr
+    // Include: #include "../utils/logging/log_helper.hpp"
+    // Use: LOG_DEBUG_COMP for normal trading flow
+    //      LOG_INFO_COMP for lifecycle events
+    //      LOG_ERROR_COMP for errors
+    //      LOG_WARN_COMP for warnings
 };
 ```
 
@@ -162,7 +169,7 @@ private:
 ```cpp
 // your_strategy.cpp
 #include "your_strategy.hpp"
-#include <iostream>
+#include "../utils/logging/log_helper.hpp"
 #include <random>
 #include <sstream>
 #include <iomanip>
@@ -184,7 +191,7 @@ void YourStrategy::start() {
         return;
     }
     
-    std::cout << "[YOUR_STRATEGY] Starting strategy for " << symbol_ << std::endl;
+    LOG_INFO_COMP("YOUR_STRATEGY", "Starting strategy for " + symbol_);
     running_.store(true);
     
     // Initialize strategy state
@@ -200,7 +207,7 @@ void YourStrategy::stop() {
         return;
     }
     
-    std::cout << "[YOUR_STRATEGY] Stopping strategy" << std::endl;
+    LOG_INFO_COMP("YOUR_STRATEGY", "Stopping strategy");
     running_.store(false);
     
     // Clean up strategy state
@@ -229,7 +236,7 @@ void YourStrategy::on_order_event(const proto::OrderEvent& order_event) {
         return;
     }
     
-    std::cout << "[YOUR_STRATEGY] Order event: " << order_event.cl_ord_id() 
+    LOG_DEBUG_COMP("YOUR_STRATEGY", "Order event: " + order_event.cl_ord_id() 
               << " - " << order_event.event_type() << std::endl;
     
     // Update strategy state based on order events
@@ -268,7 +275,7 @@ void YourStrategy::on_position_update(const proto::PositionUpdate& position) {
     
     // Reconcile with strategy's internal position tracking
     if (std::abs(current_position_ - exchange_position) > 0.001) {
-        std::cout << "[YOUR_STRATEGY] Position mismatch detected!" << std::endl;
+        LOG_WARN_COMP("YOUR_STRATEGY", "Position mismatch detected!");
         // Handle position reconciliation
     }
 }
@@ -278,7 +285,7 @@ void YourStrategy::on_trade_execution(const proto::Trade& trade) {
         return;
     }
     
-    std::cout << "[YOUR_STRATEGY] Trade execution: " << trade.symbol() 
+    LOG_DEBUG_COMP("YOUR_STRATEGY", "Trade execution: " + trade.symbol() 
               << " " << trade.qty() << " @ " << trade.price() << std::endl;
     
     // Update strategy statistics
@@ -309,7 +316,7 @@ void YourStrategy::process_market_data(const proto::OrderBookSnapshot& orderbook
         // Log market data periodically
         static int tick_count = 0;
         if (++tick_count % 100 == 0) {
-            std::cout << "[YOUR_STRATEGY] Market: " << symbol_ 
+            LOG_DEBUG_COMP("YOUR_STRATEGY", "Market: " + symbol_ 
                       << " bid=" << best_bid << " ask=" << best_ask 
                       << " spread=" << spread << std::endl;
         }
@@ -357,7 +364,7 @@ void YourStrategy::manage_risk() {
     double max_position = get_max_position_size();
     
     if (std::abs(current_position_) > max_position) {
-        std::cout << "[YOUR_STRATEGY] Risk limit exceeded: position=" 
+        LOG_WARN_COMP("YOUR_STRATEGY", "Risk limit exceeded: position=" + 
                   << current_position_ << " max=" << max_position << std::endl;
         
         // Implement risk mitigation
@@ -378,22 +385,19 @@ std::string YourStrategy::generate_order_id() const {
 }
 
 void YourStrategy::log_strategy_event(const std::string& event) {
-    auto now = std::chrono::system_clock::now();
-    auto time_t = std::chrono::system_clock::to_time_t(now);
-    
-    std::cout << "[YOUR_STRATEGY] " << std::put_time(std::localtime(&time_t), "%H:%M:%S")
-              << " " << event << std::endl;
+    // Use logging macros for structured logging
+    LOG_DEBUG_COMP("YOUR_STRATEGY", event);
 }
 
 // Configuration methods
 void YourStrategy::set_parameter1(double value) {
     parameter1_.store(value);
-    std::cout << "[YOUR_STRATEGY] Parameter1 set to " << value << std::endl;
+    LOG_INFO_COMP("YOUR_STRATEGY", "Parameter1 set to " + std::to_string(value));
 }
 
 void YourStrategy::set_parameter2(int value) {
     parameter2_.store(value);
-    std::cout << "[YOUR_STRATEGY] Parameter2 set to " << value << std::endl;
+    LOG_INFO_COMP("YOUR_STRATEGY", "Parameter2 set to " + std::to_string(value));
 }
 
 // Query methods
@@ -644,7 +648,11 @@ TEST_CASE("Strategy Integration with Container") {
 
 1. **Validate Inputs**: Check all incoming data
 2. **Graceful Degradation**: Continue operating with reduced functionality
-3. **Comprehensive Logging**: Log all important events
+3. **Comprehensive Logging**: Use logging macros for all events
+   - `LOG_DEBUG_COMP` for normal trading flow (orders, positions, market data)
+   - `LOG_INFO_COMP` for lifecycle events (startup, shutdown, configuration)
+   - `LOG_WARN_COMP` for warnings and degraded states
+   - `LOG_ERROR_COMP` for errors and failures
 4. **Recovery Mechanisms**: Implement automatic recovery where possible
 
 ### Testing

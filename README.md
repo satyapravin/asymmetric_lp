@@ -18,8 +18,9 @@ The strategy uses residual inventory from DeFi LP positions to market make on Ce
 | Component | Status | Notes |
 |-----------|--------|-------|
 | DeFi LP (Python) | ✅ Production-ready | Complete implementation with backtesting |
-| **C++ Servers** | 🔄 **UAT Pending** | Architecture complete, comprehensive test suite, sanitizer support added |
-| **Trader Process** | 🔄 **UAT Pending** | Strategy framework implemented, integration testing complete |
+| **C++ Servers** | 🔄 **UAT Pending** | Architecture complete, comprehensive test suite, sanitizer support, centralized logging |
+| **Trader Process** | 🔄 **UAT Pending** | Strategy framework implemented, integration testing complete, logging integrated |
+| **Logging System** | ✅ Complete | All cout/cerr replaced with structured logging, DEBUG level for normal flow |
 
 ## Quick Start
 
@@ -79,6 +80,8 @@ docker run -it asymmetric_lp
 - **Position Server** - Real-time position and PnL tracking
 - **Trader Process** - Strategy framework with Mini OMS
 - **ZMQ Communication** - High-performance inter-process messaging
+- **Centralized Logging** - Structured logging system with DEBUG/INFO/WARN/ERROR levels
+- **Architecture Documentation** - Complete architecture diagram (see `docs/architecture_diagram.md`)
 
 ## Backtest Results
 
@@ -102,10 +105,12 @@ docker run -it asymmetric_lp
 
 - **DeFi Implementation**: See `python/README.md` for complete Python documentation
 - **C++ Architecture**: See `cpp/README.md` for C++ framework details
-- **Deployment & Configuration**: See `DEPLOY.md` for complete deployment guide with all configurations
+- **Architecture Diagram**: See `docs/architecture_diagram.md` for visual system architecture
+- **Deployment & Configuration**: See `docs/deploy.md` for complete deployment guide with all configurations
 - **Trading Engine**: See `cpp/trading_engine/README.md` for trading engine details
 - **Test Suite**: See `cpp/tests/README.md` for comprehensive test documentation
-- **Exchange Interfaces**: See `cpp/exchanges/interfaces.md` for exchange integration details
+- **Exchange Interfaces**: See `docs/interfaces.md` for exchange integration details
+- **Strategy Development**: See `docs/strategy_guide.md` for strategy implementation guide
 
 ## Quick Start
 

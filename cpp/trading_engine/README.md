@@ -319,8 +319,13 @@ void handle_balance_update(const std::string& balance_data);
 - **Process Health**: Overall process health status
 
 ### Logging
+- **Centralized Logging System**: All `std::cout`/`std::cerr` replaced with logging macros
 - **Structured Logging**: JSON-formatted logs with metadata
 - **Log Levels**: DEBUG, INFO, WARN, ERROR
+  - **DEBUG**: Normal trading flow (order operations, position updates)
+  - **INFO**: Lifecycle events (startup, shutdown, configuration)
+  - **WARN**: Warnings and degraded states
+  - **ERROR**: Errors and failures
 - **Performance Logs**: Detailed performance metrics
 - **Error Logs**: Comprehensive error information
 

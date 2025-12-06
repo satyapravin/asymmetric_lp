@@ -55,6 +55,7 @@ The exchange system is split into 4 specialized interfaces, each used by differe
 5. **Real-time Callbacks**: Live updates via WebSocket callbacks, not polling
 6. **Exchange Abstraction**: Each exchange implements all 4 interfaces consistently
 7. **No Shared State**: Each process manages its own WebSocket connections
+8. **Centralized Logging**: All exchange implementations use logging macros (LOG_DEBUG_COMP, LOG_INFO_COMP, LOG_ERROR_COMP, LOG_WARN_COMP) instead of std::cout/std::cerr
 
 ## Exchange Implementations
 
