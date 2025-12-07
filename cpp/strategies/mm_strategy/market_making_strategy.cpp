@@ -839,15 +839,14 @@ MarketMakingStrategy::CombinedInventory MarketMakingStrategy::calculate_combined
     }
     
     // DeFi inventory (from Uniswap V3 LP positions)
-    // These are tracked separately and updated via update_defi_position()
-    // In production, DeFi positions would be queried from blockchain (Uniswap V3 contracts)
-    // DeFi positions are in TOKENS (BTC, ETH), need to convert to CONTRACTS
-    double defi_token1_tokens = 0.0;  // Accumulate DeFi token1 in tokens
+    // These are tracked separately and updated via update_defi_position() or on_defi_delta_update()
+    // Note: DeFi positions stored in defi_positions_ are in CONTRACTS (after conversion from tokens in on_defi_delta_update)
+    // So we can directly add them to CeFi contracts
     {
         std::lock_guard<std::mutex> lock(defi_positions_mutex_);
         for (const auto& [pool_address, position] : defi_positions_) {
             inventory.token0_defi += position.token0_amount;
-            defi_token1_tokens += position.token1_amount;  // Accumulate in tokens
+            inventory.token1_defi += position.token1_amount;  // Already in contracts (from on_defi_delta_update)
         }
     }
     
