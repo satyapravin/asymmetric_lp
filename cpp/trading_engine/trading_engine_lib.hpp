@@ -235,6 +235,22 @@ private:
     // Statistics
     Statistics statistics_;
     
+    // Rate limiting
+    mutable std::mutex rate_limit_mutex_;
+    std::atomic<int> orders_sent_this_second_{0};
+    std::chrono::steady_clock::time_point last_rate_reset_;
+    int max_orders_per_second_{10}; // Configurable via config file
+    
+    // Rate limiting helpers
+    bool check_rate_limit();
+    void update_rate_limit();
+    
+    // Order validation
+    bool validate_order(const std::string& symbol, double qty, double price, proto::OrderType type);
+    
+    // Reconnection handling
+    void on_reconnected();
+    
     // Internal methods
     void setup_exchange_oms();
     void query_open_orders_at_startup();

@@ -19,13 +19,14 @@ add_library(utils STATIC
   handlers/message_handler_manager.cpp
   config/config_manager.cpp
   config/process_config_manager.cpp
+  exchange/exchange_symbol_registry.cpp
   logging/logger.cpp
   app_service/app_service.cpp
   # persistence/database.cpp  # Removed - using exchange-specific data fetchers
 )
 
 # Public include dirs so subprojects can include headers
-target_include_directories(utils PUBLIC ${CMAKE_CURRENT_LIST_DIR} ${CMAKE_CURRENT_LIST_DIR}/oms ${CMAKE_CURRENT_LIST_DIR}/mds ${CMAKE_CURRENT_LIST_DIR}/zmq ${CMAKE_CURRENT_LIST_DIR}/config ${CMAKE_CURRENT_LIST_DIR}/pms ${CMAKE_CURRENT_LIST_DIR}/handlers ${CMAKE_CURRENT_LIST_DIR}/app_service ${ZeroMQ_INCLUDE_DIRS})
+target_include_directories(utils PUBLIC ${CMAKE_CURRENT_LIST_DIR} ${CMAKE_CURRENT_LIST_DIR}/oms ${CMAKE_CURRENT_LIST_DIR}/mds ${CMAKE_CURRENT_LIST_DIR}/zmq ${CMAKE_CURRENT_LIST_DIR}/config ${CMAKE_CURRENT_LIST_DIR}/pms ${CMAKE_CURRENT_LIST_DIR}/handlers ${CMAKE_CURRENT_LIST_DIR}/app_service ${CMAKE_CURRENT_LIST_DIR}/exchange ${ZeroMQ_INCLUDE_DIRS})
 
 if(LIBWEBSOCKETS_FOUND)
   target_include_directories(utils PUBLIC ${LIBWEBSOCKETS_INCLUDE_DIRS})

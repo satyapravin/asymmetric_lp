@@ -42,6 +42,12 @@ public:
   bool cancel_order(const std::string& cl_ord_id,
                     const std::string& exch);
   
+  // Modify order (replace with new price/quantity)
+  bool modify_order(const std::string& cl_ord_id,
+                    const std::string& exch,
+                    double new_price,
+                    double new_qty);
+  
   // Poll for events (non-blocking)
   void poll_events();
 
@@ -52,6 +58,8 @@ private:
   std::unique_ptr<ZmqSubscriber> event_subscriber_;
   std::string order_topic_;
   std::string event_topic_;
+  std::string cancel_topic_;  // Topic for cancel requests
+  std::string modify_topic_;  // Topic for modify requests
   OrderEventCallback event_callback_;
   std::atomic<uint32_t> sequence_{0};
 };

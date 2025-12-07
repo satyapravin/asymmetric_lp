@@ -4,6 +4,7 @@
 #include "../utils/constants.hpp"
 #include "../utils/error_handling.hpp"
 #include "../utils/metrics/metrics_collector.hpp"
+#include "../utils/exchange/exchange_symbol_registry.hpp"
 #include <chrono>
 #include <thread>
 #include <algorithm>
@@ -20,6 +21,11 @@ TradingEngineLib::TradingEngineLib() {
     
     // Initialize order state machine
     order_state_machine_ = std::make_unique<OrderStateMachine>();
+    
+    // Initialize rate limiting
+    orders_sent_this_second_.store(0);
+    last_rate_reset_ = std::chrono::steady_clock::now();
+    max_orders_per_second_ = 10; // Default, can be overridden via config
     
     logger.debug("Trading Engine Library initialized");
 }
@@ -46,6 +52,28 @@ bool TradingEngineLib::initialize(const std::string& config_file) {
         
         // Setup exchange OMS
         setup_exchange_oms();
+        
+        // Load rate limit configuration if available
+        if (config_manager_) {
+            std::string rate_limit_str = config_manager_->get("TRADING_ENGINE", "MAX_ORDERS_PER_SECOND", "10");
+            try {
+                max_orders_per_second_ = std::stoi(rate_limit_str);
+                logger.info("Rate limit configured: " + std::to_string(max_orders_per_second_) + " orders/second");
+            } catch (const std::exception& e) {
+                logger.warn("Invalid MAX_ORDERS_PER_SECOND config, using default: 10");
+            }
+            
+            // Load exchange symbol configuration
+            std::string symbol_config_path = config_manager_->get("TRADING_ENGINE", "EXCHANGE_INSTR_CONFIG", "exchange_instr_config.ini");
+            if (!symbol_config_path.empty()) {
+                auto& registry = ExchangeSymbolRegistry::get_instance();
+                if (registry.load_from_config(symbol_config_path)) {
+                    logger.info("Loaded exchange symbol configuration from: " + symbol_config_path);
+                } else {
+                    logger.warn("Failed to load exchange symbol configuration from: " + symbol_config_path);
+                }
+            }
+        }
         
         logger.info("Initialization complete");
         return true;
@@ -127,6 +155,35 @@ bool TradingEngineLib::send_order(const std::string& cl_ord_id, const std::strin
         return false;
     }
     
+    // Check for duplicate order ID
+    {
+        std::lock_guard<std::mutex> lock(order_states_mutex_);
+        if (order_states_.find(cl_ord_id) != order_states_.end()) {
+            logger.error("Duplicate order ID detected: " + cl_ord_id + " - rejecting order");
+            return false;
+        }
+    }
+    
+    // Validate order parameters using exchange symbol registry
+    // Note: Strategy should have already rounded prices/sizes, so we only validate here
+    auto& registry = ExchangeSymbolRegistry::get_instance();
+    if (!registry.validate_only(exchange_name_, symbol, qty, price)) {
+        logger.error("Order validation failed for: " + cl_ord_id);
+        return false;
+    }
+    
+    // Validate order parameters
+    if (!validate_order(symbol, qty, price, type)) {
+        logger.error("Order validation failed for: " + cl_ord_id);
+        return false;
+    }
+    
+    // Check rate limit before sending
+    if (!check_rate_limit()) {
+        logger.warn("Rate limit exceeded - throttling order: " + cl_ord_id);
+        return false;
+    }
+    
     std::stringstream ss;
     ss << "Sending order: " << cl_ord_id << " " << symbol 
        << " " << (side == proto::Side::BUY ? "BUY" : "SELL") 
@@ -156,8 +213,10 @@ bool TradingEngineLib::send_order(const std::string& cl_ord_id, const std::strin
     
     if (success) {
         statistics_.orders_sent_to_exchange.fetch_add(1);
+        orders_sent_this_second_.fetch_add(1); // Increment rate limit counter
         
-        // Update order state
+        // Store order state but mark as SENT (not PENDING) until exchange ACKs
+        // This prevents optimistic state updates
         OrderStateInfo order_state;
         order_state.cl_ord_id = cl_ord_id;
         order_state.symbol = symbol;
@@ -165,7 +224,8 @@ bool TradingEngineLib::send_order(const std::string& cl_ord_id, const std::strin
         order_state.qty = qty;
         order_state.price = price;
         order_state.is_market = (type == proto::OrderType::MARKET);
-        order_state.state = OrderState::PENDING;
+        order_state.state = OrderState::PENDING; // Will be updated to ACKNOWLEDGED when exchange confirms
+        order_state.exch = exchange_name_;
         order_state.created_time = std::chrono::system_clock::now();
         order_state.last_update_time = order_state.created_time;
         
@@ -174,10 +234,23 @@ bool TradingEngineLib::send_order(const std::string& cl_ord_id, const std::strin
             order_states_[cl_ord_id] = order_state;
         }
         
-        logger.debug("Order sent successfully");
+        logger.debug("Order sent successfully - waiting for exchange ACK");
     } else {
         logger.error("Failed to send order");
         handle_error("Failed to send order to exchange");
+        // Create REJECTED order state for failed orders
+        OrderStateInfo rejected_state;
+        rejected_state.cl_ord_id = cl_ord_id;
+        rejected_state.symbol = symbol;
+        rejected_state.state = OrderState::REJECTED;
+        rejected_state.reject_reason = "Failed to send to exchange";
+        rejected_state.created_time = std::chrono::system_clock::now();
+        rejected_state.last_update_time = rejected_state.created_time;
+        
+        {
+            std::lock_guard<std::mutex> lock(order_states_mutex_);
+            order_states_[cl_ord_id] = rejected_state;
+        }
     }
     
     return success;
@@ -517,6 +590,22 @@ void TradingEngineLib::handle_order_request(const proto::OrderRequest& order_req
     // Use metrics timer for performance tracking
     auto timer = METRICS_TIMER("trading_engine.order_request_processing_us").start();
     
+    // Check if this is a cancel request (symbol == "__CANCEL__")
+    if (order_request.symbol() == "__CANCEL__") {
+        logger.debug("Handling cancel request: " + order_request.cl_ord_id());
+        cancel_order(order_request.cl_ord_id());
+        return;
+    }
+    
+    // Check if this is a modify request (symbol == "__MODIFY__")
+    if (order_request.symbol() == "__MODIFY__") {
+        logger.debug("Handling modify request: " + order_request.cl_ord_id() + 
+                    " new_price=" + std::to_string(order_request.price()) + 
+                    " new_qty=" + std::to_string(order_request.qty()));
+        modify_order(order_request.cl_ord_id(), order_request.price(), order_request.qty());
+        return;
+    }
+    
     // Only log at DEBUG level for normal operations
     logger.debug("Handling order request: " + order_request.cl_ord_id());
     
@@ -567,6 +656,11 @@ void TradingEngineLib::handle_order_event(const proto::OrderEvent& order_event) 
         std::lock_guard<std::mutex> lock(order_states_mutex_);
         auto it = order_states_.find(order_event.cl_ord_id());
         if (it != order_states_.end()) {
+            // Store exchange_order_id when available (usually in ACK event)
+            if (!order_event.exch_order_id().empty()) {
+                it->second.exchange_order_id = order_event.exch_order_id();
+            }
+            
             // Update filled quantity if FILL event
             if (order_event.event_type() == proto::OrderEventType::FILL) {
                 it->second.filled_qty = order_event.fill_qty();
@@ -734,6 +828,63 @@ void TradingEngineLib::set_websocket_transport(std::shared_ptr<websocket_transpo
     if (exchange_oms_) {
         exchange_oms_->set_websocket_transport(transport);
     }
+}
+
+bool TradingEngineLib::check_rate_limit() {
+    std::lock_guard<std::mutex> lock(rate_limit_mutex_);
+    update_rate_limit(); // Reset counter if needed
+    return orders_sent_this_second_.load() < max_orders_per_second_;
+}
+
+void TradingEngineLib::update_rate_limit() {
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_rate_reset_).count();
+    
+    if (elapsed >= 1) {
+        orders_sent_this_second_.store(0);
+        last_rate_reset_ = now;
+    }
+}
+
+bool TradingEngineLib::validate_order(const std::string& symbol, double qty, double price, proto::OrderType type) {
+    logging::Logger logger("TRADING_ENGINE");
+    
+    // Basic validation
+    if (qty <= 0.0) {
+        logger.error("Invalid order quantity: " + std::to_string(qty));
+        return false;
+    }
+    
+    if (type == proto::OrderType::LIMIT && price <= 0.0) {
+        logger.error("Invalid price for limit order: " + std::to_string(price));
+        return false;
+    }
+    
+    // Exchange-specific validation using symbol registry
+    auto& registry = ExchangeSymbolRegistry::get_instance();
+    ExchangeSymbolInfo symbol_info = registry.get_symbol_info(exchange_name_, symbol);
+    
+    if (symbol_info.is_valid) {
+        // Validate against exchange-specific constraints
+        if (!registry.validate_order_params(symbol_info, qty, price)) {
+            logger.error("Order validation failed for " + exchange_name_ + ":" + symbol +
+                        " qty=" + std::to_string(qty) + " price=" + std::to_string(price));
+            return false;
+        }
+    } else {
+        // No symbol info available - log warning but allow order
+        logger.debug("No symbol info for " + exchange_name_ + ":" + symbol + " - skipping exchange-specific validation");
+    }
+    
+    return true;
+}
+
+void TradingEngineLib::on_reconnected() {
+    logging::Logger logger("TRADING_ENGINE");
+    logger.info("Exchange reconnected - reconciling order state");
+    
+    // Re-query open orders to sync state with exchange
+    query_open_orders_at_startup();
 }
 
 } // namespace trading_engine

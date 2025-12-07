@@ -267,6 +267,10 @@ void StrategyContainer::set_exchange(const std::string& exchange) {
     if (strategy_) {
         strategy_->set_exchange(exchange);
     }
+    // Set exchange name on MiniOMS so it can include it in orders
+    if (mini_oms_) {
+        mini_oms_->set_exchange_name(exchange);
+    }
 }
 
 const std::string& StrategyContainer::get_name() const {

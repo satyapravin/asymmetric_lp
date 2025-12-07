@@ -1,5 +1,6 @@
 #include "market_making_strategy.hpp"
 #include "../../utils/logging/logger.hpp"
+#include "../../utils/exchange/exchange_symbol_registry.hpp"
 #include <random>
 #include <sstream>
 #include <iomanip>
@@ -7,6 +8,7 @@
 #include <cmath>
 #include <mutex>
 #include <chrono>
+#include <atomic>
 
 namespace {
     // Static logger instance for this module
@@ -471,13 +473,41 @@ void MarketMakingStrategy::update_quotes() {
         double bid_size = std::clamp(base_bid_size, 0.0, max_size_absolute);
         double ask_size = std::clamp(base_ask_size, 0.0, max_size_absolute);
         
-        // Determine which sides to quote (skip if below minimum)
-        bool quote_bid = bid_size >= min_size_absolute;
-        bool quote_ask = ask_size >= min_size_absolute;
+        // CRITICAL: Round prices and sizes to exchange tick/step sizes BEFORE validation
+        // This ensures the strategy knows exactly what prices/sizes will be sent
+        auto& symbol_registry = ExchangeSymbolRegistry::get_instance();
+        double original_bid_price = bid_price;
+        double original_ask_price = ask_price;
+        double original_bid_size = bid_size;
+        double original_ask_size = ask_size;
         
-        // If both sides are below minimum, skip quote update entirely
-        if (!quote_bid && !quote_ask) {
-            get_logger().warn("Both bid and ask sizes below minimum (" + std::to_string(min_size_absolute) + 
+        // Round prices and sizes to exchange requirements
+        if (!symbol_registry.validate_and_round(exchange_, symbol_, bid_size, bid_price)) {
+            get_logger().error("Failed to validate/round bid quote - skipping bid order");
+            quote_bid = false;
+        }
+        
+        if (!symbol_registry.validate_and_round(exchange_, symbol_, ask_size, ask_price)) {
+            get_logger().error("Failed to validate/round ask quote - skipping ask order");
+            quote_ask = false;
+        }
+        
+        // After rounding, validate that bid < ask (rounding might cause them to cross)
+        if (quote_bid && quote_ask && bid_price >= ask_price) {
+            get_logger().warn("After rounding, bid (" + std::to_string(bid_price) + 
+                             ") >= ask (" + std::to_string(ask_price) + 
+                             "). Skipping quote update to avoid invalid orders.");
+            return;
+        }
+        
+        // Re-check minimum size after rounding (rounded size might be below minimum)
+        bool quote_bid_after_rounding = quote_bid && bid_size >= min_size_absolute;
+        bool quote_ask_after_rounding = quote_ask && ask_size >= min_size_absolute;
+        
+        // If both sides are below minimum after rounding, skip quote update entirely
+        if (!quote_bid_after_rounding && !quote_ask_after_rounding) {
+            get_logger().warn("Both bid and ask sizes below minimum after rounding (" + 
+                             std::to_string(min_size_absolute) + 
                              "). Skipping quote update.");
             return;
         }
@@ -489,13 +519,27 @@ void MarketMakingStrategy::update_quotes() {
            << "  Actual collateral: " << actual_collateral_balance << std::endl
            << "  Leverage: " << leverage_ << "x" << std::endl
            << "  Leveraged balance: " << leveraged_balance << " (used for sizing)" << std::endl
-           << "  Bid price: " << bid_price << " | Bid size: " << bid_size;
-        if (!quote_bid) {
-            ss << " (SKIPPED - below min " << min_size_absolute << ")";
+           << "  Bid price: " << original_bid_price;
+        if (original_bid_price != bid_price) {
+            ss << " -> " << bid_price << " (rounded)";
         }
-        ss << std::endl << "  Ask price: " << ask_price << " | Ask size: " << ask_size;
-        if (!quote_ask) {
-            ss << " (SKIPPED - below min " << min_size_absolute << ")";
+        ss << " | Bid size: " << original_bid_size;
+        if (original_bid_size != bid_size) {
+            ss << " -> " << bid_size << " (rounded)";
+        }
+        if (!quote_bid_after_rounding) {
+            ss << " (SKIPPED - below min " << min_size_absolute << " after rounding)";
+        }
+        ss << std::endl << "  Ask price: " << original_ask_price;
+        if (original_ask_price != ask_price) {
+            ss << " -> " << ask_price << " (rounded)";
+        }
+        ss << " | Ask size: " << original_ask_size;
+        if (original_ask_size != ask_size) {
+            ss << " -> " << ask_size << " (rounded)";
+        }
+        if (!quote_ask_after_rounding) {
+            ss << " (SKIPPED - below min " << min_size_absolute << " after rounding)";
         }
         ss << std::endl << "  Inventory skew: " << normalized_skew << " (affects size asymmetry)" << std::endl
            << "  Min size threshold: " << min_size_absolute << " (" << (min_quote_size_pct_ * 100) << "% of leveraged balance)";
@@ -510,10 +554,12 @@ void MarketMakingStrategy::update_quotes() {
             active_order_ids_.clear();
         }
         
-        // Place bid order (buy limit order) only if size is above minimum
+        // Place bid order (buy limit order) only if size is above minimum after rounding
         std::string bid_order_id;
-        if (quote_bid) {
+        if (quote_bid_after_rounding) {
             bid_order_id = generate_order_id() + "_BID";
+            // Prices/sizes are already rounded, so send_order will pass them through
+            // (MiniOMS will validate but not re-round since they're already aligned)
             if (send_order(bid_order_id, symbol_, proto::BUY, proto::LIMIT, bid_size, bid_price)) {
                 std::stringstream ss;
                 ss << "Placed bid order: " << bid_order_id << " " << bid_size << " @ " << bid_price;
@@ -525,13 +571,15 @@ void MarketMakingStrategy::update_quotes() {
             }
         } else {
             get_logger().debug("Skipping bid order - size (" + std::to_string(bid_size) + 
-                              ") below minimum (" + std::to_string(min_size_absolute) + ")");
+                              ") below minimum (" + std::to_string(min_size_absolute) + ") after rounding");
         }
         
-        // Place ask order (sell limit order) only if size is above minimum
+        // Place ask order (sell limit order) only if size is above minimum after rounding
         std::string ask_order_id;
-        if (quote_ask) {
+        if (quote_ask_after_rounding) {
             ask_order_id = generate_order_id() + "_ASK";
+            // Prices/sizes are already rounded, so send_order will pass them through
+            // (MiniOMS will validate but not re-round since they're already aligned)
             if (send_order(ask_order_id, symbol_, proto::SELL, proto::LIMIT, ask_size, ask_price)) {
                 std::stringstream ss;
                 ss << "Placed ask order: " << ask_order_id << " " << ask_size << " @ " << ask_price;
@@ -543,17 +591,17 @@ void MarketMakingStrategy::update_quotes() {
             }
         } else {
             get_logger().debug("Skipping ask order - size (" + std::to_string(ask_size) + 
-                              ") below minimum (" + std::to_string(min_size_absolute) + ")");
+                              ") below minimum (" + std::to_string(min_size_absolute) + ") after rounding");
         }
         
         // Track active order IDs and prices for cancellation on next update
         {
             std::lock_guard<std::mutex> lock(quote_update_mutex_);
-            // Only update prices for sides that were actually quoted
-            if (quote_bid) {
+            // Only update prices for sides that were actually quoted (use rounded prices)
+            if (quote_bid_after_rounding) {
                 last_quote_bid_price_ = bid_price;
             }
-            if (quote_ask) {
+            if (quote_ask_after_rounding) {
                 last_quote_ask_price_ = ask_price;
             }
             last_mid_price_ = mid_price;
@@ -788,14 +836,15 @@ void MarketMakingStrategy::update_spot_price_from_orderbook(const proto::OrderBo
 }
 
 std::string MarketMakingStrategy::generate_order_id() const {
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    static std::uniform_int_distribution<> dis(1000, 9999);
+    // Use atomic counter to ensure uniqueness across all instances
+    static std::atomic<uint64_t> order_id_counter_{0};
+    
+    uint64_t counter = order_id_counter_.fetch_add(1, std::memory_order_relaxed);
     
     std::ostringstream oss;
     oss << "MM_" << std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count()
-        << "_" << dis(gen);
+        << "_" << counter;
     return oss.str();
 }
 

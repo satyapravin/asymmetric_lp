@@ -8,7 +8,8 @@ ZmqOMSAdapter::ZmqOMSAdapter(const std::string& order_pub_endpoint,
                const std::string& order_topic,
                const std::string& event_sub_endpoint,
                const std::string& event_topic)
-    : order_topic_(order_topic), event_topic_(event_topic) {
+    : order_topic_(order_topic), event_topic_(event_topic),
+      cancel_topic_("cancel_orders"), modify_topic_("modify_orders") {
   order_publisher_ = std::make_unique<ZmqPublisher>(order_pub_endpoint);
   event_subscriber_ = std::make_unique<ZmqSubscriber>(event_sub_endpoint, event_topic);
   LOG_INFO_COMP("ZmqOMSAdapter", "Created OMS adapter - subscribing to: " + event_sub_endpoint + 
@@ -45,9 +46,82 @@ bool ZmqOMSAdapter::send_order(const std::string& cl_ord_id,
 
 bool ZmqOMSAdapter::cancel_order(const std::string& cl_ord_id,
                           const std::string& exch) {
-  // For now, just log the cancel request
-  LOG_DEBUG_COMP("ZmqOMSAdapter", "Cancel order: " + cl_ord_id + " on " + exch);
-  return true;
+#ifdef PROTO_ENABLED
+  // Create cancel request message
+  proto::OrderRequest cancel_req;
+  cancel_req.set_cl_ord_id(cl_ord_id);
+  cancel_req.set_exch(exch);
+  // Use a special symbol to indicate cancel request
+  cancel_req.set_symbol("__CANCEL__");
+  cancel_req.set_side(proto::BUY); // Dummy value
+  cancel_req.set_type(proto::LIMIT); // Dummy value
+  cancel_req.set_qty(0.0); // Zero quantity indicates cancel
+  cancel_req.set_price(0.0);
+  cancel_req.set_timestamp_us(std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::system_clock::now().time_since_epoch()).count());
+  
+  std::string payload;
+  if (cancel_req.SerializeToString(&payload)) {
+    // Publish to order_topic_ instead of cancel_topic_ so TradingEngine can process it
+    // TradingEngineLib::handle_order_request() checks for "__CANCEL__" symbol
+    bool success = order_publisher_->publish(order_topic_, payload);
+    if (success) {
+      LOG_DEBUG_COMP("ZmqOMSAdapter", "Cancel order request sent: " + cl_ord_id + " on " + exch);
+    } else {
+      LOG_ERROR_COMP("ZmqOMSAdapter", "Failed to publish cancel order: " + cl_ord_id);
+    }
+    return success;
+  } else {
+    LOG_ERROR_COMP("ZmqOMSAdapter", "Failed to serialize cancel order request");
+    return false;
+  }
+#else
+  // Binary format - create cancel message
+  // For binary format, we'd need to extend OrderBinaryHelper
+  LOG_WARN_COMP("ZmqOMSAdapter", "Cancel order not fully implemented for binary format");
+    return false;
+#endif
+}
+
+bool ZmqOMSAdapter::modify_order(const std::string& cl_ord_id,
+                                  const std::string& exch,
+                                  double new_price,
+                                  double new_qty) {
+#ifdef PROTO_ENABLED
+  // Create modify request message
+  proto::OrderRequest modify_req;
+  modify_req.set_cl_ord_id(cl_ord_id);
+  modify_req.set_exch(exch);
+  // Use a special symbol to indicate modify request
+  modify_req.set_symbol("__MODIFY__");
+  modify_req.set_side(proto::BUY); // Dummy value
+  modify_req.set_type(proto::LIMIT);
+  modify_req.set_qty(new_qty);
+  modify_req.set_price(new_price);
+  modify_req.set_timestamp_us(std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::system_clock::now().time_since_epoch()).count());
+  
+  std::string payload;
+  if (modify_req.SerializeToString(&payload)) {
+    // Publish to order_topic_ instead of modify_topic_ so TradingEngine can process it
+    // TradingEngineLib::handle_order_request() checks for "__MODIFY__" symbol
+    bool success = order_publisher_->publish(order_topic_, payload);
+    if (success) {
+      LOG_DEBUG_COMP("ZmqOMSAdapter", "Modify order request sent: " + cl_ord_id + 
+                    " new_price=" + std::to_string(new_price) + 
+                    " new_qty=" + std::to_string(new_qty));
+    } else {
+      LOG_ERROR_COMP("ZmqOMSAdapter", "Failed to publish modify order: " + cl_ord_id);
+    }
+    return success;
+  } else {
+    LOG_ERROR_COMP("ZmqOMSAdapter", "Failed to serialize modify order request");
+    return false;
+  }
+#else
+  LOG_WARN_COMP("ZmqOMSAdapter", "Modify order not fully implemented for binary format");
+  return false;
+#endif
 }
 
 void ZmqOMSAdapter::poll_events() {

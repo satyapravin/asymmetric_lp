@@ -37,6 +37,9 @@ public:
     void set_mds_adapter(std::shared_ptr<ZmqMDSAdapter> adapter);
     void set_pms_adapter(std::shared_ptr<ZmqPMSAdapter> adapter);
     
+    // Exchange configuration
+    void set_exchange_name(const std::string& exchange_name) { exchange_name_ = exchange_name; }
+    
     // Order management
     bool send_order(const std::string& cl_ord_id,
                    const std::string& symbol,
@@ -108,6 +111,9 @@ private:
     std::shared_ptr<ZmqOMSAdapter> oms_adapter_;
     std::shared_ptr<ZmqMDSAdapter> mds_adapter_;
     std::shared_ptr<ZmqPMSAdapter> pms_adapter_;
+    
+    // Exchange configuration
+    std::string exchange_name_;
     
     // State management
     std::atomic<bool> running_;

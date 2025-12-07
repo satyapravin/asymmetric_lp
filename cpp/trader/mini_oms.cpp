@@ -1,5 +1,6 @@
 #include "mini_oms.hpp"
 #include "../utils/logging/logger.hpp"
+#include "../utils/exchange/exchange_symbol_registry.hpp"
 #include <random>
 #include <sstream>
 #include <iomanip>
@@ -37,18 +38,42 @@ void MiniOMS::stop() {
     }
     
     logging::Logger logger("MINI_OMS");
-    logger.info("Stopping Mini OMS");
+    logger.info("Stopping Mini OMS - cancelling all pending orders");
     running_.store(false);
     
-    // Cancel all pending orders
-    std::lock_guard<std::mutex> lock(orders_mutex_);
-    for (const auto& [cl_ord_id, order_info] : orders_) {
-        if (order_info.state == OrderState::PENDING || 
-            order_info.state == OrderState::ACKNOWLEDGED) {
-            logging::Logger logger("MINI_OMS");
-            logger.debug("Cancelling pending order: " + cl_ord_id);
-            // Note: Actual cancellation would be handled by ZMQ adapter
+    // Collect orders to cancel (release lock before cancelling to avoid deadlock)
+    std::vector<std::string> orders_to_cancel;
+    {
+        std::lock_guard<std::mutex> lock(orders_mutex_);
+        for (const auto& [cl_ord_id, order_info] : orders_) {
+            if (order_info.state == OrderState::PENDING || 
+                order_info.state == OrderState::ACKNOWLEDGED ||
+                order_info.state == OrderState::PARTIALLY_FILLED) {
+                orders_to_cancel.push_back(cl_ord_id);
+            }
         }
+    }
+    
+    // Actually cancel orders via adapter
+    if (oms_adapter_ && !orders_to_cancel.empty()) {
+        logger.info("Cancelling " + std::to_string(orders_to_cancel.size()) + " pending orders");
+        for (const auto& cl_ord_id : orders_to_cancel) {
+            logger.debug("Cancelling order: " + cl_ord_id);
+            // Extract exchange from order info if available
+            std::string exchange = "";
+            {
+                std::lock_guard<std::mutex> lock(orders_mutex_);
+                auto it = orders_.find(cl_ord_id);
+                if (it != orders_.end()) {
+                    exchange = it->second.exch;
+                }
+            }
+            oms_adapter_->cancel_order(cl_ord_id, exchange);
+        }
+    } else if (orders_to_cancel.empty()) {
+        logger.debug("No pending orders to cancel");
+    } else {
+        logger.warn("No OMS adapter available - cannot cancel orders");
     }
 }
 
@@ -62,16 +87,24 @@ bool MiniOMS::send_order(const std::string& cl_ord_id,
         return false;
     }
     
+    logging::Logger logger("MINI_OMS");
+    
     // Validate parameters
     if (qty <= 0.0) {
-        logging::Logger logger("MINI_OMS");
         logger.error("Invalid order quantity: " + std::to_string(qty));
         return false;
     }
     
     if (type == proto::LIMIT && price <= 0.0) {
-        logging::Logger logger("MINI_OMS");
         logger.error("Invalid price for limit order: " + std::to_string(price));
+        return false;
+    }
+    
+    // Validate order parameters using exchange symbol registry
+    // Note: Strategy should have already rounded prices/sizes, so we only validate here
+    auto& registry = ExchangeSymbolRegistry::get_instance();
+    if (!registry.validate_only(exchange_name_, symbol, qty, price)) {
+        logger.error("Order validation failed for: " + cl_ord_id);
         return false;
     }
     
@@ -84,6 +117,7 @@ bool MiniOMS::send_order(const std::string& cl_ord_id,
     order_info.price = price;
     order_info.is_market = (type == proto::MARKET);
     order_info.state = OrderState::PENDING;
+    order_info.exch = exchange_name_; // Store exchange name
     order_info.created_time = std::chrono::system_clock::now();
     order_info.last_update_time = order_info.created_time;
     
@@ -99,13 +133,26 @@ bool MiniOMS::send_order(const std::string& cl_ord_id,
     
     // Send order via ZMQ adapter
     if (oms_adapter_) {
-        // Note: This would need to be implemented in ZmqOMSAdapter
         logging::Logger logger("MINI_OMS");
         std::stringstream ss;
         ss << "Sending order: " << cl_ord_id << " " << symbol 
            << " " << (side == proto::BUY ? "BUY" : "SELL")
            << " " << qty << " @ " << price;
         logger.debug(ss.str());
+        
+        // Actually send order via adapter
+        bool sent = oms_adapter_->send_order(cl_ord_id, exchange_name_, symbol, 
+                                            (side == proto::BUY ? 0 : 1), 
+                                            (type == proto::MARKET ? 1 : 0), 
+                                            qty, price);
+        if (!sent) {
+            logger.error("Failed to send order via ZMQ adapter: " + cl_ord_id);
+            // Update state to REJECTED on failure
+            update_order_state(cl_ord_id, OrderState::REJECTED, "Failed to send via ZMQ");
+            statistics_.rejected_orders.fetch_add(1);
+            statistics_.pending_orders.fetch_sub(1);
+            return false;
+        }
         
         // Notify state change
         notify_order_state_change(order_info);
@@ -114,6 +161,10 @@ bool MiniOMS::send_order(const std::string& cl_ord_id,
     
     logging::Logger logger("MINI_OMS");
     logger.error("No OMS adapter available");
+    // Update state to REJECTED if no adapter
+    update_order_state(cl_ord_id, OrderState::REJECTED, "No OMS adapter available");
+    statistics_.rejected_orders.fetch_add(1);
+    statistics_.pending_orders.fetch_sub(1);
     return false;
 }
 
@@ -141,17 +192,37 @@ bool MiniOMS::cancel_order(const std::string& cl_ord_id) {
         return false;
     }
     
-    // Update state
-    update_order_state(cl_ord_id, OrderState::CANCELLED, "Cancelled by user");
+    // Get exchange name from order info
+    std::string exchange = order_info.exch;
+    if (exchange.empty()) {
+        exchange = exchange_name_; // Fallback to default exchange name
+    }
+    
+    // Release lock before sending cancel (prevent deadlock)
+    lock.unlock();
     
     // Send cancel request via ZMQ adapter
     if (oms_adapter_) {
         logging::Logger logger("MINI_OMS");
-        logger.debug("Cancelling order: " + cl_ord_id);
-        // Note: This would need to be implemented in ZmqOMSAdapter
+        logger.debug("Cancelling order: " + cl_ord_id + " on exchange: " + exchange);
+        
+        // Actually send cancel via adapter
+        bool cancelled = oms_adapter_->cancel_order(cl_ord_id, exchange);
+        if (!cancelled) {
+            logger.error("Failed to send cancel request via ZMQ adapter: " + cl_ord_id);
+            // Don't update state if cancel request failed
+            return false;
+        }
+        
+        // Don't update state to CANCELLED yet - wait for exchange confirmation via order event
+        // This prevents race conditions where cancel fails but state is already CANCELLED
+        // The order event will update the state when exchange confirms cancellation
+        logger.debug("Cancel request sent successfully - waiting for exchange confirmation");
         return true;
     }
     
+    logging::Logger logger("MINI_OMS");
+    logger.error("No OMS adapter available for cancel");
     return false;
 }
 
@@ -160,29 +231,46 @@ bool MiniOMS::modify_order(const std::string& cl_ord_id, double new_price, doubl
         return false;
     }
     
-    std::lock_guard<std::mutex> lock(orders_mutex_);
-    auto it = orders_.find(cl_ord_id);
-    if (it == orders_.end()) {
+    // Validate new parameters
+    if (new_qty <= 0.0) {
         logging::Logger logger("MINI_OMS");
-        logger.error("Order not found: " + cl_ord_id);
+        logger.error("Invalid new quantity for modify: " + std::to_string(new_qty));
         return false;
     }
     
-    OrderStateInfo& order_info = it->second;
-    
-    // Check if order can be modified
-    if (order_info.state != OrderState::ACKNOWLEDGED) {
+    if (new_price <= 0.0) {
         logging::Logger logger("MINI_OMS");
-        std::stringstream ss;
-        ss << "Cannot modify order in state: " << to_string(order_info.state);
-        logger.warn(ss.str());
+        logger.error("Invalid new price for modify: " + std::to_string(new_price));
         return false;
     }
     
-    // Update order details
-    order_info.price = new_price;
-    order_info.qty = new_qty;
-    order_info.last_update_time = std::chrono::system_clock::now();
+    std::string exchange;
+    {
+        std::lock_guard<std::mutex> lock(orders_mutex_);
+        auto it = orders_.find(cl_ord_id);
+        if (it == orders_.end()) {
+            logging::Logger logger("MINI_OMS");
+            logger.error("Order not found: " + cl_ord_id);
+            return false;
+        }
+        
+        OrderStateInfo& order_info = it->second;
+        
+        // Check if order can be modified
+        if (order_info.state != OrderState::ACKNOWLEDGED && 
+            order_info.state != OrderState::PARTIALLY_FILLED) {
+            logging::Logger logger("MINI_OMS");
+            std::stringstream ss;
+            ss << "Cannot modify order in state: " << to_string(order_info.state);
+            logger.warn(ss.str());
+            return false;
+        }
+        
+        exchange = order_info.exch;
+        if (exchange.empty()) {
+            exchange = exchange_name_; // Fallback to default exchange name
+        }
+    }
     
     // Send modify request via ZMQ adapter
     if (oms_adapter_) {
@@ -190,10 +278,30 @@ bool MiniOMS::modify_order(const std::string& cl_ord_id, double new_price, doubl
         std::stringstream ss;
         ss << "Modifying order: " << cl_ord_id << " new_price=" << new_price << " new_qty=" << new_qty;
         logger.debug(ss.str());
-        // Note: This would need to be implemented in ZmqOMSAdapter
+        
+        // Actually send modify via adapter
+        bool modified = oms_adapter_->modify_order(cl_ord_id, exchange, new_price, new_qty);
+        if (!modified) {
+            logger.error("Failed to send modify request via ZMQ adapter: " + cl_ord_id);
+            return false;
+        }
+        
+        // Update order details locally (actual modification confirmed via order event)
+        {
+            std::lock_guard<std::mutex> lock(orders_mutex_);
+            auto it = orders_.find(cl_ord_id);
+            if (it != orders_.end()) {
+                it->second.price = new_price;
+                it->second.qty = new_qty;
+                it->second.last_update_time = std::chrono::system_clock::now();
+            }
+        }
+        
         return true;
     }
     
+    logging::Logger logger("MINI_OMS");
+    logger.error("No OMS adapter available for modify");
     return false;
 }
 
@@ -288,6 +396,18 @@ void MiniOMS::on_order_event(const proto::OrderEvent& order_event) {
             logging::Logger logger("MINI_OMS");
             logger.error("Unknown event type: " + std::to_string(static_cast<int>(order_event.event_type())));
             return;
+    }
+    
+    // Update order state and store exchange_order_id if present
+    {
+        std::lock_guard<std::mutex> lock(orders_mutex_);
+        auto it = orders_.find(cl_ord_id);
+        if (it != orders_.end()) {
+            // Store exchange_order_id when available (usually in ACK event)
+            if (!order_event.exch_order_id().empty()) {
+                it->second.exchange_order_id = order_event.exch_order_id();
+            }
+        }
     }
     
     // Update order state
@@ -439,13 +559,14 @@ bool MiniOMS::is_valid_order_transition(const std::string& cl_ord_id, OrderState
 }
 
 std::string MiniOMS::generate_order_id() const {
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    static std::uniform_int_distribution<> dis(1000, 9999);
+    // Use atomic counter to ensure uniqueness across all instances
+    static std::atomic<uint64_t> order_id_counter_{0};
+    
+    uint64_t counter = order_id_counter_.fetch_add(1, std::memory_order_relaxed);
     
     std::ostringstream oss;
     oss << "MM_" << std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count()
-        << "_" << dis(gen);
+        << "_" << counter;
     return oss.str();
 }

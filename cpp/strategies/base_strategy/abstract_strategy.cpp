@@ -3,6 +3,7 @@
 #include <random>
 #include <sstream>
 #include <iomanip>
+#include <atomic>
 
 void AbstractStrategy::start() {
     if (running_.load()) {
@@ -24,13 +25,27 @@ void AbstractStrategy::stop() {
     LOG_INFO_COMP("STRATEGY", "Stopping strategy: " + name_);
     running_.store(false);
     
-    // Cancel all pending orders
+    // Cancel all pending orders via order canceller callback
+    std::vector<std::string> orders_to_cancel;
     {
         std::lock_guard<std::mutex> lock(orders_mutex_);
         for (const auto& [cl_ord_id, order] : pending_orders_) {
-            // Note: Order cancellation should be handled by the container
-            LOG_INFO_COMP("STRATEGY", "Pending order to cancel: " + cl_ord_id);
+            orders_to_cancel.push_back(cl_ord_id);
         }
+    }
+    
+    // Actually cancel orders via callback (set by StrategyContainer)
+    if (order_canceller_ && !orders_to_cancel.empty()) {
+        LOG_INFO_COMP("STRATEGY", "Cancelling " + std::to_string(orders_to_cancel.size()) + " pending orders");
+        for (const auto& cl_ord_id : orders_to_cancel) {
+            LOG_DEBUG_COMP("STRATEGY", "Cancelling order: " + cl_ord_id);
+            order_canceller_(cl_ord_id);
+        }
+    }
+    
+    // Clear pending orders
+    {
+        std::lock_guard<std::mutex> lock(orders_mutex_);
         pending_orders_.clear();
     }
     
@@ -39,14 +54,15 @@ void AbstractStrategy::stop() {
 }
 
 std::string AbstractStrategy::generate_order_id() const {
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    static std::uniform_int_distribution<> dis(1000, 9999);
+    // Use atomic counter to ensure uniqueness across all instances
+    static std::atomic<uint64_t> order_id_counter_{0};
+    
+    uint64_t counter = order_id_counter_.fetch_add(1, std::memory_order_relaxed);
     
     std::ostringstream oss;
     oss << name_ << "_" << std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count()
-        << "_" << dis(gen);
+        << "_" << counter;
     return oss.str();
 }
 
