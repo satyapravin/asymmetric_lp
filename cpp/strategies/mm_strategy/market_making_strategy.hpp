@@ -53,6 +53,9 @@ public:
       void on_position_update(const proto::PositionUpdate& position) override;
       void on_trade_execution(const proto::Trade& trade) override;
       void on_account_balance_update(const proto::AccountBalanceUpdate& balance_update) override;
+      
+      // DeFi delta update handler (receives delta in tokens from Python LP)
+      void on_defi_delta_update(const std::string& asset_symbol, double delta_tokens);
   
   // Order management (Strategy calls Container)
   // Note: Strategy doesn't implement order management - it calls the container

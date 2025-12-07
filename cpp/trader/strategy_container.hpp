@@ -86,6 +86,9 @@ public:
     void on_trade_execution(const proto::Trade& trade) override;
     void on_account_balance_update(const proto::AccountBalanceUpdate& balance_update) override;
     
+    // DeFi delta update handler (not in interface, specific to StrategyContainer)
+    void on_defi_delta_update(const std::string& asset_symbol, double delta_tokens);
+    
     // Configuration
     void set_symbol(const std::string& symbol) override;
     void set_exchange(const std::string& exchange) override;

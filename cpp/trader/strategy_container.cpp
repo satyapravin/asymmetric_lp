@@ -1,5 +1,6 @@
 #include "strategy_container.hpp"
 #include "../strategies/base_strategy/abstract_strategy.hpp"
+#include "../strategies/mm_strategy/market_making_strategy.hpp"
 #include "../utils/logging/log_helper.hpp"
 #include "../utils/constants.hpp"
 #include <thread>
@@ -252,6 +253,24 @@ void StrategyContainer::on_account_balance_update(const proto::AccountBalanceUpd
     
     // Check if we can start strategy now
     check_and_start_strategy();
+}
+
+void StrategyContainer::on_defi_delta_update(const std::string& asset_symbol, double delta_tokens) {
+    logging::Logger logger("STRATEGY_CONTAINER");
+    
+    logger.debug("Received DeFi delta update: " + asset_symbol + " delta=" + std::to_string(delta_tokens) + " tokens");
+    
+    // Forward to strategy only if it's fully started
+    // Strategy will convert tokens to contracts and update DeFi position
+    if (strategy_ && strategy_fully_started_.load()) {
+        // Try to cast to MarketMakingStrategy to call DeFi delta handler
+        auto mm_strategy = std::dynamic_pointer_cast<MarketMakingStrategy>(strategy_);
+        if (mm_strategy) {
+            mm_strategy->on_defi_delta_update(asset_symbol, delta_tokens);
+        } else {
+            logger.warn("Strategy does not support DeFi delta updates");
+        }
+    }
 }
 
 // Configuration

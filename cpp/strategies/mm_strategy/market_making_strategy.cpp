@@ -204,6 +204,105 @@ void MarketMakingStrategy::on_account_balance_update(const proto::AccountBalance
     // Update internal balance tracking or risk management
 }
 
+void MarketMakingStrategy::on_defi_delta_update(const std::string& asset_symbol, double delta_tokens) {
+    if (!running_.load()) {
+        return;
+    }
+    
+    logging::Logger logger = get_logger();
+    logger.info("DeFi delta update: " + asset_symbol + " delta=" + std::to_string(delta_tokens) + " tokens");
+    
+    // Verify asset_symbol matches our symbol's base token
+    // For BTCUSDT-PERP, we expect "BTC" or similar
+    // Extract base token from symbol_ (e.g., "BTC" from "BTCUSDT-PERP")
+    std::string base_token = symbol_;
+    size_t usdt_pos = base_token.find("USDT");
+    size_t usdc_pos = base_token.find("USDC");
+    size_t perp_pos = base_token.find("-PERP");
+    
+    if (usdt_pos != std::string::npos) {
+        base_token = base_token.substr(0, usdt_pos);
+    } else if (usdc_pos != std::string::npos) {
+        base_token = base_token.substr(0, usdc_pos);
+    } else if (perp_pos != std::string::npos) {
+        base_token = base_token.substr(0, perp_pos);
+    }
+    
+    // Check if asset_symbol matches our base token (case-insensitive)
+    std::string asset_upper = asset_symbol;
+    std::string base_upper = base_token;
+    std::transform(asset_upper.begin(), asset_upper.end(), asset_upper.begin(), ::toupper);
+    std::transform(base_upper.begin(), base_upper.end(), base_upper.begin(), ::toupper);
+    
+    if (asset_upper != base_upper) {
+        logger.debug("Ignoring DeFi delta for " + asset_symbol + " (expected " + base_token + ")");
+        return;
+    }
+    
+    // Convert delta from tokens to contracts using current spot price
+    double spot_price = current_spot_price_.load();
+    if (spot_price <= 0.0) {
+        logger.warn("Cannot convert DeFi delta to contracts: invalid spot price");
+        return;
+    }
+    
+    auto& symbol_registry = ExchangeSymbolRegistry::get_instance();
+    double delta_contracts = symbol_registry.token_qty_to_contracts(
+        exchange_, symbol_, delta_tokens, spot_price);
+    
+    if (delta_contracts == 0.0 && delta_tokens != 0.0) {
+        logger.error("Failed to convert DeFi delta to contracts: " + std::to_string(delta_tokens) + " tokens");
+        return;
+    }
+    
+    logger.info("Converted DeFi delta: " + std::to_string(delta_tokens) + " tokens -> " + 
+                std::to_string(delta_contracts) + " contracts (price=" + std::to_string(spot_price) + ")");
+    
+    // Update DeFi position
+    // For now, we'll create/update a synthetic DeFi position entry
+    // In production, this would update actual Uniswap LP position tracking
+    // We use a synthetic pool address to represent the aggregate DeFi delta
+    std::string synthetic_pool_address = "DEFI_DELTA_" + symbol_;
+    
+    {
+        std::lock_guard<std::mutex> lock(defi_positions_mutex_);
+        
+        // Get current DeFi position if it exists
+        auto it = defi_positions_.find(synthetic_pool_address);
+        double current_token1_contracts = 0.0;
+        if (it != defi_positions_.end()) {
+            current_token1_contracts = it->second.token1_amount;  // Already in contracts
+        }
+        
+        // Accumulate delta (delta_contracts is the change, not absolute value)
+        double new_token1_contracts = current_token1_contracts + delta_contracts;
+        
+        // Update token1_amount (in contracts after conversion)
+        DefiPosition defi_pos;
+        defi_pos.pool_address = synthetic_pool_address;
+        defi_pos.token0_amount = 0.0;  // Not tracking token0 for perps
+        defi_pos.token1_amount = new_token1_contracts;  // Store accumulated contracts
+        defi_pos.liquidity = 0.0;
+        defi_pos.range_lower = 0.0;
+        defi_pos.range_upper = 0.0;
+        defi_pos.fee_tier = 0;
+        
+        defi_positions_[synthetic_pool_address] = defi_pos;
+        
+        logger.info("Updated DeFi position: " + synthetic_pool_address + 
+                   " delta=" + std::to_string(delta_contracts) + " contracts" +
+                   " total=" + std::to_string(new_token1_contracts) + " contracts");
+    }
+    
+    // Trigger quote update if inventory changed significantly
+    if (std::abs(delta_tokens) > 0.001) {  // Threshold: 0.001 tokens
+        double spot_price_check = current_spot_price_.load();
+        if (spot_price_check > 0.0) {
+            update_quotes();
+        }
+    }
+}
+
 // Order management methods removed - Strategy calls Container instead
 
 OrderStateInfo MarketMakingStrategy::get_order_state(const std::string& cl_ord_id) {
@@ -319,10 +418,20 @@ void MarketMakingStrategy::update_quotes() {
     // Get current volatility
     double volatility = current_volatility_.load();
     
+    // Convert combined position from contracts to tokens for GLFT
+    // GLFT expects token1_total in tokens (BTC), but combined.token1_total is in contracts
+    auto& symbol_registry = ExchangeSymbolRegistry::get_instance();
+    double combined_token1_tokens = 0.0;
+    if (combined.token1_total != 0.0 && spot_price > 0.0) {
+        combined_token1_tokens = symbol_registry.contracts_to_token_qty(
+            exchange_, symbol_, combined.token1_total, spot_price);
+    }
+    
     // Calculate target inventory using GLFT model
+    // GLFT expects: token0_total (collateral in USD), token1_total (position in tokens/BTC)
     double target_offset = glft_model_->compute_target(
-        combined.token0_total,
-        combined.token1_total,
+        combined.token0_total,      // Collateral in USD
+        combined_token1_tokens,      // Position in tokens (BTC), converted from contracts
         spot_price,
         volatility
     );
@@ -331,8 +440,9 @@ void MarketMakingStrategy::update_quotes() {
     ss << "GLFT target calculation:" << std::endl
        << "  Combined inventory - Token0: " << combined.token0_total 
        << " (CeFi: " << combined.token0_cefi << ", DeFi: " << combined.token0_defi << ")" << std::endl
-       << "  Combined inventory - Token1: " << combined.token1_total 
-       << " (CeFi: " << combined.token1_cefi << ", DeFi: " << combined.token1_defi << ")" << std::endl
+       << "  Combined inventory - Token1: " << combined.token1_total << " contracts"
+       << " (CeFi: " << combined.token1_cefi << " contracts, DeFi: " << combined.token1_defi << " contracts)" << std::endl
+       << "  Combined inventory - Token1: " << combined_token1_tokens << " tokens (for GLFT)" << std::endl
        << "  Spot price: " << spot_price << std::endl
        << "  Volatility: " << volatility << std::endl
        << "  Target offset: " << target_offset;
@@ -346,7 +456,8 @@ void MarketMakingStrategy::update_quotes() {
     // For market making, we place limit orders around the mid price with a spread
     
     // Calculate effective spread from GLFT components
-    double normalized_skew = (combined.token1_total * spot_price) / std::max(combined.token0_total, 1.0);
+    // Use token1_total in tokens (not contracts) for skew calculation
+    double normalized_skew = (combined_token1_tokens * spot_price) / std::max(combined.token0_total, 1.0);
     double base_spread = glft_model_->get_config().base_spread;
     double risk_aversion = glft_model_->get_config().risk_aversion;
     double inventory_penalty = glft_model_->get_config().inventory_penalty;
@@ -703,13 +814,14 @@ MarketMakingStrategy::CombinedInventory MarketMakingStrategy::calculate_combined
     // Flow: Exchange API -> Position Server -> Mini PMS -> Strategy (via get_position())
     
     // Query positions for the current symbol from the exchange
-    // For perpetual futures: position quantity is the inventory we track
+    // For perpetual futures: position quantity is in CONTRACTS (from exchange API)
     auto position_info = get_position(exchange_, symbol_);
     if (position_info.has_value()) {
-        // token1 = perpetual position quantity (e.g., BTC position in BTCUSDT_Perp)
-        inventory.token1_cefi = position_info->qty;
+        // token1_cefi = perpetual position quantity in CONTRACTS
+        inventory.token1_cefi = position_info->qty;  // Already in contracts
     } else {
         // Fallback: use cached inventory delta if position query fails
+        // Note: current_inventory_delta_ may be in tokens or contracts depending on source
         inventory.token1_cefi = current_inventory_delta_.load();
     }
     
@@ -729,17 +841,19 @@ MarketMakingStrategy::CombinedInventory MarketMakingStrategy::calculate_combined
     // DeFi inventory (from Uniswap V3 LP positions)
     // These are tracked separately and updated via update_defi_position()
     // In production, DeFi positions would be queried from blockchain (Uniswap V3 contracts)
+    // DeFi positions are in TOKENS (BTC, ETH), need to convert to CONTRACTS
+    double defi_token1_tokens = 0.0;  // Accumulate DeFi token1 in tokens
     {
         std::lock_guard<std::mutex> lock(defi_positions_mutex_);
         for (const auto& [pool_address, position] : defi_positions_) {
             inventory.token0_defi += position.token0_amount;
-            inventory.token1_defi += position.token1_amount;
+            defi_token1_tokens += position.token1_amount;  // Accumulate in tokens
         }
     }
     
-    // Calculate combined totals
+    // Calculate combined totals (both CeFi and DeFi are in contracts now)
     inventory.token0_total = inventory.token0_cefi + inventory.token0_defi;
-    inventory.token1_total = inventory.token1_cefi + inventory.token1_defi;
+    inventory.token1_total = inventory.token1_cefi + inventory.token1_defi;  // Net position in contracts
     
     return inventory;
 }
