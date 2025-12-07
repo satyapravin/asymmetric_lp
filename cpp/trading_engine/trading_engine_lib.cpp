@@ -1,8 +1,13 @@
 #include "trading_engine_lib.hpp"
 #include "../utils/logging/logger.hpp"
+#include "../utils/oms/order_state.hpp"
+#include "../utils/constants.hpp"
+#include "../utils/error_handling.hpp"
+#include "../utils/metrics/metrics_collector.hpp"
 #include <chrono>
 #include <thread>
 #include <algorithm>
+#include <sstream>
 
 namespace trading_engine {
 
@@ -73,6 +78,10 @@ void TradingEngineLib::start() {
             handle_error("Failed to connect to exchange OMS");
         } else {
             logger.info("Connected to exchange OMS");
+            
+            // Query open orders from exchange for startup state recovery
+            // This ensures we have complete order state before processing new orders
+            query_open_orders_at_startup();
         }
     }
     
@@ -295,6 +304,166 @@ void TradingEngineLib::setup_exchange_oms() {
     logger.debug("Exchange OMS setup complete");
 }
 
+void TradingEngineLib::query_open_orders_at_startup() {
+    logging::Logger logger("TRADING_ENGINE");
+    logger.info("Querying open orders from exchange for startup state recovery");
+    
+    if (exchange_name_.empty()) {
+        logger.error("Cannot query open orders: exchange name not set");
+        return;
+    }
+    
+    if (!config_manager_) {
+        logger.error("Cannot query open orders: configuration manager not initialized");
+        return;
+    }
+    
+    // Get API credentials from config (using exchange-specific section)
+    std::string section = exchange_name_;
+    std::transform(section.begin(), section.end(), section.begin(), ::toupper);
+    
+    std::string api_key = config_manager_->get_string(section, "API_KEY", "");
+    std::string api_secret = config_manager_->get_string(section, "API_SECRET", "");
+    
+    if (api_key.empty()) {
+        logger.warn("Cannot query open orders: API_KEY not found in config section [" + section + "]");
+        return;
+    }
+    
+    // Create data fetcher for this exchange
+    auto data_fetcher = exchanges::DataFetcherFactory::create(exchange_name_, api_key, api_secret);
+    if (!data_fetcher) {
+        logger.error("Failed to create data fetcher for exchange: " + exchange_name_);
+        return;
+    }
+    
+    // Query open orders from exchange
+    try {
+        auto open_orders = data_fetcher->get_open_orders();
+        logger.info("Queried " + std::to_string(open_orders.size()) + " open orders from exchange");
+        
+        // Process each open order: update local state and publish via ZMQ
+        for (const auto& order_event : open_orders) {
+            // Create order state entry if it doesn't exist
+            {
+                std::lock_guard<std::mutex> lock(order_states_mutex_);
+                auto it = order_states_.find(order_event.cl_ord_id());
+                if (it == order_states_.end()) {
+                    // Create new order state entry from order event
+                    // Extract metadata from text field (contains origQty, side, price from data fetcher)
+                    OrderStateInfo order_state;
+                    order_state.cl_ord_id = order_event.cl_ord_id();
+                    order_state.symbol = order_event.symbol();
+                    order_state.exch = order_event.exch();
+                    order_state.exchange_order_id = order_event.exch_order_id();
+                    
+                    // Parse metadata from text field (format: "origQty:<value>|side:<value>|price:<value>")
+                    // Use defaults that are safe if parsing fails
+                    double orig_qty = order_event.fill_qty();  // Default to fill_qty if not in metadata
+                    std::string side_str = "BUY";
+                    double price = order_event.fill_price();  // Default to fill_price if not in metadata
+                    
+                    if (!order_event.text().empty()) {
+                        try {
+                            std::istringstream iss(order_event.text());
+                            std::string token;
+                            while (std::getline(iss, token, '|')) {
+                                size_t colon_pos = token.find(':');
+                                if (colon_pos != std::string::npos) {
+                                    std::string key = token.substr(0, colon_pos);
+                                    std::string value = token.substr(colon_pos + 1);
+                                    if (key == "origQty") {
+                                        try {
+                                            orig_qty = std::stod(value);
+                                        } catch (const std::exception& e) {
+                                            logger.warn("Failed to parse origQty from metadata: " + value + 
+                                                       " - using default: " + std::to_string(orig_qty));
+                                        }
+                                    } else if (key == "side") {
+                                        side_str = value;
+                                    } else if (key == "price") {
+                                        try {
+                                            price = std::stod(value);
+                                        } catch (const std::exception& e) {
+                                            logger.warn("Failed to parse price from metadata: " + value + 
+                                                       " - using default: " + std::to_string(price));
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (const std::exception& e) {
+                            logger.warn("Failed to parse order metadata text field: " + order_event.text() + 
+                                       " - using defaults. Error: " + e.what());
+                        }
+                    }
+                    
+                    // Set order details
+                    order_state.qty = orig_qty;  // Original order quantity
+                    order_state.filled_qty = order_event.fill_qty();  // Filled quantity
+                    order_state.price = price;  // Limit price
+                    order_state.avg_fill_price = order_event.fill_price();  // Average fill price
+                    order_state.side = (side_str == "SELL" || side_str == "sell") ? Side::Sell : Side::Buy;
+                    order_state.is_market = false;  // Open orders are typically limit orders
+                    order_state.created_time = std::chrono::system_clock::time_point(
+                        std::chrono::microseconds(order_event.timestamp_us()));
+                    order_state.last_update_time = order_state.created_time;
+                    
+                    // Set initial state based on event type and fill status
+                    // For partially filled orders: filled_qty < qty and event_type is FILL
+                    bool is_partially_filled = (order_event.event_type() == proto::OrderEventType::FILL) &&
+                                               (order_state.filled_qty > 0.0) &&
+                                               (order_state.filled_qty < order_state.qty);
+                    
+                    switch (order_event.event_type()) {
+                        case proto::OrderEventType::ACK:
+                            order_state.state = OrderState::ACKNOWLEDGED;
+                            break;
+                        case proto::OrderEventType::FILL:
+                            if (is_partially_filled) {
+                                order_state.state = OrderState::PARTIALLY_FILLED;
+                            } else {
+                                // Fully filled (shouldn't be in open orders, but handle it)
+                                order_state.state = OrderState::FILLED;
+                            }
+                            break;
+                        case proto::OrderEventType::CANCEL:
+                            order_state.state = OrderState::CANCELLED;
+                            break;
+                        case proto::OrderEventType::REJECT:
+                            order_state.state = OrderState::REJECTED;
+                            break;
+                        default:
+                            order_state.state = OrderState::PENDING;
+                            break;
+                    }
+                    
+                    order_states_[order_event.cl_ord_id()] = order_state;
+                } else {
+                    // Update existing order state
+                    update_order_state(order_event.cl_ord_id(), order_event.event_type());
+                }
+            }
+            
+            // Publish order event via ZMQ so Trader receives it
+            publish_order_event(order_event);
+            
+            logger.debug("Synced open order: " + order_event.cl_ord_id() + 
+                        " symbol: " + order_event.symbol() + 
+                        " status: " + std::to_string(static_cast<int>(order_event.event_type())));
+        }
+        
+        if (open_orders.empty()) {
+            logger.info("No open orders found on exchange");
+        } else {
+            logger.info("Successfully synced " + std::to_string(open_orders.size()) + 
+                       " open orders to local state and published via ZMQ");
+        }
+    } catch (const std::exception& e) {
+        logger.error("Exception while querying open orders: " + std::string(e.what()));
+        handle_error("Failed to query open orders: " + std::string(e.what()));
+    }
+}
+
 void TradingEngineLib::message_processing_loop() {
     logging::Logger logger("TRADING_ENGINE");
     logger.debug("Starting message processing loop");
@@ -344,9 +513,15 @@ void TradingEngineLib::message_processing_loop() {
 
 void TradingEngineLib::handle_order_request(const proto::OrderRequest& order_request) {
     logging::Logger logger("TRADING_ENGINE");
+    
+    // Use metrics timer for performance tracking
+    auto timer = METRICS_TIMER("trading_engine.order_request_processing_us").start();
+    
+    // Only log at DEBUG level for normal operations
     logger.debug("Handling order request: " + order_request.cl_ord_id());
     
     statistics_.orders_received.fetch_add(1);
+    METRICS_COUNTER("trading_engine.orders_received").increment();
     
     // Send order to exchange
     if (exchange_oms_) {
@@ -360,31 +535,77 @@ void TradingEngineLib::handle_order_request(const proto::OrderRequest& order_req
         }
         if (success) {
             statistics_.orders_sent_to_exchange.fetch_add(1);
+            METRICS_COUNTER("trading_engine.orders_sent_to_exchange").increment();
+        } else {
+            METRICS_COUNTER("trading_engine.order_send_failures").increment();
+            logger.error("Failed to send order: " + order_request.cl_ord_id());
         }
     }
 }
 
 void TradingEngineLib::handle_order_event(const proto::OrderEvent& order_event) {
     logging::Logger logger("TRADING_ENGINE");
+    
+    // Use metrics timer for performance tracking
+    auto timer = METRICS_TIMER("trading_engine.order_event_processing_us").start();
+    
+    // Only log at DEBUG level for normal operations (reduces verbosity)
     logger.debug("Handling order event: " + order_event.cl_ord_id() + 
                 " event_type=" + std::to_string(static_cast<int>(order_event.event_type())));
     
-    // Update order state
-    update_order_state(order_event.cl_ord_id(), order_event.event_type());
+    // Validate order event before processing
+    if (order_event.cl_ord_id().empty()) {
+        logger.error("Received order event with empty cl_ord_id - ignoring");
+        statistics_.parse_errors.fetch_add(1);
+        METRICS_COUNTER("trading_engine.parse_errors").increment();
+        return;
+    }
     
-    // Update statistics
+    // Atomic update of order state (prevents race conditions)
+    // Update filled quantity and state in single critical section
+    {
+        std::lock_guard<std::mutex> lock(order_states_mutex_);
+        auto it = order_states_.find(order_event.cl_ord_id());
+        if (it != order_states_.end()) {
+            // Update filled quantity if FILL event
+            if (order_event.event_type() == proto::OrderEventType::FILL) {
+                it->second.filled_qty = order_event.fill_qty();
+                if (order_event.fill_price() > 0.0 && it->second.filled_qty > 0.0) {
+                    it->second.avg_fill_price = order_event.fill_price();
+                }
+            }
+            
+            // Update state atomically with filled_qty (no race window)
+            // Use internal helper to avoid double locking
+            update_order_state_internal(it, order_event.event_type());
+        } else {
+            // Order not found - still update statistics and publish event
+            logger.warn("Order state not found for: " + order_event.cl_ord_id() + 
+                       " - event will be published but state not updated");
+        }
+    }
+    
+    // Update statistics and metrics
     switch (order_event.event_type()) {
         case proto::OrderEventType::ACK:
             statistics_.orders_acked.fetch_add(1);
+            METRICS_COUNTER("trading_engine.orders_acked").increment();
             break;
         case proto::OrderEventType::FILL:
             statistics_.orders_filled.fetch_add(1);
+            METRICS_COUNTER("trading_engine.orders_filled").increment();
+            if (order_event.fill_qty() > 0.0) {
+                METRICS_GAUGE("trading_engine.total_filled_volume").increment(order_event.fill_qty());
+            }
             break;
         case proto::OrderEventType::CANCEL:
             statistics_.orders_cancelled.fetch_add(1);
+            METRICS_COUNTER("trading_engine.orders_cancelled").increment();
             break;
         case proto::OrderEventType::REJECT:
             statistics_.orders_rejected.fetch_add(1);
+            METRICS_COUNTER("trading_engine.orders_rejected").increment();
+            logger.warn("Order rejected: " + order_event.cl_ord_id());  // WARN level for rejections
             break;
         default:
             break;
@@ -393,10 +614,11 @@ void TradingEngineLib::handle_order_event(const proto::OrderEvent& order_event) 
     // Publish order event
     publish_order_event(order_event);
     
-    // Call user callback
-    if (order_event_callback_) {
-        order_event_callback_(order_event);
-    }
+    // Call user callback with exception handling
+    error_handling::safe_callback(order_event_callback_, "TRADING_ENGINE", 
+                                  "order event", order_event);
+    // Track callback errors if they occurred (safe_callback logs internally)
+    // Note: We could enhance safe_callback to return error status if needed
 }
 
 void TradingEngineLib::handle_error(const std::string& error_message) {
@@ -405,10 +627,9 @@ void TradingEngineLib::handle_error(const std::string& error_message) {
     
     statistics_.connection_errors.fetch_add(1);
     
-    // Call user callback
-    if (error_callback_) {
-        error_callback_(error_message);
-    }
+    // Call user callback with exception handling
+    error_handling::safe_callback(error_callback_, "TRADING_ENGINE", 
+                                  "error", error_message);
 }
 
 void TradingEngineLib::publish_order_event(const proto::OrderEvent& order_event) {
@@ -421,8 +642,13 @@ void TradingEngineLib::publish_order_event(const proto::OrderEvent& order_event)
                         " cl_ord_id: " + order_event.cl_ord_id() + 
                         " symbol: " + order_event.symbol() + 
                         " size: " + std::to_string(message.size()) + " bytes");
-            publisher_->publish(topic, message);
-            statistics_.zmq_messages_sent.fetch_add(1);
+            bool success = publisher_->publish(topic, message);
+            if (success) {
+                statistics_.zmq_messages_sent.fetch_add(1);
+            } else {
+                statistics_.zmq_messages_dropped.fetch_add(1);
+                // Warning already logged by ZmqPublisher
+            }
         } else {
             logger.error("Failed to serialize order event");
         }
@@ -432,29 +658,76 @@ void TradingEngineLib::publish_order_event(const proto::OrderEvent& order_event)
 }
 
 void TradingEngineLib::update_order_state(const std::string& cl_ord_id, proto::OrderEventType event_type) {
+    logging::Logger logger("TRADING_ENGINE");
     std::lock_guard<std::mutex> lock(order_states_mutex_);
     
     auto it = order_states_.find(cl_ord_id);
-    if (it != order_states_.end()) {
-        // Map proto event type to OrderState
-        switch (event_type) {
-            case proto::OrderEventType::ACK:
-                it->second.state = OrderState::ACKNOWLEDGED;
-                break;
-            case proto::OrderEventType::FILL:
-                it->second.state = OrderState::FILLED;
-                break;
-            case proto::OrderEventType::CANCEL:
-                it->second.state = OrderState::CANCELLED;
-                break;
-            case proto::OrderEventType::REJECT:
-                it->second.state = OrderState::REJECTED;
-                break;
-            default:
-                break;
-        }
-        it->second.last_update_time = std::chrono::system_clock::now();
+    if (it == order_states_.end()) {
+        logger.warn("Order state not found for: " + cl_ord_id + " - cannot update state");
+        return;
     }
+    
+    update_order_state_internal(it, event_type);
+}
+
+// Internal helper that assumes lock is already held (prevents double locking)
+void TradingEngineLib::update_order_state_internal(std::map<std::string, OrderStateInfo>::iterator it, 
+                                                   proto::OrderEventType event_type) {
+    logging::Logger logger("TRADING_ENGINE");
+    
+    OrderState current_state = it->second.state;
+    OrderState new_state = current_state;
+    
+    // Map proto event type to OrderState with validation
+    switch (event_type) {
+        case proto::OrderEventType::ACK:
+            if (current_state != OrderState::PENDING) {
+                logger.warn("Invalid state transition: ACK from " + 
+                           std::string(to_string(current_state)) + " for order " + it->second.cl_ord_id);
+            }
+            new_state = OrderState::ACKNOWLEDGED;
+            break;
+        case proto::OrderEventType::FILL:
+            // Check if this is a partial or full fill
+            // filled_qty should already be updated by caller
+            if (it->second.filled_qty >= it->second.qty - constants::order::FILLED_QTY_EPSILON) {  // Account for floating point precision
+                new_state = OrderState::FILLED;
+            } else if (current_state == OrderState::ACKNOWLEDGED || 
+                      current_state == OrderState::PARTIALLY_FILLED) {
+                new_state = OrderState::PARTIALLY_FILLED;
+            } else {
+                // Unexpected state, but transition to filled anyway
+                logger.warn("FILL event from unexpected state: " + 
+                           std::string(to_string(current_state)) + " for order " + it->second.cl_ord_id);
+                new_state = OrderState::FILLED;
+            }
+            break;
+        case proto::OrderEventType::CANCEL:
+            if (current_state == OrderState::FILLED) {
+                logger.warn("Cannot cancel already filled order: " + it->second.cl_ord_id);
+                return;  // Don't update state
+            }
+            new_state = OrderState::CANCELLED;
+            break;
+        case proto::OrderEventType::REJECT:
+            new_state = OrderState::REJECTED;
+            break;
+        default:
+            logger.warn("Unknown event type: " + std::to_string(static_cast<int>(event_type)) + 
+                       " for order " + it->second.cl_ord_id);
+            return;  // Don't update state for unknown events
+    }
+    
+    // Validate state transition
+    if (new_state != current_state && 
+        !OrderStateMachine::isValidTransition(current_state, new_state)) {
+        logger.error("Invalid state transition: " + std::string(to_string(current_state)) + 
+                    " -> " + std::string(to_string(new_state)) + " for order " + it->second.cl_ord_id);
+        // Still update to prevent stuck states, but log the error
+    }
+    
+    it->second.state = new_state;
+    it->second.last_update_time = std::chrono::system_clock::now();
 }
 
 void TradingEngineLib::set_websocket_transport(std::shared_ptr<websocket_transport::IWebSocketTransport> transport) {

@@ -78,6 +78,7 @@ void TradingEngineService::print_service_stats() {
         LOG_INFO_COMP("TRADING_ENGINE_SERVICE", "  Trade Executions: " + std::to_string(stats.trade_executions.load()));
         LOG_INFO_COMP("TRADING_ENGINE_SERVICE", "  ZMQ Messages Received: " + std::to_string(stats.zmq_messages_received.load()));
         LOG_INFO_COMP("TRADING_ENGINE_SERVICE", "  ZMQ Messages Sent: " + std::to_string(stats.zmq_messages_sent.load()));
+        LOG_INFO_COMP("TRADING_ENGINE_SERVICE", "  ZMQ Messages Dropped: " + std::to_string(stats.zmq_messages_dropped.load()));
         LOG_INFO_COMP("TRADING_ENGINE_SERVICE", "  Connection Errors: " + std::to_string(stats.connection_errors.load()));
         LOG_INFO_COMP("TRADING_ENGINE_SERVICE", "  Parse Errors: " + std::to_string(stats.parse_errors.load()));
     } else {

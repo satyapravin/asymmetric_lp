@@ -3,11 +3,23 @@ Configuration management for AsymmetricLP.
 Loads settings from environment variables.
 """
 import os
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from dotenv import load_dotenv
 
-# Load environment variables
+# Load base environment variables (production config)
 load_dotenv()
+
+# Function to load backtest config (called explicitly when needed)
+def load_backtest_config():
+    """Load backtest-specific configuration from .env.backtest or env.backtest.example"""
+    if os.path.exists('.env.backtest'):
+        load_dotenv('.env.backtest', override=False)  # Don't override production values
+        return True
+    elif os.path.exists('env.backtest.example'):
+        # For development/testing, allow loading from example file
+        load_dotenv('env.backtest.example', override=False)
+        return True
+    return False
 
 class Config:
     """Configuration class for Uniswap V3 operations"""
@@ -65,16 +77,15 @@ class Config:
     MAX_RANGE_PERCENTAGE = float(os.getenv('MAX_RANGE_PERCENTAGE', '50.0'))
     MONITORING_INTERVAL_SECONDS = int(os.getenv('MONITORING_INTERVAL_SECONDS', '60'))
     REBALANCE_THRESHOLD = float(os.getenv('REBALANCE_THRESHOLD', '0.10'))  # 10% deviation threshold
-    TRADE_DETECTION_THRESHOLD = float(os.getenv('TRADE_DETECTION_THRESHOLD', '0.0005'))  # 0.05% threshold for trade detection (5 bps)
-    POSITION_FALLOFF_FACTOR = float(os.getenv('POSITION_FALLOFF_FACTOR', '0.1'))  # Minimum 10% value for position falloff
     
-    # Backtesting parameters
-    RISK_FREE_RATE = float(os.getenv('RISK_FREE_RATE', '0.02'))  # 2% annual risk-free rate
-    DEFAULT_DAILY_VOLATILITY = float(os.getenv('DEFAULT_DAILY_VOLATILITY', '0.02'))  # 2% daily volatility
-    
-    # Default initial balances for backtesting
-    DEFAULT_INITIAL_BALANCE_0 = float(os.getenv('DEFAULT_INITIAL_BALANCE_0', '2500.0'))
-    DEFAULT_INITIAL_BALANCE_1 = float(os.getenv('DEFAULT_INITIAL_BALANCE_1', '1.0'))
+    # Backtesting-only parameters (only loaded when BACKTEST_MODE=true or .env.backtest exists)
+    # These have defaults but are only meaningful in backtest mode
+    TRADE_DETECTION_THRESHOLD = float(os.getenv('TRADE_DETECTION_THRESHOLD', '0.0005'))  # 0.05% threshold for trade detection (5 bps) - BACKTEST ONLY
+    POSITION_FALLOFF_FACTOR = float(os.getenv('POSITION_FALLOFF_FACTOR', '0.1'))  # Minimum 10% value for position falloff - BACKTEST ONLY
+    RISK_FREE_RATE = float(os.getenv('RISK_FREE_RATE', '0.02'))  # 2% annual risk-free rate - BACKTEST ONLY
+    DEFAULT_DAILY_VOLATILITY = float(os.getenv('DEFAULT_DAILY_VOLATILITY', '0.02'))  # 2% daily volatility - BACKTEST ONLY
+    DEFAULT_INITIAL_BALANCE_0 = float(os.getenv('DEFAULT_INITIAL_BALANCE_0', '2500.0'))  # Default initial token A balance - BACKTEST ONLY
+    DEFAULT_INITIAL_BALANCE_1 = float(os.getenv('DEFAULT_INITIAL_BALANCE_1', '1.0'))  # Default initial token B balance - BACKTEST ONLY
     
     # Inventory management model parameters
     INVENTORY_RISK_AVERSION = float(os.getenv('INVENTORY_RISK_AVERSION', '0.1'))
@@ -237,16 +248,30 @@ class Config:
         """Check if address is valid Ethereum address format"""
         if not address:
             return False
+        
         # Check basic format
-        if not (address.startswith('0x') and len(address) == 42 and all(c in '0123456789abcdefABCDEF' for c in address[2:])):
+        if not (address.startswith('0x') and len(address) == 42):
+            return False
+        
+        # Check that all characters after 0x are valid hex
+        if not all(c in '0123456789abcdefABCDEF' for c in address[2:]):
             return False
         
         # Try to checksum the address to validate it's properly formatted
         try:
             from web3 import Web3
-            Web3.to_checksum_address(address)
-            return True
-        except Exception:
+            checksummed = Web3.to_checksum_address(address)
+            # Verify checksumming didn't fail (would raise exception)
+            return checksummed is not None
+        except (ValueError, TypeError) as e:
+            # Log the specific error for debugging
+            import logging
+            logging.getLogger(__name__).debug(f"Address validation failed for {address}: {e}")
+            return False
+        except Exception as e:
+            # Catch any other exceptions (e.g., import errors)
+            import logging
+            logging.getLogger(__name__).warning(f"Unexpected error validating address {address}: {e}")
             return False
     
     @classmethod

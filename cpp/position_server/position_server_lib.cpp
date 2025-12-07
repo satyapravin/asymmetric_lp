@@ -148,9 +148,14 @@ void PositionServerLib::handle_error(const std::string& error_message) {
 void PositionServerLib::publish_to_zmq(const std::string& topic, const std::string& message) {
     logging::Logger logger("POSITION_SERVER_LIB");
     if (publisher_) {
-        publisher_->publish(topic, message);
-        statistics_.zmq_messages_sent++;
-        logger.debug("Published to ZMQ topic: " + topic + " size: " + std::to_string(message.size()) + " bytes");
+        bool success = publisher_->publish(topic, message);
+        if (success) {
+            statistics_.zmq_messages_sent++;
+            logger.debug("Published to ZMQ topic: " + topic + " size: " + std::to_string(message.size()) + " bytes");
+        } else {
+            statistics_.zmq_messages_dropped++;
+            // Warning already logged by ZmqPublisher
+        }
     } else {
         logger.error("No ZMQ publisher available!");
     }

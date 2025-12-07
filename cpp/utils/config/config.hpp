@@ -109,9 +109,27 @@ inline void load_from_ini(const std::string& path, AppConfig& c) {
     else if (key == "EXCHANGES") c.exchanges_csv = val;
     else if (key == "SYMBOL") c.symbol = val;
     else if (key == "MM_EXCH") c.mm_exch = val;
-    else if (key == "MIN_ORDER_QTY") { try { c.min_order_qty = std::stod(val); } catch (...) {} }
-    else if (key == "MAX_ORDER_QTY") { try { c.max_order_qty = std::stod(val); } catch (...) {} }
-    else if (key == "POLL_SLEEP_MS") { try { c.poll_sleep_ms = std::stoi(val); } catch (...) {} }
+    else if (key == "MIN_ORDER_QTY") { 
+        try { 
+            c.min_order_qty = std::stod(val); 
+        } catch (const std::exception& e) {
+            std::cerr << "WARNING: Failed to parse MIN_ORDER_QTY: '" << val << "' - using default: " << c.min_order_qty << ". Error: " << e.what() << std::endl;
+        }
+    }
+    else if (key == "MAX_ORDER_QTY") { 
+        try { 
+            c.max_order_qty = std::stod(val); 
+        } catch (const std::exception& e) {
+            std::cerr << "WARNING: Failed to parse MAX_ORDER_QTY: '" << val << "' - using default: " << c.max_order_qty << ". Error: " << e.what() << std::endl;
+        }
+    }
+    else if (key == "POLL_SLEEP_MS") { 
+        try { 
+            c.poll_sleep_ms = std::stoi(val); 
+        } catch (const std::exception& e) {
+            std::cerr << "WARNING: Failed to parse POLL_SLEEP_MS: '" << val << "' - using default: " << c.poll_sleep_ms << ". Error: " << e.what() << std::endl;
+        }
+    }
     
     // Message handler configuration (format: HANDLER_<name>_<property>)
     else if (key.rfind("HANDLER_", 0) == 0) {
@@ -154,11 +172,29 @@ inline void load_from_ini(const std::string& path, AppConfig& c) {
 
     // Quote server specific
     else if (key == "WEBSOCKET_URL") c.websocket_url = val;
-    else if (key == "PUBLISH_RATE_HZ") { try { c.publish_rate_hz = std::stod(val); } catch (...) {} }
-    else if (key == "MAX_DEPTH") { try { c.max_depth = std::stoi(val); } catch (...) {} }
+    else if (key == "PUBLISH_RATE_HZ") { 
+        try { 
+            c.publish_rate_hz = std::stod(val); 
+        } catch (const std::exception& e) {
+            std::cerr << "WARNING: Failed to parse PUBLISH_RATE_HZ: '" << val << "' - using default: " << c.publish_rate_hz << ". Error: " << e.what() << std::endl;
+        }
+    }
+    else if (key == "MAX_DEPTH") { 
+        try { 
+            c.max_depth = std::stoi(val); 
+        } catch (const std::exception& e) {
+            std::cerr << "WARNING: Failed to parse MAX_DEPTH: '" << val << "' - using default: " << c.max_depth << ". Error: " << e.what() << std::endl;
+        }
+    }
     else if (key == "PARSER") c.parser = val;
     else if (key == "SNAPSHOT_ONLY") c.snapshot_only = (val == "1" || val == "true" || val == "TRUE");
-    else if (key == "BOOK_DEPTH") { try { c.book_depth = std::stoi(val); } catch (...) {} }
+    else if (key == "BOOK_DEPTH") { 
+        try { 
+            c.book_depth = std::stoi(val); 
+        } catch (const std::exception& e) {
+            std::cerr << "WARNING: Failed to parse BOOK_DEPTH: '" << val << "' - using default: " << c.book_depth << ". Error: " << e.what() << std::endl;
+        }
+    }
   }
 }
 

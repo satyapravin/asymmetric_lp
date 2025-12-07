@@ -203,8 +203,13 @@ void MarketServerLib::publish_to_zmq(const std::string& topic, const std::string
     logging::Logger logger("MARKET_SERVER_LIB");
     if (publisher_) {
         logger.debug("Publishing to 0MQ topic: " + topic + " size: " + std::to_string(message.size()) + " bytes");
-        publisher_->publish(topic, message);
-        statistics_.zmq_messages_sent++;
+        bool success = publisher_->publish(topic, message);
+        if (success) {
+            statistics_.zmq_messages_sent++;
+        } else {
+            statistics_.zmq_messages_dropped++;
+            // Warning already logged by ZmqPublisher
+        }
     } else {
         logger.error("No publisher available!");
     }

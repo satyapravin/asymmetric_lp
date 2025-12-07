@@ -186,16 +186,21 @@ class RebalancerApp:
             logger.info("Automated rebalancer is now running...")
             logger.info("Press Ctrl+C to stop")
             
-            # Keep the main thread alive
-            while self.running:
-                time.sleep(1)
-                
-                # Log status every 5 minutes
-                if int(time.time()) % 300 == 0:
-                    status = self.rebalancer.get_status()
-                    logger.info(f"Status: Running={status['is_running']}, "
-                              f"Last Price={status['last_spot_price']}, "
-                              f"Positions={status['current_positions']}")
+        # Keep the main thread alive
+        last_status_log_time = 0
+        STATUS_LOG_INTERVAL_SECONDS = 300  # 5 minutes - matches C++ constant
+        
+        while self.running:
+            time.sleep(1)
+            
+            # Log status periodically using elapsed time instead of modulo
+            current_time = time.time()
+            if current_time - last_status_log_time >= STATUS_LOG_INTERVAL_SECONDS:
+                status = self.rebalancer.get_status()
+                logger.info(f"Status: Running={status['is_running']}, "
+                          f"Last Price={status['last_spot_price']}, "
+                          f"Positions={status['current_positions']}")
+                last_status_log_time = current_time
             
             return True
             
@@ -227,7 +232,15 @@ def run_historical_mode(args):
     print("📊 Running in Historical Backtesting Mode")
     print("=" * 50)
     
-    # Initialize configuration
+    # Load backtest configuration from JSON file (separate from .env)
+    from backtest_config import BacktestConfig
+    backtest_config = BacktestConfig.load()
+    print(f"✅ Loaded backtest configuration from backtest_config.json")
+    print(f"   Initial Balance 0: {backtest_config.default_initial_balance_0}")
+    print(f"   Initial Balance 1: {backtest_config.default_initial_balance_1}")
+    
+    # Initialize production configuration (from .env)
+    from config import Config
     config = Config()
     
     # Override some settings for backtesting if provided
@@ -262,9 +275,9 @@ def run_historical_mode(args):
     else:
         print(f"✅ Using OHLC file: {args.ohlc_file}")
     
-    # Initialize backtest engine
+    # Initialize backtest engine with backtest config
     print(f"\n🔧 Initializing backtest engine...")
-    engine = BacktestEngine(config)
+    engine = BacktestEngine(config, backtest_config)
     print("✅ Backtest engine initialized")
     
     # Parse dates
@@ -416,10 +429,20 @@ Examples:
                        help='Start date for backtest (YYYY-MM-DD)')
     parser.add_argument('--end-date',
                        help='End date for backtest (YYYY-MM-DD)')
-    parser.add_argument('--initial-balance-0', type=float, default=Config().DEFAULT_INITIAL_BALANCE_0,
-                       help=f'Initial token A balance (default: {Config().DEFAULT_INITIAL_BALANCE_0})')
-    parser.add_argument('--initial-balance-1', type=float, default=Config().DEFAULT_INITIAL_BALANCE_1,
-                       help=f'Initial token B balance (default: {Config().DEFAULT_INITIAL_BALANCE_1})')
+    # Load backtest config for default values
+    try:
+        from backtest_config import BacktestConfig
+        _default_backtest_config = BacktestConfig.load()
+        _default_balance_0 = _default_backtest_config.default_initial_balance_0
+        _default_balance_1 = _default_backtest_config.default_initial_balance_1
+    except:
+        _default_balance_0 = 3000.0
+        _default_balance_1 = 1.0
+    
+    parser.add_argument('--initial-balance-0', type=float, default=_default_balance_0,
+                       help=f'Initial token A balance (default: {_default_balance_0})')
+    parser.add_argument('--initial-balance-1', type=float, default=_default_balance_1,
+                       help=f'Initial token B balance (default: {_default_balance_1})')
     parser.add_argument('--output', default='backtest_results.json',
                        help='Output file for backtest results (default: backtest_results.json)')
     

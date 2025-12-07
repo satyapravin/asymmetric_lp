@@ -159,7 +159,7 @@ Models can access configuration through `self.config`:
 my_param = getattr(self.config, 'MY_PARAM', default_value)
 ```
 
-Add new parameters to `config.py` and `env.example` as needed.
+Add new parameters to `config.py` and `env.production.example` as needed.
 
 ## Testing Models
 

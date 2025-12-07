@@ -30,17 +30,37 @@ A Python backtesting engine and trading bot for managing Uniswap V3 liquidity po
 git clone <repository-url>
 cd AsymmetricLP
 pip install -r requirements.txt
-cp env.example .env
+cp env.production.example .env
 ```
 
 ## Configuration
 
-Set your private key as an environment variable:
-```bash
-export MY_PRIVATE_KEY=your_actual_private_key_here
-```
+### Production Setup
 
-Edit `.env` with your RPC URL, token addresses, and chain settings.
+1. Copy the production example file:
+   ```bash
+   cp env.production.example .env
+   ```
+
+2. Set your private key as an environment variable:
+   ```bash
+   export MY_PRIVATE_KEY=your_actual_private_key_here
+   ```
+
+3. Edit `.env` with your RPC URL, token addresses, and chain settings.
+
+4. See `README_CONFIG.md` for detailed configuration guide and best practices.
+
+### Backtesting Setup
+
+1. Copy the backtest example file:
+   ```bash
+   cp backtest_config.example.json backtest_config.json
+   ```
+
+2. Edit `backtest_config.json` if you need to customize backtest parameters.
+
+**Note**: Backtest parameters are loaded from `backtest_config.json` (separate from `.env`) when running in `--historical-mode`. See `README_CONFIG.md` for details.
 
 ## Usage
 

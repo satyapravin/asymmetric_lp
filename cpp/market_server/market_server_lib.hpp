@@ -57,6 +57,7 @@ public:
         std::atomic<uint64_t> orderbook_updates{0};
         std::atomic<uint64_t> trade_updates{0};
         std::atomic<uint64_t> zmq_messages_sent{0};
+        std::atomic<uint64_t> zmq_messages_dropped{0};
         std::atomic<uint64_t> connection_errors{0};
         std::atomic<uint64_t> parse_errors{0};
         
@@ -64,6 +65,7 @@ public:
             orderbook_updates.store(0);
             trade_updates.store(0);
             zmq_messages_sent.store(0);
+            zmq_messages_dropped.store(0);
             connection_errors.store(0);
             parse_errors.store(0);
         }

@@ -1,0 +1,8 @@
+{
+  "risk_free_rate": 0.02,
+  "default_daily_volatility": 0.02,
+  "default_initial_balance_0": 3000.0,
+  "default_initial_balance_1": 1.0,
+  "trade_detection_threshold": 0.0005,
+  "position_falloff_factor": 0.1
+}

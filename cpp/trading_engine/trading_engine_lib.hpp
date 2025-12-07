@@ -9,7 +9,9 @@
 #include <queue>
 #include <map>
 #include "../exchanges/i_exchange_oms.hpp"
+#include "../exchanges/i_exchange_data_fetcher.hpp"
 #include "../exchanges/oms_factory.hpp"
+#include "../exchanges/data_fetcher_factory.hpp"
 #include "../utils/zmq/zmq_subscriber.hpp"
 #include "../utils/zmq/zmq_publisher.hpp"
 #include "../utils/config/process_config_manager.hpp"
@@ -57,14 +59,79 @@ public:
     void set_error_callback(ErrorCallback callback) { error_callback_ = callback; }
 
     // Order management interface
+    
+    /**
+     * Send an order to the exchange
+     * 
+     * @param cl_ord_id Client order ID (must be unique)
+     * @param symbol Trading symbol (e.g., "BTCUSDT")
+     * @param side BUY or SELL
+     * @param type MARKET or LIMIT
+     * @param qty Order quantity
+     * @param price Limit price (ignored for MARKET orders)
+     * @return true if order was sent successfully, false otherwise
+     * 
+     * @note Order state will be tracked internally. Order events will be published via ZMQ
+     *       and delivered to registered callbacks.
+     * @note This method is thread-safe.
+     */
     bool send_order(const std::string& cl_ord_id, const std::string& symbol, 
                    proto::Side side, proto::OrderType type, double qty, double price);
+    
+    /**
+     * Cancel an existing order
+     * 
+     * @param cl_ord_id Client order ID of the order to cancel
+     * @return true if cancel request was sent successfully, false otherwise
+     * 
+     * @note Order state will be updated to CANCELLED when exchange confirms cancellation.
+     * @note This method is thread-safe.
+     */
     bool cancel_order(const std::string& cl_ord_id);
+    
+    /**
+     * Modify an existing order (replace with new price/quantity)
+     * 
+     * @param cl_ord_id Client order ID of the order to modify
+     * @param new_price New limit price
+     * @param new_qty New quantity
+     * @return true if modify request was sent successfully, false otherwise
+     * 
+     * @note This typically cancels the old order and places a new one atomically.
+     * @note Order state will be updated when exchange confirms modification.
+     * @note This method is thread-safe.
+     */
     bool modify_order(const std::string& cl_ord_id, double new_price, double new_qty);
 
     // Order state queries
+    
+    /**
+     * Get the current state of a specific order
+     * 
+     * @param cl_ord_id Client order ID
+     * @return OrderStateInfo if order exists, std::nullopt otherwise
+     * 
+     * @note This method is thread-safe and provides a snapshot of order state.
+     */
     std::optional<OrderStateInfo> get_order_state(const std::string& cl_ord_id) const;
+    
+    /**
+     * Get all currently active orders (ACKNOWLEDGED or PARTIALLY_FILLED)
+     * 
+     * @return Vector of active order states
+     * 
+     * @note This method is thread-safe and provides a snapshot of active orders.
+     */
     std::vector<OrderStateInfo> get_active_orders() const;
+    
+    /**
+     * Get all orders (active and completed)
+     * 
+     * @return Vector of all order states
+     * 
+     * @note This method is thread-safe and provides a snapshot of all orders.
+     * @note Completed orders (FILLED, CANCELLED, REJECTED) are included.
+     */
     std::vector<OrderStateInfo> get_all_orders() const;
 
     // Statistics
@@ -78,8 +145,10 @@ public:
         std::atomic<uint64_t> trade_executions{0};
         std::atomic<uint64_t> zmq_messages_received{0};
         std::atomic<uint64_t> zmq_messages_sent{0};
+        std::atomic<uint64_t> zmq_messages_dropped{0};
         std::atomic<uint64_t> connection_errors{0};
         std::atomic<uint64_t> parse_errors{0};
+        std::atomic<uint64_t> callback_errors{0};
         
         void reset() {
             orders_received.store(0);
@@ -91,13 +160,50 @@ public:
             trade_executions.store(0);
             zmq_messages_received.store(0);
             zmq_messages_sent.store(0);
+            zmq_messages_dropped.store(0);
             connection_errors.store(0);
             parse_errors.store(0);
+            callback_errors.store(0);
         }
     };
 
     const Statistics& get_statistics() const { return statistics_; }
     void reset_statistics() { statistics_.reset(); }
+    
+    // Get atomic snapshot of all statistics (thread-safe)
+    struct StatisticsSnapshot {
+        uint64_t orders_received;
+        uint64_t orders_sent_to_exchange;
+        uint64_t orders_acked;
+        uint64_t orders_filled;
+        uint64_t orders_cancelled;
+        uint64_t orders_rejected;
+        uint64_t trade_executions;
+        uint64_t zmq_messages_received;
+        uint64_t zmq_messages_sent;
+        uint64_t zmq_messages_dropped;
+        uint64_t connection_errors;
+        uint64_t parse_errors;
+        uint64_t callback_errors;
+    };
+    
+    StatisticsSnapshot get_statistics_snapshot() const {
+        StatisticsSnapshot snap;
+        snap.orders_received = statistics_.orders_received.load();
+        snap.orders_sent_to_exchange = statistics_.orders_sent_to_exchange.load();
+        snap.orders_acked = statistics_.orders_acked.load();
+        snap.orders_filled = statistics_.orders_filled.load();
+        snap.orders_cancelled = statistics_.orders_cancelled.load();
+        snap.orders_rejected = statistics_.orders_rejected.load();
+        snap.trade_executions = statistics_.trade_executions.load();
+        snap.zmq_messages_received = statistics_.zmq_messages_received.load();
+        snap.zmq_messages_sent = statistics_.zmq_messages_sent.load();
+        snap.zmq_messages_dropped = statistics_.zmq_messages_dropped.load();
+        snap.connection_errors = statistics_.connection_errors.load();
+        snap.parse_errors = statistics_.parse_errors.load();
+        snap.callback_errors = statistics_.callback_errors.load();
+        return snap;
+    }
 
 private:
     std::atomic<bool> running_;
@@ -113,6 +219,7 @@ private:
     // Order management
     std::map<std::string, OrderStateInfo> order_states_;
     mutable std::mutex order_states_mutex_;
+    
     
     // Message processing
     std::thread message_processing_thread_;
@@ -130,12 +237,17 @@ private:
     
     // Internal methods
     void setup_exchange_oms();
+    void query_open_orders_at_startup();
     void message_processing_loop();
     void handle_order_request(const proto::OrderRequest& order_request);
     void handle_order_event(const proto::OrderEvent& order_event);
     void handle_error(const std::string& error_message);
     void publish_order_event(const proto::OrderEvent& order_event);
     void update_order_state(const std::string& cl_ord_id, proto::OrderEventType event_type);
+    
+    // Internal helper that assumes lock is already held (prevents double locking)
+    void update_order_state_internal(std::map<std::string, OrderStateInfo>::iterator it, 
+                                     proto::OrderEventType event_type);
 };
 
 } // namespace trading_engine

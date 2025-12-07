@@ -109,6 +109,18 @@ public:
     std::vector<trader::AccountBalanceInfo> get_account_balances_by_instrument(const std::string& instrument) const override;
     
     // Order placement (delegated to MiniOMS for strategies)
+    
+    /**
+     * Send an order (delegated to MiniOMS)
+     * 
+     * @param cl_ord_id Client order ID
+     * @param symbol Trading symbol
+     * @param side BUY or SELL
+     * @param type MARKET or LIMIT
+     * @param qty Order quantity
+     * @param price Limit price (ignored for MARKET orders)
+     * @return true if order was sent successfully
+     */
     bool send_order(const std::string& cl_ord_id,
                    const std::string& symbol,
                    proto::Side side,
@@ -116,8 +128,22 @@ public:
                    double qty,
                    double price);
     
+    /**
+     * Cancel an order (delegated to MiniOMS)
+     * 
+     * @param cl_ord_id Client order ID to cancel
+     * @return true if cancel request was sent successfully
+     */
     bool cancel_order(const std::string& cl_ord_id);
     
+    /**
+     * Modify an order (delegated to MiniOMS)
+     * 
+     * @param cl_ord_id Client order ID to modify
+     * @param new_price New limit price
+     * @param new_qty New quantity
+     * @return true if modify request was sent successfully
+     */
     bool modify_order(const std::string& cl_ord_id,
                      double new_price,
                      double new_qty);
@@ -133,4 +159,18 @@ private:
     std::string symbol_;
     std::string exchange_;
     std::string name_;
+    
+    // Startup readiness flags - strategy won't start until all are true
+    std::atomic<bool> balance_received_{false};
+    std::atomic<bool> position_received_{false};
+    std::atomic<bool> order_state_queried_{false};
+    std::atomic<bool> strategy_start_requested_{false};
+    std::atomic<bool> strategy_fully_started_{false};  // Track if strategy is fully started
+    std::atomic<bool> destroyed_{false};  // Flag to prevent use-after-free in timeout thread
+    
+    // Thread for order state timeout
+    std::unique_ptr<std::thread> order_state_timeout_thread_;
+    
+    // Helper method to check if ready to start strategy
+    void check_and_start_strategy();
 };

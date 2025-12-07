@@ -199,17 +199,47 @@ std::vector<proto::OrderEvent> GrvtDataFetcher::parse_orders(const std::string& 
             order_event.set_exch("GRVT");
             order_event.set_symbol(order_data["symbol"].asString());
             order_event.set_exch_order_id(order_data["orderId"].asString());
-            order_event.set_fill_qty(order_data["quantity"].asDouble());
-            order_event.set_fill_price(order_data["price"].asDouble());
+            
+            // Extract filled quantity (executedQty or filledQty)
+            double executed_qty = 0.0;
+            if (order_data.isMember("executedQty")) {
+                executed_qty = order_data["executedQty"].asDouble();
+            } else if (order_data.isMember("filledQty")) {
+                executed_qty = order_data["filledQty"].asDouble();
+            }
+            order_event.set_fill_qty(executed_qty);
+            
+            // Extract average fill price
+            double avg_price = 0.0;
+            if (order_data.isMember("avgPrice")) {
+                avg_price = order_data["avgPrice"].asDouble();
+            } else if (order_data.isMember("price")) {
+                avg_price = order_data["price"].asDouble();
+            }
+            order_event.set_fill_price(avg_price);
+            
             order_event.set_timestamp_us(order_data["time"].asUInt64() * 1000); // Convert to microseconds
             
+            // Extract original order quantity and store in text field
+            // Format: "origQty:<value>|side:<value>|price:<value>"
+            double orig_qty = order_data.isMember("quantity") ? order_data["quantity"].asDouble() : executed_qty;
+            std::string side = order_data.isMember("side") ? order_data["side"].asString() : "BUY";
+            double price = order_data.isMember("price") ? order_data["price"].asDouble() : avg_price;
+            std::ostringstream metadata;
+            metadata << "origQty:" << orig_qty << "|side:" << side << "|price:" << price;
+            order_event.set_text(metadata.str());
+            
             // Map GRVT order status to OrderEventType
+            // Note: For partially filled orders, status might be "PARTIALLY_FILLED" but we use FILL event type
             std::string status = order_data["status"].asString();
             if (status == "NEW") {
                 order_event.set_event_type(proto::OrderEventType::ACK);
+            } else if (status == "PARTIALLY_FILLED" || status == "PARTIAL") {
+                // Partially filled orders are still open, use FILL event type
+                order_event.set_event_type(proto::OrderEventType::FILL);
             } else if (status == "FILLED") {
                 order_event.set_event_type(proto::OrderEventType::FILL);
-            } else if (status == "CANCELED") {
+            } else if (status == "CANCELED" || status == "CANCELLED") {
                 order_event.set_event_type(proto::OrderEventType::CANCEL);
             } else if (status == "REJECTED") {
                 order_event.set_event_type(proto::OrderEventType::REJECT);

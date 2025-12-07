@@ -83,47 +83,55 @@ void MiniPMS::update_account_balance(const std::string& exchange, const std::str
         return;
     }
     
-    std::lock_guard<std::mutex> lock(positions_mutex_);
+    AccountBalanceInfo balance_info_copy;
     
-    // Check if balance exists
-    bool balance_exists = (account_balances_.find(exchange) != account_balances_.end() && 
-                          account_balances_[exchange].find(instrument) != account_balances_[exchange].end());
-    
-    // Create or update balance
-    AccountBalanceInfo balance_info(exchange, instrument, balance, available, locked);
-    balance_info.last_update_time = get_current_time_string();
-    
-    if (!balance_exists) {
-        // Create new balance
-        account_balances_[exchange][instrument] = balance_info;
-        statistics_.position_creates.fetch_add(1);
+    {
+        std::lock_guard<std::mutex> lock(positions_mutex_);
         
-        std::string log_msg = "Created balance: " + exchange + ":" + instrument + 
-                              " balance=" + std::to_string(balance) + 
-                              " available=" + std::to_string(available) + 
-                              " locked=" + std::to_string(locked);
-        LOG_DEBUG_COMP("MINI_PMS", log_msg);
-    } else {
-        // Update existing balance
-        AccountBalanceInfo& existing = account_balances_[exchange][instrument];
-        existing.balance = balance;
-        existing.available = available;
-        existing.locked = locked;
-        existing.last_update_time = get_current_time_string();
+        // Check if balance exists
+        bool balance_exists = (account_balances_.find(exchange) != account_balances_.end() && 
+                              account_balances_[exchange].find(instrument) != account_balances_[exchange].end());
         
-        statistics_.position_updates.fetch_add(1);
+        // Create or update balance
+        AccountBalanceInfo balance_info(exchange, instrument, balance, available, locked);
+        balance_info.last_update_time = get_current_time_string();
         
-        std::string log_msg = "Updated balance: " + exchange + ":" + instrument + 
-                              " balance=" + std::to_string(balance) + 
-                              " available=" + std::to_string(available) + 
-                              " locked=" + std::to_string(locked);
-        LOG_DEBUG_COMP("MINI_PMS", log_msg);
-    }
+        if (!balance_exists) {
+            // Create new balance
+            account_balances_[exchange][instrument] = balance_info;
+            statistics_.position_creates.fetch_add(1);
+            
+            std::string log_msg = "Created balance: " + exchange + ":" + instrument + 
+                                  " balance=" + std::to_string(balance) + 
+                                  " available=" + std::to_string(available) + 
+                                  " locked=" + std::to_string(locked);
+            LOG_DEBUG_COMP("MINI_PMS", log_msg);
+            
+            balance_info_copy = balance_info;
+        } else {
+            // Update existing balance
+            AccountBalanceInfo& existing = account_balances_[exchange][instrument];
+            existing.balance = balance;
+            existing.available = available;
+            existing.locked = locked;
+            existing.last_update_time = get_current_time_string();
+            
+            statistics_.position_updates.fetch_add(1);
+            
+            std::string log_msg = "Updated balance: " + exchange + ":" + instrument + 
+                                  " balance=" + std::to_string(balance) + 
+                                  " available=" + std::to_string(available) + 
+                                  " locked=" + std::to_string(locked);
+            LOG_DEBUG_COMP("MINI_PMS", log_msg);
+            
+            balance_info_copy = existing;
+        }
+        
+        statistics_.total_updates.fetch_add(1);
+    }  // Release positions_mutex_ BEFORE callback to prevent deadlock
     
-    statistics_.total_updates.fetch_add(1);
-    
-    // Notify callback
-    notify_account_balance_update(balance_info);
+    // Notify callback AFTER releasing lock (prevents deadlock if callback queries balances)
+    notify_account_balance_update(balance_info_copy);
 }
 
 void MiniPMS::update_position(const std::string& exchange, const std::string& symbol, 
@@ -132,45 +140,53 @@ void MiniPMS::update_position(const std::string& exchange, const std::string& sy
         return;
     }
     
-    std::lock_guard<std::mutex> lock(positions_mutex_);
+    PositionInfo position_copy;
     
-    // Check if position exists
-    bool position_exists = (positions_.find(exchange) != positions_.end() && 
-                           positions_[exchange].find(symbol) != positions_[exchange].end());
-    
-    // Create or update position
-    PositionInfo position(exchange, symbol, qty, avg_price, unrealized_pnl);
-    
-    if (!position_exists) {
-        // Create new position
-        positions_[exchange][symbol] = position;
-        statistics_.position_creates.fetch_add(1);
+    {
+        std::lock_guard<std::mutex> lock(positions_mutex_);
         
-        std::string log_msg = "Created position: " + exchange + ":" + symbol + 
-                              " qty=" + std::to_string(qty) + 
-                              " price=" + std::to_string(avg_price);
-        LOG_DEBUG_COMP("MINI_PMS", log_msg);
-    } else {
-        // Update existing position
-        PositionInfo& existing = positions_[exchange][symbol];
-        existing.qty = qty;
-        existing.avg_price = avg_price;
-        existing.unrealized_pnl = unrealized_pnl;
-        existing.last_update_time = get_current_time_string();
+        // Check if position exists
+        bool position_exists = (positions_.find(exchange) != positions_.end() && 
+                               positions_[exchange].find(symbol) != positions_[exchange].end());
         
-        statistics_.position_updates.fetch_add(1);
+        // Create or update position
+        PositionInfo position(exchange, symbol, qty, avg_price, unrealized_pnl);
         
-        std::string log_msg = "Updated position: " + exchange + ":" + symbol + 
-                              " qty=" + std::to_string(qty) + 
-                              " price=" + std::to_string(avg_price) + 
-                              " unrealized_pnl=" + std::to_string(unrealized_pnl);
-        LOG_DEBUG_COMP("MINI_PMS", log_msg);
-    }
+        if (!position_exists) {
+            // Create new position
+            positions_[exchange][symbol] = position;
+            statistics_.position_creates.fetch_add(1);
+            
+            std::string log_msg = "Created position: " + exchange + ":" + symbol + 
+                                  " qty=" + std::to_string(qty) + 
+                                  " price=" + std::to_string(avg_price);
+            LOG_DEBUG_COMP("MINI_PMS", log_msg);
+            
+            position_copy = position;
+        } else {
+            // Update existing position
+            PositionInfo& existing = positions_[exchange][symbol];
+            existing.qty = qty;
+            existing.avg_price = avg_price;
+            existing.unrealized_pnl = unrealized_pnl;
+            existing.last_update_time = get_current_time_string();
+            
+            statistics_.position_updates.fetch_add(1);
+            
+            std::string log_msg = "Updated position: " + exchange + ":" + symbol + 
+                                  " qty=" + std::to_string(qty) + 
+                                  " price=" + std::to_string(avg_price) + 
+                                  " unrealized_pnl=" + std::to_string(unrealized_pnl);
+            LOG_DEBUG_COMP("MINI_PMS", log_msg);
+            
+            position_copy = existing;
+        }
+        
+        statistics_.total_updates.fetch_add(1);
+    }  // Release positions_mutex_ BEFORE callback to prevent deadlock
     
-    statistics_.total_updates.fetch_add(1);
-    
-    // Notify callback
-    notify_position_update(position);
+    // Notify callback AFTER releasing lock (prevents deadlock if callback queries positions)
+    notify_position_update(position_copy);
 }
 
 std::optional<PositionInfo> MiniPMS::get_position(const std::string& exchange, 

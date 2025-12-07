@@ -17,8 +17,10 @@ bool MarketServerService::configure_service() {
     LOG_INFO_COMP("MARKET_SERVER", "Symbol: " + symbol_);
     LOG_INFO_COMP("MARKET_SERVER", "ZMQ publish endpoint: " + zmq_publish_endpoint_);
     
-    // Initialize ZMQ publisher
-    publisher_ = std::make_shared<ZmqPublisher>(zmq_publish_endpoint_);
+    // Initialize ZMQ publisher with CONFLATE enabled for market data
+    // CONFLATE keeps only the latest message - perfect for orderbook snapshots
+    // This provides true "fire-and-forget" behavior where only current state matters
+    publisher_ = std::make_shared<ZmqPublisher>(zmq_publish_endpoint_, 1000, true);
     if (!publisher_->bind()) {
         LOG_ERROR_COMP("MARKET_SERVER", "Failed to bind ZMQ publisher");
         return false;
@@ -68,6 +70,7 @@ void MarketServerService::print_service_stats() {
                             "Orderbook updates: " + std::to_string(stats.orderbook_updates.load()) +
                             ", Trade updates: " + std::to_string(stats.trade_updates.load()) +
                             ", ZMQ messages sent: " + std::to_string(stats.zmq_messages_sent.load()) +
+                            ", ZMQ messages dropped: " + std::to_string(stats.zmq_messages_dropped.load()) +
                             ", Connection errors: " + std::to_string(stats.connection_errors.load()) +
                             ", Uptime: " + std::to_string(app_stats.uptime_seconds.load()) + "s";
     LOG_INFO_COMP("STATS", stats_msg);

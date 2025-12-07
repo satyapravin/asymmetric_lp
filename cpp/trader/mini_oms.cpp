@@ -337,73 +337,85 @@ void MiniOMS::on_trade_execution(const proto::Trade& trade) {
 
 void MiniOMS::update_order_state(const std::string& cl_ord_id, OrderState new_state, 
                                 const std::string& reason, double fill_qty, double fill_price) {
-    std::lock_guard<std::mutex> lock(orders_mutex_);
-    auto it = orders_.find(cl_ord_id);
-    if (it == orders_.end()) {
-        logging::Logger logger("MINI_OMS");
-        logger.error("Order not found for state update: " + cl_ord_id);
-        return;
-    }
+    OrderStateInfo order_info_copy;
+    OrderState old_state;
+    bool order_found = false;
     
-    OrderStateInfo& order_info = it->second;
-    OrderState old_state = order_info.state;
-    
-    // Validate transition
-    if (!OrderStateMachine::isValidTransition(old_state, new_state)) {
+    {
+        std::lock_guard<std::mutex> lock(orders_mutex_);
+        auto it = orders_.find(cl_ord_id);
+        if (it == orders_.end()) {
+            logging::Logger logger("MINI_OMS");
+            logger.error("Order not found for state update: " + cl_ord_id);
+            return;
+        }
+        
+        OrderStateInfo& order_info = it->second;
+        old_state = order_info.state;
+        
+        // Validate transition
+        if (!OrderStateMachine::isValidTransition(old_state, new_state)) {
+            logging::Logger logger("MINI_OMS");
+            std::stringstream ss;
+            ss << "Invalid state transition from " << to_string(old_state) << " to " << to_string(new_state);
+            logger.error(ss.str());
+            return;
+        }
+        
+        // Update state
+        order_info.state = new_state;
+        order_info.last_update_time = std::chrono::system_clock::now();
+        
+        if (!reason.empty()) {
+            order_info.reject_reason = reason;
+        }
+        
+        if (fill_qty > 0.0) {
+            order_info.filled_qty += fill_qty;
+            if (fill_price > 0.0) {
+                // Update average fill price
+                double total_value = (order_info.avg_fill_price * (order_info.filled_qty - fill_qty)) + 
+                                   (fill_price * fill_qty);
+                order_info.avg_fill_price = total_value / order_info.filled_qty;
+            }
+        }
+        
+        // Update statistics
+        switch (new_state) {
+            case OrderState::ACKNOWLEDGED:
+                statistics_.pending_orders.fetch_sub(1);
+                statistics_.active_orders.fetch_add(1);
+                break;
+            case OrderState::FILLED:
+                statistics_.active_orders.fetch_sub(1);
+                statistics_.filled_orders.fetch_add(1);
+                break;
+            case OrderState::CANCELLED:
+                statistics_.active_orders.fetch_sub(1);
+                statistics_.cancelled_orders.fetch_add(1);
+                break;
+            case OrderState::REJECTED:
+                statistics_.pending_orders.fetch_sub(1);
+                statistics_.rejected_orders.fetch_add(1);
+                break;
+            default:
+                break;
+        }
+        
+        // Copy order info while holding lock (for callback)
+        order_info_copy = order_info;
+        order_found = true;
+        
         logging::Logger logger("MINI_OMS");
         std::stringstream ss;
-        ss << "Invalid state transition from " << to_string(old_state) << " to " << to_string(new_state);
-        logger.error(ss.str());
-        return;
+        ss << "Order " << cl_ord_id << " state: " << to_string(old_state) << " -> " << to_string(new_state);
+        logger.debug(ss.str());
+    }  // Release orders_mutex_ BEFORE calling callback to prevent deadlock
+    
+    // Notify callback AFTER releasing lock (prevents deadlock if callback calls back into MiniOMS)
+    if (order_found) {
+        notify_order_state_change(order_info_copy);
     }
-    
-    // Update state
-    order_info.state = new_state;
-    order_info.last_update_time = std::chrono::system_clock::now();
-    
-    if (!reason.empty()) {
-        order_info.reject_reason = reason;
-    }
-    
-    if (fill_qty > 0.0) {
-        order_info.filled_qty += fill_qty;
-        if (fill_price > 0.0) {
-            // Update average fill price
-            double total_value = (order_info.avg_fill_price * (order_info.filled_qty - fill_qty)) + 
-                               (fill_price * fill_qty);
-            order_info.avg_fill_price = total_value / order_info.filled_qty;
-        }
-    }
-    
-    // Update statistics
-    switch (new_state) {
-        case OrderState::ACKNOWLEDGED:
-            statistics_.pending_orders.fetch_sub(1);
-            statistics_.active_orders.fetch_add(1);
-            break;
-        case OrderState::FILLED:
-            statistics_.active_orders.fetch_sub(1);
-            statistics_.filled_orders.fetch_add(1);
-            break;
-        case OrderState::CANCELLED:
-            statistics_.active_orders.fetch_sub(1);
-            statistics_.cancelled_orders.fetch_add(1);
-            break;
-        case OrderState::REJECTED:
-            statistics_.pending_orders.fetch_sub(1);
-            statistics_.rejected_orders.fetch_add(1);
-            break;
-        default:
-            break;
-    }
-    
-    // Notify callback
-    notify_order_state_change(order_info);
-    
-    logging::Logger logger("MINI_OMS");
-    std::stringstream ss;
-    ss << "Order " << cl_ord_id << " state: " << to_string(old_state) << " -> " << to_string(new_state);
-    logger.debug(ss.str());
 }
 
 void MiniOMS::notify_order_state_change(const OrderStateInfo& order_info) {

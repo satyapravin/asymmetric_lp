@@ -1,6 +1,7 @@
 #include "trader_lib.hpp"
 #include "../utils/config/process_config_manager.hpp"
 #include "../utils/logging/logger.hpp"
+#include "../utils/constants.hpp"
 #include <mutex>
 
 namespace trader {
@@ -84,15 +85,13 @@ void TraderLib::start() {
             logging::Logger thread_logger("TRADER_LIB");
             thread_logger.debug("OMS event polling thread started");
             int poll_count = 0;
-            constexpr int OMS_POLL_INTERVAL_MS = 50;  // Poll interval for responsive event handling
-            constexpr int OMS_LOG_INTERVAL = 100;      // Log polling count every N iterations
             while (oms_event_running_.load()) {
                 oms_adapter_->poll_events();
                 poll_count++;
-                if (poll_count % OMS_LOG_INTERVAL == 0) {
+                if (poll_count % constants::polling::OMS_LOG_INTERVAL == 0) {
                     thread_logger.debug("OMS polling count: " + std::to_string(poll_count));
                 }
-                std::this_thread::sleep_for(std::chrono::milliseconds(OMS_POLL_INTERVAL_MS));
+                std::this_thread::sleep_for(std::chrono::milliseconds(constants::polling::OMS_EVENT_POLL_INTERVAL_MS));
             }
             thread_logger.debug("OMS event polling thread stopped");
         });
@@ -167,9 +166,11 @@ void TraderLib::set_strategy(std::shared_ptr<AbstractStrategy> strategy) {
         };
     }
     
-    // Set up PMS adapter callback to forward position updates to strategy container
+    // Set up PMS adapter callbacks to forward position and balance updates to strategy container
     if (pms_adapter_) {
-        logger.debug("Setting up PMS adapter callback");
+        logger.debug("Setting up PMS adapter callbacks");
+        
+        // Position update callback
         pms_adapter_->set_position_callback([this](const proto::PositionUpdate& position) {
             logging::Logger callback_logger("TRADER_LIB");
             callback_logger.debug("PMS adapter received position update: " + position.symbol() + 
@@ -177,6 +178,15 @@ void TraderLib::set_strategy(std::shared_ptr<AbstractStrategy> strategy) {
             
             // Forward position update to strategy container
             strategy_container_->on_position_update(position);
+        });
+        
+        // Balance update callback
+        pms_adapter_->set_balance_callback([this](const proto::AccountBalanceUpdate& balance) {
+            logging::Logger callback_logger("TRADER_LIB");
+            callback_logger.debug("PMS adapter received balance update: " + std::to_string(balance.balances_size()) + " balances");
+            
+            // Forward balance update to strategy container
+            strategy_container_->on_account_balance_update(balance);
         });
     }
     

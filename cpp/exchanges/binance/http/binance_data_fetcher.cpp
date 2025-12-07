@@ -5,6 +5,7 @@
 #include <json/json.h>
 #include <openssl/hmac.h>
 #include <openssl/sha.h>
+#include <string>
 
 namespace binance {
 
@@ -175,14 +176,46 @@ std::vector<proto::OrderEvent> BinanceDataFetcher::parse_orders(const std::strin
             order_event.set_exch("BINANCE");
             order_event.set_symbol(order_json["symbol"].asString());
             order_event.set_exch_order_id(order_json["orderId"].asString());
-            order_event.set_fill_qty(std::stod(order_json["executedQty"].asString()));
-            order_event.set_fill_price(std::stod(order_json["avgPrice"].asString()));
+            
+            // Extract filled quantity (executedQty)
+            double executed_qty = 0.0;
+            if (order_json.isMember("executedQty") && !order_json["executedQty"].asString().empty()) {
+                executed_qty = std::stod(order_json["executedQty"].asString());
+            }
+            order_event.set_fill_qty(executed_qty);
+            
+            // Extract average fill price
+            double avg_price = 0.0;
+            if (order_json.isMember("avgPrice") && !order_json["avgPrice"].asString().empty()) {
+                avg_price = std::stod(order_json["avgPrice"].asString());
+            }
+            order_event.set_fill_price(avg_price);
+            
             order_event.set_timestamp_us(order_json["time"].asUInt64() * 1000); // Convert to microseconds
             
+            // Extract original order quantity and store in text field (since OrderEvent doesn't have origQty field)
+            // Format: "origQty:<value>|side:<value>|price:<value>"
+            double orig_qty = 0.0;
+            if (order_json.isMember("origQty") && !order_json["origQty"].asString().empty()) {
+                orig_qty = std::stod(order_json["origQty"].asString());
+            }
+            std::string side = order_json.isMember("side") ? order_json["side"].asString() : "BUY";
+            double price = 0.0;
+            if (order_json.isMember("price") && !order_json["price"].asString().empty()) {
+                price = std::stod(order_json["price"].asString());
+            }
+            std::ostringstream metadata;
+            metadata << "origQty:" << orig_qty << "|side:" << side << "|price:" << price;
+            order_event.set_text(metadata.str());
+            
             // Map Binance order status to OrderEventType
+            // Note: For partially filled orders, status is "PARTIALLY_FILLED" but we use FILL event type
             std::string status = order_json["status"].asString();
             if (status == "NEW") {
                 order_event.set_event_type(proto::OrderEventType::ACK);
+            } else if (status == "PARTIALLY_FILLED") {
+                // Partially filled orders are still open, use FILL event type
+                order_event.set_event_type(proto::OrderEventType::FILL);
             } else if (status == "FILLED") {
                 order_event.set_event_type(proto::OrderEventType::FILL);
             } else if (status == "CANCELED") {

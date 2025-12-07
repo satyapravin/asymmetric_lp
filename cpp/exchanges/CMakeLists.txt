@@ -87,6 +87,8 @@ add_library(exchanges SHARED
     subscriber_factory.cpp
     oms_factory.hpp
     oms_factory.cpp
+    data_fetcher_factory.hpp
+    data_fetcher_factory.cpp
     
     # Binance implementation
     binance/http/binance_data_fetcher.hpp
