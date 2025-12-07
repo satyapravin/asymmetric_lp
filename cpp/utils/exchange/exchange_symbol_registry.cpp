@@ -1,5 +1,6 @@
 #include "exchange_symbol_registry.hpp"
 #include "../config/config.hpp"
+#include "../config/process_config_manager.hpp"
 #include "../logging/log_helper.hpp"
 #include <sstream>
 #include <algorithm>
@@ -173,7 +174,7 @@ bool ExchangeSymbolRegistry::load_from_config(const std::string& config_file_pat
     
     LOG_INFO_COMP("SYMBOL_REGISTRY", "Loading symbol info from: " + config_file_path);
     
-    ProcessConfigManager config_manager;
+    config::ProcessConfigManager config_manager;
     if (!config_manager.load_config(config_file_path)) {
         LOG_ERROR_COMP("SYMBOL_REGISTRY", "Failed to load config file: " + config_file_path);
         return false;
@@ -206,6 +207,10 @@ bool ExchangeSymbolRegistry::load_from_config(const std::string& config_file_pat
         int price_precision = config_manager.get_int(section, "price_precision", 8);
         int qty_precision = config_manager.get_int(section, "qty_precision", 8);
         
+        // Load contract specifications (optional, for perpetuals)
+        double contract_size = config_manager.get_double(section, "contract_size", 0.0);
+        std::string contract_size_denomination = config_manager.get_string(section, "contract_size_denomination", "");
+        
         // Validate required parameters
         if (tick_size <= 0.0 || step_size <= 0.0) {
             LOG_WARN_COMP("SYMBOL_REGISTRY",
@@ -219,16 +224,24 @@ bool ExchangeSymbolRegistry::load_from_config(const std::string& config_file_pat
                                 min_order_size, max_order_size,
                                 price_precision, qty_precision);
         
+        // Set contract specifications if provided
+        info.contract_size = contract_size;
+        info.contract_size_denomination = contract_size_denomination;
+        
         std::string key = make_key(exchange, symbol);
         symbol_info_map_[key] = info;
         loaded_count++;
         
-        LOG_DEBUG_COMP("SYMBOL_REGISTRY",
-                      "Loaded " + exchange + ":" + symbol +
-                      " tick=" + std::to_string(tick_size) +
-                      " step=" + std::to_string(step_size) +
-                      " min=" + std::to_string(min_order_size) +
-                      " max=" + std::to_string(max_order_size));
+        std::string log_msg = "Loaded " + exchange + ":" + symbol +
+                             " tick=" + std::to_string(tick_size) +
+                             " step=" + std::to_string(step_size) +
+                             " min=" + std::to_string(min_order_size) +
+                             " max=" + std::to_string(max_order_size);
+        if (contract_size > 0.0 && !contract_size_denomination.empty()) {
+            log_msg += " contract_size=" + std::to_string(contract_size) +
+                      " " + contract_size_denomination;
+        }
+        LOG_DEBUG_COMP("SYMBOL_REGISTRY", log_msg);
     }
     
     LOG_INFO_COMP("SYMBOL_REGISTRY", 
@@ -240,5 +253,156 @@ bool ExchangeSymbolRegistry::load_from_config(const std::string& config_file_pat
 std::string ExchangeSymbolRegistry::make_key(
     const std::string& exchange, const std::string& symbol) const {
     return exchange + ":" + symbol;
+}
+
+double ExchangeSymbolRegistry::token_qty_to_contracts(
+    const std::string& exchange,
+    const std::string& symbol,
+    double token_qty,
+    double price) const {
+    
+    ExchangeSymbolInfo info = get_symbol_info(exchange, symbol);
+    
+    if (!info.is_valid) {
+        LOG_ERROR_COMP("SYMBOL_REGISTRY",
+                      "Cannot convert token_qty to contracts: no symbol info for " +
+                      exchange + ":" + symbol);
+        return 0.0;
+    }
+    
+    if (info.contract_size <= 0.0 || info.contract_size_denomination.empty()) {
+        LOG_ERROR_COMP("SYMBOL_REGISTRY",
+                      "Cannot convert token_qty to contracts: contract_size not configured for " +
+                      exchange + ":" + symbol);
+        return 0.0;
+    }
+    
+    if (price <= 0.0) {
+        LOG_ERROR_COMP("SYMBOL_REGISTRY",
+                      "Cannot convert token_qty to contracts: invalid price " +
+                      std::to_string(price) + " for " + exchange + ":" + symbol);
+        return 0.0;
+    }
+    
+    // Calculate notional USD value of the token quantity
+    double notional_usd = token_qty * price;
+    
+    // Calculate contract size in USD
+    double contract_size_usd = 0.0;
+    
+    if (info.contract_size_denomination == "BTC" || 
+        info.contract_size_denomination == "ETH" ||
+        info.contract_size_denomination == "SOL") {
+        // Contract size is in base token (BTC, ETH, etc.)
+        // Need to convert to USD using the same price
+        contract_size_usd = info.contract_size * price;
+    } else if (info.contract_size_denomination == "USDC" ||
+               info.contract_size_denomination == "USDT" ||
+               info.contract_size_denomination == "USD") {
+        // Contract size is already in USD terms
+        contract_size_usd = info.contract_size;
+    } else {
+        LOG_ERROR_COMP("SYMBOL_REGISTRY",
+                      "Unknown contract_size_denomination: " + info.contract_size_denomination +
+                      " for " + exchange + ":" + symbol);
+        return 0.0;
+    }
+    
+    if (contract_size_usd <= 0.0) {
+        LOG_ERROR_COMP("SYMBOL_REGISTRY",
+                      "Invalid contract_size_usd calculated: " +
+                      std::to_string(contract_size_usd) + " for " + exchange + ":" + symbol);
+        return 0.0;
+    }
+    
+    // Calculate number of contracts
+    double contracts = notional_usd / contract_size_usd;
+    
+    LOG_DEBUG_COMP("SYMBOL_REGISTRY",
+                  "token_qty_to_contracts: " + exchange + ":" + symbol +
+                  " token_qty=" + std::to_string(token_qty) +
+                  " price=" + std::to_string(price) +
+                  " notional_usd=" + std::to_string(notional_usd) +
+                  " contract_size=" + std::to_string(info.contract_size) +
+                  " " + info.contract_size_denomination +
+                  " contract_size_usd=" + std::to_string(contract_size_usd) +
+                  " contracts=" + std::to_string(contracts));
+    
+    return contracts;
+}
+
+double ExchangeSymbolRegistry::contracts_to_token_qty(
+    const std::string& exchange,
+    const std::string& symbol,
+    double contracts,
+    double price) const {
+    
+    ExchangeSymbolInfo info = get_symbol_info(exchange, symbol);
+    
+    if (!info.is_valid) {
+        LOG_ERROR_COMP("SYMBOL_REGISTRY",
+                      "Cannot convert contracts to token_qty: no symbol info for " +
+                      exchange + ":" + symbol);
+        return 0.0;
+    }
+    
+    if (info.contract_size <= 0.0 || info.contract_size_denomination.empty()) {
+        LOG_ERROR_COMP("SYMBOL_REGISTRY",
+                      "Cannot convert contracts to token_qty: contract_size not configured for " +
+                      exchange + ":" + symbol);
+        return 0.0;
+    }
+    
+    if (price <= 0.0) {
+        LOG_ERROR_COMP("SYMBOL_REGISTRY",
+                      "Cannot convert contracts to token_qty: invalid price " +
+                      std::to_string(price) + " for " + exchange + ":" + symbol);
+        return 0.0;
+    }
+    
+    // Calculate contract size in USD
+    double contract_size_usd = 0.0;
+    
+    if (info.contract_size_denomination == "BTC" || 
+        info.contract_size_denomination == "ETH" ||
+        info.contract_size_denomination == "SOL") {
+        // Contract size is in base token (BTC, ETH, etc.)
+        contract_size_usd = info.contract_size * price;
+    } else if (info.contract_size_denomination == "USDC" ||
+               info.contract_size_denomination == "USDT" ||
+               info.contract_size_denomination == "USD") {
+        // Contract size is already in USD terms
+        contract_size_usd = info.contract_size;
+    } else {
+        LOG_ERROR_COMP("SYMBOL_REGISTRY",
+                      "Unknown contract_size_denomination: " + info.contract_size_denomination +
+                      " for " + exchange + ":" + symbol);
+        return 0.0;
+    }
+    
+    if (contract_size_usd <= 0.0) {
+        LOG_ERROR_COMP("SYMBOL_REGISTRY",
+                      "Invalid contract_size_usd calculated: " +
+                      std::to_string(contract_size_usd) + " for " + exchange + ":" + symbol);
+        return 0.0;
+    }
+    
+    // Calculate notional USD value
+    double notional_usd = contracts * contract_size_usd;
+    
+    // Convert notional USD to token quantity
+    double token_qty = notional_usd / price;
+    
+    LOG_DEBUG_COMP("SYMBOL_REGISTRY",
+                  "contracts_to_token_qty: " + exchange + ":" + symbol +
+                  " contracts=" + std::to_string(contracts) +
+                  " contract_size=" + std::to_string(info.contract_size) +
+                  " " + info.contract_size_denomination +
+                  " contract_size_usd=" + std::to_string(contract_size_usd) +
+                  " notional_usd=" + std::to_string(notional_usd) +
+                  " price=" + std::to_string(price) +
+                  " token_qty=" + std::to_string(token_qty));
+    
+    return token_qty;
 }
 

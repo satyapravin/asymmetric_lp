@@ -24,6 +24,10 @@ struct ExchangeSymbolInfo {
     double min_order_size{0.0};   // Minimum order size
     double max_order_size{0.0};   // Maximum order size (0 = unlimited)
     
+    // Contract specifications (for perpetuals)
+    double contract_size{0.0};              // Contract size (e.g., 0.01 BTC, 1.0 USDC)
+    std::string contract_size_denomination; // Denomination currency (e.g., "BTC", "USDC", "USDT")
+    
     // Validation flags
     bool is_valid{false};         // True if symbol info is loaded and valid
     

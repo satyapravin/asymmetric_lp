@@ -51,6 +51,28 @@ public:
                       const std::string& symbol,
                       double qty, double price) const;
     
+    // Convert token quantity to contracts
+    // exchange: Exchange name (e.g., "GRVT", "BINANCE")
+    // symbol: Symbol name (e.g., "BTCUSDC-PERP", "BTCUSDT")
+    // token_qty: Token quantity (e.g., 0.5 BTC)
+    // price: Current price of the token in USD (e.g., 50000.0 for BTC)
+    // Returns: Number of contracts, or 0.0 if conversion fails
+    double token_qty_to_contracts(const std::string& exchange,
+                                  const std::string& symbol,
+                                  double token_qty,
+                                  double price) const;
+    
+    // Convert contracts to token quantity
+    // exchange: Exchange name
+    // symbol: Symbol name
+    // contracts: Number of contracts
+    // price: Current price of the token in USD
+    // Returns: Token quantity, or 0.0 if conversion fails
+    double contracts_to_token_qty(const std::string& exchange,
+                                 const std::string& symbol,
+                                 double contracts,
+                                 double price) const;
+    
 private:
     ExchangeSymbolRegistry() = default;
     ~ExchangeSymbolRegistry() = default;
