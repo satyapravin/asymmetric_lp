@@ -1,125 +1,163 @@
-# Asymmetric Liquidity Provision Strategy
+# Asymmetric LP - DeFi Liquidity Provision Strategy
 
-A market-making strategy that combines DeFi liquidity provision with CeFi market making to create a statistical, inventory-aware hedge implemented via passive orders.
+An automated Uniswap V3 liquidity provision strategy with asymmetric range placement based on inventory position and market microstructure models.
 
-## Strategy Overview
+## Overview
 
-This strategy operates on two fronts:
+This strategy provides liquidity on Uniswap V3 with dynamically adjusted asymmetric ranges. Instead of symmetric ranges around the current price, the strategy skews ranges based on:
 
-1. **DeFi Liquidity Provision (Python)** - Provides liquidity on Uniswap V3 with asymmetric ranges
-2. **CeFi Market Making (C++)** - Market makes on centralized exchanges using residual inventory as a hedge
+- Current inventory position (token ratio)
+- Market volatility estimates
+- Model-driven optimal range calculations (Avellaneda-Stoikov, GLFT)
 
-### Core Concept
+## Features
 
-The strategy uses residual inventory from DeFi LP positions to market make on CeFi exchanges in the opposite direction, creating a statistical, inventory-aware hedge. When DeFi LP accumulates inventory in one direction, the CeFi market maker quotes passively in the opposing direction to reduce net exposure over time.
-
-## Production Status
-
-| Component | Status | Notes |
-|-----------|--------|-------|
-| DeFi LP (Python) | ✅ Production-ready | Complete implementation with backtesting |
-| **C++ Servers** | 🔄 **UAT Pending** | Architecture complete, comprehensive test suite, sanitizer support, centralized logging |
-| **Trader Process** | 🔄 **UAT Pending** | Strategy framework implemented, integration testing complete, logging integrated |
-| **Logging System** | ✅ Complete | All cout/cerr replaced with structured logging, DEBUG level for normal flow |
+- **Asymmetric Range Placement** - Ranges skewed based on inventory to encourage mean-reversion
+- **Multiple Pricing Models**:
+  - **Simple Model** - Basic range calculation with configurable parameters
+  - **Avellaneda-Stoikov** - Inventory-aware spread optimization
+  - **GLFT (Guéant-Lehalle-Fernandez-Tapia)** - Advanced market making model with execution costs
+- **Automated Rebalancing** - Monitors positions and rebalances when thresholds are breached
+- **Backtesting Engine** - Test strategies against historical OHLC data
+- **Telegram Alerts** - Real-time notifications for rebalances and errors
+- **Fee Collection Tracking** - Monitor collected fees from LP positions
 
 ## Quick Start
 
 ### Prerequisites
 
-**System Dependencies (Ubuntu/Debian):**
-```bash
-sudo apt-get update
-sudo apt-get install -y build-essential cmake git pkg-config \
-    libzmq3-dev libwebsockets-dev libssl-dev libcurl4-openssl-dev \
-    libjsoncpp-dev libsimdjson-dev libprotobuf-dev protobuf-compiler \
-    libuv1-dev python3 python3-pip python3-venv python3-dev
-```
+- Python 3.8+
+- Access to an Ethereum RPC endpoint (Infura, Alchemy, etc.)
+- Wallet with ETH for gas and tokens to provide liquidity
 
-**For other systems, see [INSTALL_DEPENDENCIES.md](INSTALL_DEPENDENCIES.md)**
-
-### Build Instructions
+### Installation
 
 ```bash
-# Clone repository
-git clone <repository-url>
-cd asymmetric_lp
-
-# Build C++ components
-cd cpp
-mkdir build && cd build
-cmake ..
-make -j$(nproc)
-
-# Install Python dependencies
-cd ../../python
+cd python
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Architecture
+### Configuration
 
-### Python DeFi Component
-- **Uniswap V3 Liquidity Provision** with sophisticated models (Avellaneda-Stoikov, GLFT)
-- **Asymmetric Ranges** based on inventory position
-- **Real-time Backtesting** and performance validation
-- **ZMQ Integration** for inventory delta publishing
+Copy the example environment file and configure:
 
-### C++ CeFi Component
-- **Multi-Process Architecture** with per-exchange specialization
-- **Market Server** - Public WebSocket market data streams
-- **Trading Engine** - Private WebSocket order execution
-- **Position Server** - Real-time position and PnL tracking
-- **Trader Process** - Strategy framework with Mini OMS
-- **ZMQ Communication** - High-performance inter-process messaging
-- **Centralized Logging** - Structured logging system with DEBUG/INFO/WARN/ERROR levels
-- **Architecture Documentation** - Complete architecture diagram (see `docs/architecture_diagram.md`)
+```bash
+cp env.production.example .env
+```
 
-## Backtest Results
+Required configuration:
+- `ETHEREUM_RPC_URL` - Your Ethereum RPC endpoint
+- `PRIVATE_KEY` - Wallet private key (keep secure!)
+- `TOKEN_A_ADDRESS` / `TOKEN_B_ADDRESS` - Token pair addresses
+- `UNISWAP_V3_FACTORY` / `UNISWAP_V3_POSITION_MANAGER` / `UNISWAP_V3_ROUTER` - Uniswap contract addresses
+- `FEE_TIER` - Pool fee tier (500, 3000, or 10000)
 
-### Representative Performance (ETH/USDC)
-- **Backtest Duration**: 3 weeks
+See `python/config.py` for all configuration options.
+
+### Running
+
+```bash
+# Activate virtual environment
+source venv/bin/activate
+
+# Run the automated rebalancer
+python main.py
+
+# Or run backtests
+python backtest_engine.py
+```
+
+## Project Structure
+
+```
+python/
+├── main.py                    # Entry point
+├── automated_rebalancer.py    # Main rebalancing logic
+├── strategy.py                # Rebalancing strategy decisions
+├── uniswap_client.py          # Uniswap V3 interaction
+├── lp_position_manager.py     # Position management
+├── amm.py                     # AMM simulation for backtesting
+├── backtest_engine.py         # Backtesting framework
+├── config.py                  # Configuration management
+├── alert_manager.py           # Telegram notifications
+├── models/
+│   ├── base_model.py          # Abstract model interface
+│   ├── simple_model.py        # Basic range model
+│   ├── avellaneda_stoikov.py  # A-S inventory model
+│   └── glft_model.py          # GLFT execution model
+├── tests/                     # Test suite
+└── data/                      # Historical data for backtesting
+```
+
+## Models
+
+### Simple Model
+Basic asymmetric range calculation with configurable min/max range percentages.
+
+### Avellaneda-Stoikov Model
+Implements the Avellaneda-Stoikov market making model adapted for LP range placement:
+- Inventory-aware range skewing
+- Volatility-adjusted spreads
+- Risk aversion parameter tuning
+
+### GLFT Model
+Advanced model based on Guéant-Lehalle-Fernandez-Tapia:
+- Execution cost modeling
+- Terminal inventory penalty
+- Optimal quote placement under constraints
+
+## Backtesting
+
+Run backtests against historical data:
+
+```bash
+python backtest_engine.py
+```
+
+Configure backtest parameters in `backtest_config.json`:
+- Model selection
+- Range parameters
+- Rebalance thresholds
+- Historical data source
+
+### Sample Results (ETH/USDC)
+
+- **Duration**: 3 weeks
 - **Total Trades**: 1,247
 - **Rebalances**: 23
-- **Initial Balance**: 2,500 USDC + 1 ETH
-- **Final Balance**: 2,580 USDC + 0.95 ETH
-- **USD P&L**: +3.2% (including fees)
+- **Fee Collection**: ~0.8% of volume
+- **Net P&L**: +3.2% (including fees, excluding IL)
 
-### Key Metrics
-- **Fee Collection**: 0.8% of volume (varies with fee tier and range width)
-- **Impermanent Loss**: Context dependent; mitigated by range design and rebalances
-- **Rebalance Frequency**: Edge-triggered; model- and threshold-dependent
-- **Average Spread**: Strategy- and venue-dependent
+## Testing
 
-*See `python/README.md` for detailed backtesting methodology and reproducibility.*
+```bash
+# Run all tests
+python -m pytest tests/ -v
 
-## Documentation
+# Run specific test file
+python -m pytest tests/test_strategy.py -v
 
-- **DeFi Implementation**: See `python/README.md` for complete Python documentation
-- **C++ Architecture**: See `cpp/README.md` for C++ framework details
-- **Architecture Diagram**: See `docs/architecture_diagram.md` for visual system architecture
-- **Deployment & Configuration**: See `docs/deploy.md` for complete deployment guide with all configurations
-- **Trading Engine**: See `cpp/trading_engine/README.md` for trading engine details
-- **Test Suite**: See `cpp/tests/README.md` for comprehensive test documentation
-- **Exchange Interfaces**: See `docs/interfaces.md` for exchange integration details
-- **Strategy Development**: See `docs/strategy_guide.md` for strategy implementation guide
+# Run with coverage
+python -m pytest tests/ --cov=. --cov-report=html
+```
 
-## Quick Start
+## Monitoring
 
-### Prerequisites
-- Python 3.8+ with pip
-- C++17 compiler (GCC 9+ or Clang 10+)
-- CMake 3.16+
+The strategy logs to `logs/rebalancer.log` and optionally sends Telegram alerts for:
+- Successful rebalances
+- Failed transactions
+- Position status updates
+- Error conditions
 
-*See `docs/deploy.md` for detailed configuration and deployment instructions.*
+## Safety Features
 
-## Contributing
-
-1. DeFi Improvements: Submit PRs to `python/` directory
-2. CeFi Development: Submit PRs to `cpp/` directory
-3. Test Development: Submit PRs to `cpp/tests/` directory
-4. Documentation: Update relevant README files
-5. Testing: Add tests for new features using the comprehensive test framework
+- Maximum gas price limits
+- Slippage protection on swaps
+- Position size limits
+- Retry logic with exponential backoff
+- Comprehensive error handling
 
 ## License
 
@@ -127,4 +165,4 @@ MIT License - see `LICENSE` file for details.
 
 ## Disclaimer
 
-This software is for educational and research purposes. Trading cryptocurrencies involves substantial risk of loss. Past performance does not guarantee future results. Use at your own risk.
+This software is for educational and research purposes. Providing liquidity on DeFi protocols involves substantial risk including impermanent loss, smart contract risk, and market risk. Past performance does not guarantee future results. Use at your own risk.
