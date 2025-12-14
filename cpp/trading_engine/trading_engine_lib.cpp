@@ -55,7 +55,7 @@ bool TradingEngineLib::initialize(const std::string& config_file) {
         
         // Load rate limit configuration if available
         if (config_manager_) {
-            std::string rate_limit_str = config_manager_->get("TRADING_ENGINE", "MAX_ORDERS_PER_SECOND", "10");
+            std::string rate_limit_str = config_manager_->get_string("TRADING_ENGINE", "MAX_ORDERS_PER_SECOND", "10");
             try {
                 max_orders_per_second_ = std::stoi(rate_limit_str);
                 logger.info("Rate limit configured: " + std::to_string(max_orders_per_second_) + " orders/second");
@@ -64,7 +64,7 @@ bool TradingEngineLib::initialize(const std::string& config_file) {
             }
             
             // Load exchange symbol configuration
-            std::string symbol_config_path = config_manager_->get("TRADING_ENGINE", "EXCHANGE_INSTR_CONFIG", "exchange_instr_config.ini");
+            std::string symbol_config_path = config_manager_->get_string("TRADING_ENGINE", "EXCHANGE_INSTR_CONFIG", "exchange_instr_config.ini");
             if (!symbol_config_path.empty()) {
                 auto& registry = ExchangeSymbolRegistry::get_instance();
                 if (registry.load_from_config(symbol_config_path)) {
@@ -580,7 +580,6 @@ void TradingEngineLib::message_processing_loop() {
         }
     }
     
-    logging::Logger logger("TRADING_ENGINE");
     logger.debug("Message processing loop stopped");
 }
 

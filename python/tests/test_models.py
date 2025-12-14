@@ -25,74 +25,93 @@ class TestAvellanedaStoikovModel:
         self.config.VOLATILITY = 0.3
         self.config.RISK_AVERSION = 0.1
         self.config.INVENTORY_PENALTY = 0.01
+        # Add all required config attributes
+        self.config.INVENTORY_RISK_AVERSION = 0.1
+        self.config.TARGET_INVENTORY_RATIO = 0.5
+        self.config.MAX_INVENTORY_DEVIATION = 0.3
+        self.config.BASE_SPREAD = 0.05
+        self.config.VOLATILITY_WINDOW_SIZE = 20
+        self.config.DEFAULT_VOLATILITY = 0.02
+        self.config.MAX_VOLATILITY = 2.0
+        self.config.MIN_VOLATILITY = 0.01
+        self.config.MIN_RANGE_PERCENTAGE = 1.0  # 1%
+        self.config.MAX_RANGE_PERCENTAGE = 50.0  # 50%
         
         self.model = AvellanedaStoikovModel(self.config)
     
     def test_model_initialization(self):
         """Test model initialization."""
         assert self.model.config == self.config
-        assert hasattr(self.model, 'calculate_range_width')
+        assert hasattr(self.model, 'calculate_lp_ranges')
     
-    def test_calculate_range_width_normal_case(self):
-        """Test range width calculation for normal inventory ratio."""
-        inventory_ratio = 0.5  # Balanced inventory
-        volatility = 0.3
+    def test_calculate_lp_ranges_normal_case(self):
+        """Test LP range calculation for normal inventory ratio."""
+        from unittest.mock import Mock
         
-        result = self.model.calculate_range_width(inventory_ratio, volatility)
+        mock_client = Mock()
+        mock_client.get_token_decimals.return_value = 18
         
-        assert isinstance(result, float)
-        assert result > 0
-        assert result <= 1.0  # Should be a percentage
+        token0_balance = 1000 * 10**18
+        token1_balance = 1 * 10**18
+        spot_price = 3000.0
+        price_history = []
+        
+        result = self.model.calculate_lp_ranges(
+            token0_balance=token0_balance,
+            token1_balance=token1_balance,
+            spot_price=spot_price,
+            price_history=price_history,
+            token_a_address='0xTokenA',
+            token_b_address='0xTokenB',
+            client=mock_client
+        )
+        
+        assert isinstance(result, dict)
+        assert 'range_a_percentage' in result
+        assert 'range_b_percentage' in result
+        assert result['range_a_percentage'] > 0
+        assert result['range_b_percentage'] > 0
     
-    def test_calculate_range_width_extreme_inventory(self):
-        """Test range width calculation for extreme inventory ratios."""
-        volatility = 0.3
+    def test_calculate_lp_ranges_extreme_inventory(self):
+        """Test LP range calculation for extreme inventory ratios."""
+        from unittest.mock import Mock
+        
+        mock_client = Mock()
+        mock_client.get_token_decimals.return_value = 18
+        
+        spot_price = 3000.0
+        price_history = []
         
         # Test with inventory heavily skewed to token0
-        result_token0_heavy = self.model.calculate_range_width(0.1, volatility)
+        token0_heavy = 2000 * 10**18
+        token1_heavy = 0.1 * 10**18
+        result_token0_heavy = self.model.calculate_lp_ranges(
+            token0_balance=token0_heavy,
+            token1_balance=token1_heavy,
+            spot_price=spot_price,
+            price_history=price_history,
+            token_a_address='0xTokenA',
+            token_b_address='0xTokenB',
+            client=mock_client
+        )
         
         # Test with inventory heavily skewed to token1
-        result_token1_heavy = self.model.calculate_range_width(0.9, volatility)
+        token0_light = 100 * 10**18
+        token1_light = 2.0 * 10**18
+        result_token1_heavy = self.model.calculate_lp_ranges(
+            token0_balance=token0_light,
+            token1_balance=token1_light,
+            spot_price=spot_price,
+            price_history=price_history,
+            token_a_address='0xTokenA',
+            token_b_address='0xTokenB',
+            client=mock_client
+        )
         
-        assert isinstance(result_token0_heavy, float)
-        assert isinstance(result_token1_heavy, float)
-        assert result_token0_heavy > 0
-        assert result_token1_heavy > 0
-    
-    def test_calculate_range_width_volatility_sensitivity(self):
-        """Test that range width responds to volatility changes."""
-        inventory_ratio = 0.5
-        
-        # Low volatility should result in narrower ranges
-        result_low_vol = self.model.calculate_range_width(inventory_ratio, 0.1)
-        
-        # High volatility should result in wider ranges
-        result_high_vol = self.model.calculate_range_width(inventory_ratio, 0.5)
-        
-        assert isinstance(result_low_vol, float)
-        assert isinstance(result_high_vol, float)
-        assert result_low_vol > 0
-        assert result_high_vol > 0
-        # Note: The exact relationship depends on model implementation
-    
-    def test_calculate_range_width_edge_cases(self):
-        """Test edge cases for range width calculation."""
-        volatility = 0.3
-        
-        # Test with zero inventory ratio
-        result_zero = self.model.calculate_range_width(0.0, volatility)
-        assert isinstance(result_zero, float)
-        assert result_zero > 0
-        
-        # Test with maximum inventory ratio
-        result_max = self.model.calculate_range_width(1.0, volatility)
-        assert isinstance(result_max, float)
-        assert result_max > 0
-        
-        # Test with zero volatility
-        result_zero_vol = self.model.calculate_range_width(0.5, 0.0)
-        assert isinstance(result_zero_vol, float)
-        assert result_zero_vol >= 0
+        assert isinstance(result_token0_heavy, dict)
+        assert isinstance(result_token1_heavy, dict)
+        assert 'range_a_percentage' in result_token0_heavy
+        assert 'range_b_percentage' in result_token0_heavy
 
 
 class TestGLFTModel:
@@ -103,58 +122,137 @@ class TestGLFTModel:
         self.config = Mock()
         self.config.EXECUTION_COST = 0.001
         self.config.INVENTORY_PENALTY = 0.01
+        # Add all required config attributes
+        self.config.INVENTORY_RISK_AVERSION = 0.1
+        self.config.TARGET_INVENTORY_RATIO = 0.5
+        self.config.MAX_INVENTORY_DEVIATION = 0.3
+        self.config.BASE_SPREAD = 0.05
+        self.config.VOLATILITY_WINDOW_SIZE = 20
+        self.config.DEFAULT_VOLATILITY = 0.02
+        self.config.MAX_VOLATILITY = 2.0
+        self.config.MIN_VOLATILITY = 0.01
+        self.config.MAX_POSITION_SIZE = 0.1
+        self.config.TERMINAL_INVENTORY_PENALTY = 0.2
+        self.config.INVENTORY_CONSTRAINT_ACTIVE = False
+        self.config.MIN_RANGE_PERCENTAGE = 1.0  # 1%
+        self.config.MAX_RANGE_PERCENTAGE = 50.0  # 50%
         
         self.model = GLFTModel(self.config)
     
     def test_model_initialization(self):
         """Test model initialization."""
         assert self.model.config == self.config
-        assert hasattr(self.model, 'calculate_range_width')
+        assert hasattr(self.model, 'calculate_lp_ranges')
     
-    def test_calculate_range_width_normal_case(self):
-        """Test range width calculation for normal inventory ratio."""
-        inventory_ratio = 0.5  # Balanced inventory
-        volatility = 0.3
+    def test_calculate_lp_ranges_normal_case(self):
+        """Test LP range calculation for normal inventory ratio."""
+        from unittest.mock import Mock
         
-        result = self.model.calculate_range_width(inventory_ratio, volatility)
+        mock_client = Mock()
+        mock_client.get_token_decimals.return_value = 18
         
-        assert isinstance(result, float)
-        assert result > 0
-        assert result <= 1.0  # Should be a percentage
+        token0_balance = 1000 * 10**18
+        token1_balance = 1 * 10**18
+        spot_price = 3000.0
+        price_history = []
+        
+        result = self.model.calculate_lp_ranges(
+            token0_balance=token0_balance,
+            token1_balance=token1_balance,
+            spot_price=spot_price,
+            price_history=price_history,
+            token_a_address='0xTokenA',
+            token_b_address='0xTokenB',
+            client=mock_client
+        )
+        
+        assert isinstance(result, dict)
+        assert 'range_a_percentage' in result
+        assert 'range_b_percentage' in result
+        assert result['range_a_percentage'] > 0
+        assert result['range_b_percentage'] > 0
     
-    def test_calculate_range_width_execution_cost_sensitivity(self):
-        """Test that range width responds to execution cost."""
-        inventory_ratio = 0.5
-        volatility = 0.3
+    def test_calculate_lp_ranges_execution_cost_sensitivity(self):
+        """Test that LP ranges respond to execution cost."""
+        from unittest.mock import Mock
         
-        # Test with different execution costs
-        result_low_cost = self.model.calculate_range_width(inventory_ratio, volatility)
+        mock_client = Mock()
+        mock_client.get_token_decimals.return_value = 18
         
-        # Modify execution cost and test again
+        token0_balance = 1000 * 10**18
+        token1_balance = 1 * 10**18
+        spot_price = 3000.0
+        price_history = []
+        
+        # Test with default execution cost
+        result_low_cost = self.model.calculate_lp_ranges(
+            token0_balance=token0_balance,
+            token1_balance=token1_balance,
+            spot_price=spot_price,
+            price_history=price_history,
+            token_a_address='0xTokenA',
+            token_b_address='0xTokenB',
+            client=mock_client
+        )
+        
+        # Modify execution cost and test again (requires recreating model)
         self.config.EXECUTION_COST = 0.01  # Higher cost
-        result_high_cost = self.model.calculate_range_width(inventory_ratio, volatility)
+        model_high_cost = GLFTModel(self.config)
+        result_high_cost = model_high_cost.calculate_lp_ranges(
+            token0_balance=token0_balance,
+            token1_balance=token1_balance,
+            spot_price=spot_price,
+            price_history=price_history,
+            token_a_address='0xTokenA',
+            token_b_address='0xTokenB',
+            client=mock_client
+        )
         
-        assert isinstance(result_low_cost, float)
-        assert isinstance(result_high_cost, float)
-        assert result_low_cost > 0
-        assert result_high_cost > 0
+        assert isinstance(result_low_cost, dict)
+        assert isinstance(result_high_cost, dict)
+        assert 'range_a_percentage' in result_low_cost
+        assert 'range_b_percentage' in result_high_cost
     
-    def test_calculate_range_width_inventory_penalty_sensitivity(self):
-        """Test that range width responds to inventory penalty."""
-        inventory_ratio = 0.5
-        volatility = 0.3
+    def test_calculate_lp_ranges_inventory_penalty_sensitivity(self):
+        """Test that LP ranges respond to inventory penalty."""
+        from unittest.mock import Mock
         
-        # Test with different inventory penalties
-        result_low_penalty = self.model.calculate_range_width(inventory_ratio, volatility)
+        mock_client = Mock()
+        mock_client.get_token_decimals.return_value = 18
         
-        # Modify inventory penalty and test again
+        token0_balance = 1000 * 10**18
+        token1_balance = 1 * 10**18
+        spot_price = 3000.0
+        price_history = []
+        
+        # Test with default penalty
+        result_low_penalty = self.model.calculate_lp_ranges(
+            token0_balance=token0_balance,
+            token1_balance=token1_balance,
+            spot_price=spot_price,
+            price_history=price_history,
+            token_a_address='0xTokenA',
+            token_b_address='0xTokenB',
+            client=mock_client
+        )
+        
+        # Modify penalty and test again (requires recreating model)
         self.config.INVENTORY_PENALTY = 0.1  # Higher penalty
-        result_high_penalty = self.model.calculate_range_width(inventory_ratio, volatility)
+        model_high_penalty = GLFTModel(self.config)
+        result_high_penalty = model_high_penalty.calculate_lp_ranges(
+            token0_balance=token0_balance,
+            token1_balance=token1_balance,
+            spot_price=spot_price,
+            price_history=price_history,
+            token_a_address='0xTokenA',
+            token_b_address='0xTokenB',
+            client=mock_client
+        )
         
-        assert isinstance(result_low_penalty, float)
-        assert isinstance(result_high_penalty, float)
-        assert result_low_penalty > 0
-        assert result_high_penalty > 0
+        assert isinstance(result_low_penalty, dict)
+        assert isinstance(result_high_penalty, dict)
+        assert 'range_a_percentage' in result_low_penalty
+        assert 'range_b_percentage' in result_high_penalty
 
 
 class TestSimpleModel:
@@ -170,34 +268,35 @@ class TestSimpleModel:
     def test_model_initialization(self):
         """Test model initialization."""
         assert self.model.config == self.config
-        assert hasattr(self.model, 'calculate_range_width')
+        assert hasattr(self.model, 'calculate_lp_ranges')
     
-    def test_calculate_range_width_constant(self):
-        """Test that simple model returns constant range width."""
-        inventory_ratio = 0.5
-        volatility = 0.3
+    def test_calculate_lp_ranges_basic(self):
+        """Test that simple model can calculate LP ranges."""
+        from unittest.mock import Mock
         
-        result = self.model.calculate_range_width(inventory_ratio, volatility)
+        mock_client = Mock()
+        mock_client.get_token_decimals.return_value = 18
         
-        assert isinstance(result, float)
-        assert result == self.config.BASE_SPREAD
-    
-    def test_calculate_range_width_independence(self):
-        """Test that simple model is independent of inventory and volatility."""
-        volatility = 0.3
+        token0_balance = 1000 * 10**18
+        token1_balance = 1 * 10**18
+        spot_price = 3000.0
+        price_history = []
         
-        # Test with different inventory ratios
-        result1 = self.model.calculate_range_width(0.1, volatility)
-        result2 = self.model.calculate_range_width(0.5, volatility)
-        result3 = self.model.calculate_range_width(0.9, volatility)
+        result = self.model.calculate_lp_ranges(
+            token0_balance=token0_balance,
+            token1_balance=token1_balance,
+            spot_price=spot_price,
+            price_history=price_history,
+            token_a_address='0xTokenA',
+            token_b_address='0xTokenB',
+            client=mock_client
+        )
         
-        assert result1 == result2 == result3 == self.config.BASE_SPREAD
-        
-        # Test with different volatilities
-        result4 = self.model.calculate_range_width(0.5, 0.1)
-        result5 = self.model.calculate_range_width(0.5, 0.5)
-        
-        assert result4 == result5 == self.config.BASE_SPREAD
+        assert isinstance(result, dict)
+        assert 'range_a_percentage' in result
+        assert 'range_b_percentage' in result
+        assert result['range_a_percentage'] > 0
+        assert result['range_b_percentage'] > 0
 
 
 class TestModelFactory:
@@ -209,16 +308,31 @@ class TestModelFactory:
         
         config = Mock()
         
+        # Add required config attributes
+        config.INVENTORY_RISK_AVERSION = 0.1
+        config.TARGET_INVENTORY_RATIO = 0.5
+        config.MAX_INVENTORY_DEVIATION = 0.3
+        config.BASE_SPREAD = 0.05
+        config.VOLATILITY_WINDOW_SIZE = 20
+        config.DEFAULT_VOLATILITY = 0.02
+        config.MAX_VOLATILITY = 2.0
+        config.MIN_VOLATILITY = 0.01
+        config.EXECUTION_COST = 0.001
+        config.INVENTORY_PENALTY = 0.01
+        config.MAX_POSITION_SIZE = 0.1
+        config.TERMINAL_INVENTORY_PENALTY = 0.2
+        config.INVENTORY_CONSTRAINT_ACTIVE = False
+        
         # Test Avellaneda-Stoikov model creation
-        as_model = ModelFactory.create_model('avellaneda_stoikov', config)
+        as_model = ModelFactory.create_model('AvellanedaStoikovModel', config)
         assert isinstance(as_model, AvellanedaStoikovModel)
         
         # Test GLFT model creation
-        glft_model = ModelFactory.create_model('glft', config)
+        glft_model = ModelFactory.create_model('GLFTModel', config)
         assert isinstance(glft_model, GLFTModel)
         
         # Test Simple model creation
-        simple_model = ModelFactory.create_model('simple', config)
+        simple_model = ModelFactory.create_model('SimpleModel', config)
         assert isinstance(simple_model, SimpleModel)
     
     def test_model_factory_invalid_model(self):

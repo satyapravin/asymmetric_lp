@@ -75,7 +75,7 @@ class Config:
     # Rebalancing configuration
     MIN_RANGE_PERCENTAGE = float(os.getenv('MIN_RANGE_PERCENTAGE', '2.0'))
     MAX_RANGE_PERCENTAGE = float(os.getenv('MAX_RANGE_PERCENTAGE', '50.0'))
-    MONITORING_INTERVAL_SECONDS = int(os.getenv('MONITORING_INTERVAL_SECONDS', '60'))
+    MONITORING_INTERVAL_SECONDS = int(os.getenv('MONITORING_INTERVAL_SECONDS', '5'))  # Default: 5 seconds
     REBALANCE_THRESHOLD = float(os.getenv('REBALANCE_THRESHOLD', '0.10'))  # 10% deviation threshold
     
     # Backtesting-only parameters (only loaded when BACKTEST_MODE=true or .env.backtest exists)
@@ -106,9 +106,6 @@ class Config:
     TERMINAL_INVENTORY_PENALTY = float(os.getenv('TERMINAL_INVENTORY_PENALTY', '0.2'))  # Terminal penalty
     INVENTORY_CONSTRAINT_ACTIVE = os.getenv('INVENTORY_CONSTRAINT_ACTIVE', 'false').lower() == 'true'
     
-    # ZMQ publishing preferences
-    ASSET_TOKEN = os.getenv('ASSET_TOKEN', '').strip()  # Which token to publish deltas for (e.g., 'A', 'B', 'ETH', 'USDC')
-    
     # Telegram alerting
     TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
     TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
@@ -117,11 +114,6 @@ class Config:
     # Error handling
     MAX_RETRIES = int(os.getenv('MAX_RETRIES', '3'))
     RETRY_DELAY_SECONDS = float(os.getenv('RETRY_DELAY_SECONDS', '2.0'))
-    
-    # 0MQ inventory publishing
-    ZMQ_ENABLED = os.getenv('ZMQ_ENABLED', 'false').lower() == 'true'
-    ZMQ_PUBLISHER_PORT = int(os.getenv('ZMQ_PUBLISHER_PORT', '5555'))
-    ZMQ_PUBLISHER_HOST = os.getenv('ZMQ_PUBLISHER_HOST', 'localhost')
     
     # Token decimals are now fetched dynamically from blockchain
     # No need for hardcoded values

@@ -54,8 +54,6 @@ public:
       void on_trade_execution(const proto::Trade& trade) override;
       void on_account_balance_update(const proto::AccountBalanceUpdate& balance_update) override;
       
-      // DeFi delta update handler (receives delta in tokens from Python LP)
-      void on_defi_delta_update(const std::string& asset_symbol, double delta_tokens);
   
   // Order management (Strategy calls Container)
   // Note: Strategy doesn't implement order management - it calls the container
@@ -114,6 +112,13 @@ public:
   
   CombinedInventory calculate_combined_inventory(double spot_price) const;
   
+  // Calculate CeFi-only inventory (for GLFT model)
+  struct CeFiInventory {
+    double token0{0.0};  // Collateral (USD)
+    double token1{0.0}; // Position (contracts)
+  };
+  CeFiInventory calculate_cefi_inventory() const;
+  
   // Order state queries (delegated to Mini OMS)
   OrderStateInfo get_order_state(const std::string& cl_ord_id);
   std::vector<OrderStateInfo> get_active_orders();
@@ -170,10 +175,25 @@ private:
   double base_quote_size_pct_{0.02};   // Base quote size as % of leveraged balance (2%)
   double min_quote_size_pct_{0.005};   // Minimum quote size as % of leveraged balance (0.5%)
   double max_quote_size_pct_{0.25};    // Maximum quote size as % of leveraged balance (25%)
+  double micro_price_skew_alpha_{1.0};  // Alpha parameter to multiply micro price skew (default: 1.0 = full effect)
+  double net_inventory_skew_gamma_{0.5};  // Gamma parameter to multiply net inventory skew (default: 0.5)
+                                           // Net inventory = CeFi inventory + DeFi delta (both in contracts)
+                                           // Normalized to % of collateral for skew calculation
   
   // DeFi position tracking
   mutable std::mutex defi_positions_mutex_;
   std::map<std::string, DefiPosition> defi_positions_;  // pool_address -> DefiPosition
+  
+  // Cached DeFi inventory flow (in contracts) - used to skew bid/ask quotes
+  // Weighted combination of flow_5s, flow_1m, flow_5m
+  // Positive = inventory increasing (skew quotes to encourage selling)
+  // Negative = inventory decreasing (skew quotes to encourage buying)
+  std::atomic<double> cached_defi_flow_contracts_{0.0};
+  
+  // Weights for inventory flow combination (default: use flow_1m primarily)
+  double flow_5s_weight_{0.2};   // Weight for 5-second flow
+  double flow_1m_weight_{0.6};   // Weight for 1-minute flow (primary)
+  double flow_5m_weight_{0.2};   // Weight for 5-minute flow
   
   // Market data for GLFT calculations
   std::atomic<double> current_spot_price_{0.0};
@@ -183,6 +203,10 @@ private:
   mutable std::mutex orderbook_mutex_;
   double best_bid_{0.0};
   double best_ask_{0.0};
+  
+  // Cached orderbook for micro price calculation (top 5 levels)
+  proto::OrderBookSnapshot cached_orderbook_;
+  bool orderbook_cached_{false};
   
   // EWMA volatility calculation
   mutable std::mutex volatility_mutex_;
@@ -216,6 +240,11 @@ private:
   void update_quotes();
   void manage_inventory();
   std::string generate_order_id() const;
+  
+  // Micro price calculation (weighted mid price from top N levels)
+  double calculate_micro_price(const proto::OrderBookSnapshot& orderbook, int num_levels = 5) const;
+  double get_micro_price_skew() const;  // Returns (micro_price - mid_price) / mid_price
+  double get_orderbook_imbalance() const;  // Returns (bid_qty - ask_qty) / (bid_qty + ask_qty), range [-1, 1]
   
   // Helper methods for inventory calculation
   double calculate_volatility_from_orderbook(const proto::OrderBookSnapshot& orderbook) const;

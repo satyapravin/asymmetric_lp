@@ -114,6 +114,9 @@ TEST_CASE("Full Chain Integration Test: Mock WebSocket → Market Server → Str
     std::cout << "\n=== FULL CHAIN INTEGRATION TEST ===" << std::endl;
     std::cout << "Flow: Mock WebSocket → Market Server → 0MQ → MDS Adapter → Strategy Container → Test Strategy" << std::endl;
 
+    // Use unique config with ports 6100-6104 to avoid conflicts with other tests
+    const std::string config_file = "../../tests/config/test_config_fullchain.ini";
+
     // Step 1: Create mock WebSocket transport
     std::cout << "\n[STEP 1] Creating mock WebSocket transport..." << std::endl;
     auto mock_transport = std::make_unique<test_utils::MockWebSocketTransport>();
@@ -141,7 +144,7 @@ TEST_CASE("Full Chain Integration Test: Mock WebSocket → Market Server → Str
     // Configure trader library
     trader_lib->set_symbol("BTCUSDT");
     trader_lib->set_exchange("binance");
-    trader_lib->initialize("../tests/test_config.ini");
+    trader_lib->initialize(config_file);
     
     // TraderLib::initialize() configures all adapters internally
     
@@ -151,7 +154,12 @@ TEST_CASE("Full Chain Integration Test: Mock WebSocket → Market Server → Str
     market_server->set_exchange("binance");
     market_server->set_symbol("BTCUSDT");
     // Initialize Market Server (this will set up 0MQ publishing)
-    market_server->initialize("../tests/test_config.ini");
+    market_server->initialize(config_file);
+    
+    // Create ZmqPublisher for market server to publish to
+    auto market_pub = std::make_shared<ZmqPublisher>("tcp://127.0.0.1:6100");
+    market_server->set_zmq_publisher(market_pub);
+    
     // Inject the mock WebSocket transport into Market Server
     market_server->set_websocket_transport(std::move(mock_transport));
     market_server->start();
@@ -162,6 +170,33 @@ TEST_CASE("Full Chain Integration Test: Mock WebSocket → Market Server → Str
     trader_lib->set_strategy(std::shared_ptr<integration_test::TestStrategy>(test_strategy.release()));
     // Start trader library after publisher is up
     trader_lib->start();
+    
+    // Send mock balance and position updates to allow strategy to start
+    // Strategy container requires these before it will forward market data
+    proto::AccountBalanceUpdate balance_update;
+    auto* balance = balance_update.add_balances();
+    balance->set_exch("binance");
+    balance->set_instrument("USDT");
+    balance->set_available(10000.0);
+    balance->set_locked(0.0);
+    trader_lib->simulate_balance_update(balance_update);
+    
+    proto::PositionUpdate position_update;
+    position_update.set_exch("binance");
+    position_update.set_symbol("BTCUSDT");
+    position_update.set_qty(0.0);
+    trader_lib->simulate_position_update(position_update);
+    
+    // Send a mock order event to mark order state as queried (required for strategy to start)
+    proto::OrderEvent order_event;
+    order_event.set_cl_ord_id("test_order");
+    order_event.set_exch("binance");
+    order_event.set_symbol("BTCUSDT");
+    order_event.set_event_type(proto::ACK);
+    trader_lib->simulate_order_event(order_event);
+    
+    // Give strategy container time to process updates and start strategy
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
     // Step 6: Connect and simulate data flow
     std::cout << "\n[STEP 6] Connecting and simulating data flow..." << std::endl;
@@ -184,8 +219,12 @@ TEST_CASE("Full Chain Integration Test: Mock WebSocket → Market Server → Str
     std::cout << "\n[STEP 7] Verifying full chain..." << std::endl;
     
     // Wait for the strategy to receive the market data
+    // Note: Strategy container requires balance, position, and order state before starting
+    // The timeout is 10 seconds for balance/position and 5 seconds for order state
+    // So we need to wait at least 11 seconds for the strategy to fully start
     std::cout << "[VERIFICATION] Waiting for strategy to receive market data..." << std::endl;
-    int max_wait_attempts = 50; // 5 seconds total
+    std::cout << "[VERIFICATION] Note: Strategy requires balance/position/order state before starting (timeout: 10s)" << std::endl;
+    int max_wait_attempts = 120; // 12 seconds total (enough for 10s timeout + processing)
     int wait_attempt = 0;
     bool strategy_received_data = false;
     
@@ -294,8 +333,10 @@ TEST_CASE("Full Chain Integration Test: Mock WebSocket → Market Server → Str
     // Stop Market Server (stops publishing messages)
     market_server->stop();
     
-    // Stop mock WebSocket event loop
-    mock_ws->stop_event_loop();
+    // Stop mock WebSocket event loop (if it's still running)
+    if (mock_ws && mock_ws->is_event_loop_running()) {
+        mock_ws->stop_event_loop();
+    }
     
     // Give threads and ZMQ resources time to fully clean up
     // ZMQ needs extra time to clean up sockets and contexts

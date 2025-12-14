@@ -118,7 +118,7 @@ void StrategyContainer::start() {
         // Start a background thread to timeout after a few seconds
         // If no order events arrive, assume there are no open orders
         // Store thread as member to ensure proper cleanup
-        order_state_timeout_thread_ = std::make_unique<std::thread>([this]() {
+        order_state_timeout_thread_.reset(new std::thread([this]() {
             std::this_thread::sleep_for(std::chrono::seconds(constants::timeout::ORDER_STATE_TIMEOUT_SECONDS));
             // Check if object was destroyed before accessing members
             if (!destroyed_.load() && !order_state_queried_.load()) {
@@ -127,7 +127,7 @@ void StrategyContainer::start() {
                 order_state_queried_.store(true);
                 check_and_start_strategy();
             }
-        });
+        }));
     }
     
     // Set timeout for balance and position if they don't arrive
@@ -255,23 +255,6 @@ void StrategyContainer::on_account_balance_update(const proto::AccountBalanceUpd
     check_and_start_strategy();
 }
 
-void StrategyContainer::on_defi_delta_update(const std::string& asset_symbol, double delta_tokens) {
-    logging::Logger logger("STRATEGY_CONTAINER");
-    
-    logger.debug("Received DeFi delta update: " + asset_symbol + " delta=" + std::to_string(delta_tokens) + " tokens");
-    
-    // Forward to strategy only if it's fully started
-    // Strategy will convert tokens to contracts and update DeFi position
-    if (strategy_ && strategy_fully_started_.load()) {
-        // Try to cast to MarketMakingStrategy to call DeFi delta handler
-        auto mm_strategy = std::dynamic_pointer_cast<MarketMakingStrategy>(strategy_);
-        if (mm_strategy) {
-            mm_strategy->on_defi_delta_update(asset_symbol, delta_tokens);
-        } else {
-            logger.warn("Strategy does not support DeFi delta updates");
-        }
-    }
-}
 
 // Configuration
 void StrategyContainer::set_symbol(const std::string& symbol) {

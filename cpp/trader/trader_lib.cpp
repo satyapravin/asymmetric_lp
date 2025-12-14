@@ -47,10 +47,6 @@ bool TraderLib::initialize(const std::string& config_file) {
     std::string oms_subscribe_endpoint = config_manager_ ?
         config_manager_->get_string("SUBSCRIBERS", "TRADING_ENGINE_SUB_ENDPOINT", "tcp://127.0.0.1:5558") :
         "tcp://127.0.0.1:5558";
-    std::string defi_delta_endpoint = config_manager_ ?
-        config_manager_->get_string("SUBSCRIBERS", "DEFI_DELTA_SUB_ENDPOINT", "tcp://127.0.0.1:5555") :
-        "tcp://127.0.0.1:5555";  // Python LP publishes on port 5555
-    
     // Create MDS adapter
     mds_adapter_ = std::make_shared<ZmqMDSAdapter>(mds_endpoint, "market_data", exchange_);
     logger.debug("Created MDS adapter for endpoint: " + mds_endpoint);
@@ -62,10 +58,6 @@ bool TraderLib::initialize(const std::string& config_file) {
     // Create OMS adapter
     oms_adapter_ = std::make_shared<ZmqOMSAdapter>(oms_publish_endpoint, "orders", oms_subscribe_endpoint, "order_events");
     logger.debug("Created OMS adapter for endpoints: " + oms_publish_endpoint + " / " + oms_subscribe_endpoint);
-    
-    // Create DeFi delta adapter (subscribes to Python LP rebalancer)
-    defi_delta_adapter_ = std::make_shared<ZmqDefiDeltaAdapter>(defi_delta_endpoint, "inventory_update");
-    logger.debug("Created DeFi delta adapter for endpoint: " + defi_delta_endpoint);
     
     return true;
 }
@@ -143,10 +135,6 @@ void TraderLib::stop() {
         logger.debug("Stopping PMS adapter");
         pms_adapter_->stop();
     }
-    if (defi_delta_adapter_) {
-        logger.debug("Stopping DeFi delta adapter");
-        defi_delta_adapter_->stop();
-    }
     
     running_.store(false);
     logger.info("Stopped successfully");
@@ -198,19 +186,6 @@ void TraderLib::set_strategy(std::shared_ptr<AbstractStrategy> strategy) {
             
             // Forward balance update to strategy container
             strategy_container_->on_account_balance_update(balance);
-        });
-    }
-    
-    // Set up DeFi delta adapter callback to forward delta updates to strategy container
-    if (defi_delta_adapter_) {
-        logger.debug("Setting up DeFi delta adapter callback");
-        defi_delta_adapter_->set_delta_callback([this](const std::string& asset_symbol, double delta_tokens) {
-            logging::Logger callback_logger("TRADER_LIB");
-            callback_logger.debug("DeFi delta adapter received delta: " + asset_symbol + 
-                                 " delta=" + std::to_string(delta_tokens) + " tokens");
-            
-            // Forward DeFi delta to strategy container
-            strategy_container_->on_defi_delta_update(asset_symbol, delta_tokens);
         });
     }
     
@@ -327,6 +302,42 @@ void TraderLib::handle_error(const std::string& error_message) {
     // Log error
     logging::Logger logger("TRADER_LIB");
     logger.error("Error: " + error_message);
+}
+
+// Testing interface - simulate events for testing
+void TraderLib::simulate_market_data(const proto::OrderBookSnapshot& orderbook) {
+    if (strategy_container_) {
+        strategy_container_->on_market_data(orderbook);
+    }
+    handle_market_data(orderbook);
+}
+
+void TraderLib::simulate_order_event(const proto::OrderEvent& order_event) {
+    if (strategy_container_) {
+        strategy_container_->on_order_event(order_event);
+    }
+    handle_order_event(order_event);
+}
+
+void TraderLib::simulate_position_update(const proto::PositionUpdate& position) {
+    if (strategy_container_) {
+        strategy_container_->on_position_update(position);
+    }
+    handle_position_update(position);
+}
+
+void TraderLib::simulate_balance_update(const proto::AccountBalanceUpdate& balance) {
+    if (strategy_container_) {
+        strategy_container_->on_account_balance_update(balance);
+    }
+    handle_balance_update(balance);
+}
+
+void TraderLib::simulate_trade_execution(const proto::Trade& trade) {
+    if (strategy_container_) {
+        strategy_container_->on_trade_execution(trade);
+    }
+    handle_trade_execution(trade);
 }
 
 } // namespace trader

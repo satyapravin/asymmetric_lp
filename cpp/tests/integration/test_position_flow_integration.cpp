@@ -3,6 +3,9 @@
 #include "../position_server/position_server_lib.hpp"
 #include "../tests/mocks/mock_websocket_transport.hpp"
 #include "../exchanges/binance/private_websocket/binance_pms.hpp"
+#include "../proto/acc_balance.pb.h"
+#include "../proto/position.pb.h"
+#include "../proto/order.pb.h"
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -109,18 +112,46 @@ TEST_CASE("POSITION FLOW INTEGRATION TEST") {
     // IMPORTANT: Set exchange BEFORE initializing (required)
     position_server->set_exchange("binance");
     
+    // Use unique config with ports 6400-6404 to avoid conflicts with other tests
+    const std::string config_file = "../../tests/config/test_config_positionflow.ini";
+
     std::cout << "[STEP 5] Setting up trader library..." << std::endl;
     trader_lib->set_exchange("binance");
-    trader_lib->initialize("../tests/test_config.ini");
+    trader_lib->initialize(config_file);
     trader_lib->set_strategy(test_strategy);
     
     trader_lib->start();
     
-    std::cout << "[STEP 6] Setting up position server..." << std::endl;
-    position_server->initialize("../tests/test_config.ini");
+    // Send mock balance, position, and order events to allow strategy to start
+    proto::AccountBalanceUpdate balance_update;
+    auto* balance = balance_update.add_balances();
+    balance->set_exch("binance");
+    balance->set_instrument("USDT");
+    balance->set_available(10000.0);
+    balance->set_locked(0.0);
+    trader_lib->simulate_balance_update(balance_update);
     
-    // Create ZMQ publisher for position server
-    auto zmq_publisher = std::make_shared<ZmqPublisher>("tcp://127.0.0.1:5556");
+    proto::PositionUpdate init_position;
+    init_position.set_exch("binance");
+    init_position.set_symbol("BTCUSDT");
+    init_position.set_qty(0.0);
+    trader_lib->simulate_position_update(init_position);
+    
+    proto::OrderEvent order_event;
+    order_event.set_cl_ord_id("init_order");
+    order_event.set_exch("binance");
+    order_event.set_symbol("BTCUSDT");
+    order_event.set_event_type(proto::ACK);
+    trader_lib->simulate_order_event(order_event);
+    
+    // Give strategy container time to process and start
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    
+    std::cout << "[STEP 6] Setting up position server..." << std::endl;
+    position_server->initialize(config_file);
+    
+    // Create ZMQ publisher for position server (using config's port)
+    auto zmq_publisher = std::make_shared<ZmqPublisher>("tcp://127.0.0.1:6401");
     position_server->set_zmq_publisher(zmq_publisher);
     
     std::cout << "[STEP 7] Injecting mock WebSocket transport..." << std::endl;

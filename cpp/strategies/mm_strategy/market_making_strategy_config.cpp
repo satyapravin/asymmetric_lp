@@ -34,6 +34,17 @@ void MarketMakingStrategyConfig::load_from_config(
     
     // Volatility Calculation
     ewma_decay_factor = config_manager.get_double(section, "ewma_decay_factor", ewma_decay_factor);
+    
+    // Micro Price Skew
+    micro_price_skew_alpha = config_manager.get_double(section, "micro_price_skew_alpha", micro_price_skew_alpha);
+    
+    // Net Inventory Skew (CeFi + DeFi combined)
+    net_inventory_skew_gamma = config_manager.get_double(section, "net_inventory_skew_gamma", net_inventory_skew_gamma);
+    
+    // DeFi Inventory Flow Weights
+    defi_flow_5s_weight = config_manager.get_double(section, "defi_flow_5s_weight", defi_flow_5s_weight);
+    defi_flow_1m_weight = config_manager.get_double(section, "defi_flow_1m_weight", defi_flow_1m_weight);
+    defi_flow_5m_weight = config_manager.get_double(section, "defi_flow_5m_weight", defi_flow_5m_weight);
 }
 
 bool MarketMakingStrategyConfig::load_from_file(
@@ -80,6 +91,15 @@ void MarketMakingStrategyConfig::print() const {
        << "  Max Position Size: " << max_position_size << std::endl
        << "\n[Volatility]" << std::endl
        << "  EWMA Decay Factor: " << ewma_decay_factor << std::endl
+       << "\n[Micro Price Skew]" << std::endl
+       << "  Alpha: " << micro_price_skew_alpha << std::endl
+       << "\n[Net Inventory Skew]" << std::endl
+       << "  Gamma: " << net_inventory_skew_gamma << std::endl
+       << "  (Net inventory = CeFi + DeFi flow, both in contracts, normalized to % of collateral)" << std::endl
+       << "\n[DeFi Inventory Flow Weights]" << std::endl
+       << "  5s Weight: " << defi_flow_5s_weight << std::endl
+       << "  1m Weight: " << defi_flow_1m_weight << " (primary)" << std::endl
+       << "  5m Weight: " << defi_flow_5m_weight << std::endl
        << "===========================================";
     logger.info(ss.str());
 }

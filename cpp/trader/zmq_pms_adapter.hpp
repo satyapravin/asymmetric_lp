@@ -38,16 +38,7 @@ public:
     LOG_INFO_COMP("PMS_ADAPTER", "Stopping PMS adapter");
     running_.store(false);
     
-    // Close ZMQ subscribers to unblock receive() calls
-    if (subscriber_) {
-      subscriber_.reset();
-      LOG_INFO_COMP("PMS_ADAPTER", "Position ZMQ subscriber closed");
-    }
-    if (balance_subscriber_) {
-      balance_subscriber_.reset();
-      LOG_INFO_COMP("PMS_ADAPTER", "Balance ZMQ subscriber closed");
-    }
-    
+    // Join threads first - they will exit due to running_ being false and receive timeout
     if (worker_.joinable()) {
       worker_.join();
       LOG_INFO_COMP("PMS_ADAPTER", "Position worker stopped");
@@ -55,6 +46,16 @@ public:
     if (balance_worker_.joinable()) {
       balance_worker_.join();
       LOG_INFO_COMP("PMS_ADAPTER", "Balance worker stopped");
+    }
+    
+    // Now safe to destroy subscribers after threads have exited
+    if (subscriber_) {
+      subscriber_.reset();
+      LOG_INFO_COMP("PMS_ADAPTER", "Position ZMQ subscriber closed");
+    }
+    if (balance_subscriber_) {
+      balance_subscriber_.reset();
+      LOG_INFO_COMP("PMS_ADAPTER", "Balance ZMQ subscriber closed");
     }
     LOG_INFO_COMP("PMS_ADAPTER", "PMS adapter stopped");
   }
@@ -69,7 +70,7 @@ private:
     LOG_INFO_COMP("PMS_ADAPTER", "Starting to listen on " + endpoint_ + " topic: " + topic_);
     subscriber_ = std::make_unique<ZmqSubscriber>(endpoint_, topic_);
     while (running_.load()) {
-      auto msg = subscriber_->receive();
+      auto msg = subscriber_->receive_blocking(100); // 100ms timeout to allow checking running_ flag
       if (!msg) continue;
       
       LOG_DEBUG_COMP("PMS_ADAPTER", "Received message of size: " + std::to_string(msg->size()) + " bytes");
@@ -92,7 +93,7 @@ private:
     LOG_INFO_COMP("PMS_ADAPTER", "Starting balance subscriber on " + endpoint_ + " topic: balance_updates");
     balance_subscriber_ = std::make_unique<ZmqSubscriber>(endpoint_, "balance_updates");
     while (running_.load()) {
-      auto msg = balance_subscriber_->receive();
+      auto msg = balance_subscriber_->receive_blocking(100); // 100ms timeout to allow checking running_ flag
       if (!msg) continue;
       
       LOG_DEBUG_COMP("PMS_ADAPTER", "Received balance message of size: " + std::to_string(msg->size()) + " bytes");

@@ -14,7 +14,6 @@
 #include "../trader/zmq_oms_adapter.hpp"
 #include "../trader/zmq_mds_adapter.hpp"
 #include "../trader/zmq_pms_adapter.hpp"
-#include "../trader/zmq_defi_delta_adapter.hpp"
 #include "../utils/zmq/zmq_subscriber.hpp"
 #include "../utils/zmq/zmq_publisher.hpp"
 #include "../utils/config/process_config_manager.hpp"
@@ -55,7 +54,6 @@ public:
     void set_oms_adapter(std::shared_ptr<ZmqOMSAdapter> adapter) { oms_adapter_ = adapter; }
     void set_mds_adapter(std::shared_ptr<ZmqMDSAdapter> adapter) { mds_adapter_ = adapter; }
     void set_pms_adapter(std::shared_ptr<ZmqPMSAdapter> adapter) { pms_adapter_ = adapter; }
-    void set_defi_delta_adapter(std::shared_ptr<ZmqDefiDeltaAdapter> adapter) { defi_delta_adapter_ = adapter; }
 
     // Event callbacks for testing
     using OrderEventCallback = std::function<void(const proto::OrderEvent&)>;
@@ -170,7 +168,6 @@ private:
     std::shared_ptr<ZmqOMSAdapter> oms_adapter_;
     std::shared_ptr<ZmqMDSAdapter> mds_adapter_;
     std::shared_ptr<ZmqPMSAdapter> pms_adapter_;
-    std::shared_ptr<ZmqDefiDeltaAdapter> defi_delta_adapter_;
     
     // OMS event polling thread
     std::atomic<bool> oms_event_running_;

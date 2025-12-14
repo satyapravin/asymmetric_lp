@@ -6,6 +6,9 @@
 #include "../../utils/zmq/zmq_publisher.hpp"
 #include "../../strategies/base_strategy/abstract_strategy.hpp"
 #include "../../proto/market_data.pb.h"
+#include "../../proto/acc_balance.pb.h"
+#include "../../proto/position.pb.h"
+#include "../../proto/order.pb.h"
 #include <atomic>
 #include <thread>
 #include <chrono>
@@ -58,8 +61,11 @@ TEST_CASE("GRVT FULL FLOW INTEGRATION TEST - Orderbook") {
     std::cout << "\n=== GRVT FULL FLOW INTEGRATION TEST (Orderbook) ===" << std::endl;
     std::cout << "Flow: Mock WebSocket → Market Server → ZMQ → TraderLib → Strategy" << std::endl;
     
-    // Endpoints consistent with TraderLib defaults
-    const std::string market_data_endpoint = "tcp://127.0.0.1:5555"; // TraderLib subscribes here
+    // Use unique config with ports 6200-6204 to avoid conflicts with other tests
+    const std::string config_file = "../../tests/config/test_config_grvt.ini";
+    
+    // Endpoints consistent with config
+    const std::string market_data_endpoint = "tcp://127.0.0.1:6200"; // TraderLib subscribes here
     const std::string server_pub_endpoint = market_data_endpoint;     // Market Server publishes here
 
     // 1) Create TraderLib with strategy
@@ -67,17 +73,42 @@ TEST_CASE("GRVT FULL FLOW INTEGRATION TEST - Orderbook") {
     auto trader_lib = std::make_unique<trader::TraderLib>();
     trader_lib->set_exchange("grvt");
     trader_lib->set_symbol("ETH_USDT_Perp");
-    trader_lib->initialize("../tests/test_config.ini");
+    trader_lib->initialize(config_file);
     auto strategy = std::make_shared<GrvtMarketDataCaptureStrategy>();
     trader_lib->set_strategy(strategy);
     trader_lib->start();
+    
+    // Send mock balance, position, and order events to allow strategy to start
+    proto::AccountBalanceUpdate balance_update;
+    auto* balance = balance_update.add_balances();
+    balance->set_exch("grvt");
+    balance->set_instrument("USDT");
+    balance->set_available(10000.0);
+    balance->set_locked(0.0);
+    trader_lib->simulate_balance_update(balance_update);
+    
+    proto::PositionUpdate position_update;
+    position_update.set_exch("grvt");
+    position_update.set_symbol("ETH_USDT_Perp");
+    position_update.set_qty(0.0);
+    trader_lib->simulate_position_update(position_update);
+    
+    proto::OrderEvent order_event;
+    order_event.set_cl_ord_id("test_order");
+    order_event.set_exch("grvt");
+    order_event.set_symbol("ETH_USDT_Perp");
+    order_event.set_event_type(proto::ACK);
+    trader_lib->simulate_order_event(order_event);
+    
+    // Give strategy container time to process and start
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
     // 2) Create MarketServerLib and inject mock websocket
     std::cout << "\n[STEP 2] Creating MarketServerLib with mock WebSocket..." << std::endl;
     auto market_server = std::make_unique<market_server::MarketServerLib>();
     market_server->set_exchange("grvt");
     market_server->set_symbol("ETH_USDT_Perp");
-    market_server->initialize("../tests/test_config.ini");
+    market_server->initialize(config_file);
     
     // Configure server publisher to TraderLib's expected endpoint
     auto server_pub = std::make_shared<ZmqPublisher>(server_pub_endpoint);
@@ -139,6 +170,9 @@ TEST_CASE("GRVT FULL FLOW INTEGRATION TEST - Market Server Direct") {
     std::cout << "\n=== GRVT FULL FLOW INTEGRATION TEST (Market Server Direct) ===" << std::endl;
     std::cout << "Flow: Mock WebSocket → Market Server → ZMQ → TraderLib → Strategy" << std::endl;
 
+    // Use unique config with ports 6210-6214 to avoid conflicts with other tests
+    const std::string config_file = "../../tests/config/test_config_grvt.ini";
+
     // Step 1: Create mock WebSocket transport and queue test messages
     std::cout << "\n[STEP 1] Creating mock WebSocket transport..." << std::endl;
     auto mock_transport = std::make_unique<test_utils::MockWebSocketTransport>();
@@ -169,7 +203,12 @@ TEST_CASE("GRVT FULL FLOW INTEGRATION TEST - Market Server Direct") {
     std::cout << "\n[STEP 4] Initializing Market Server (publisher binds first)..." << std::endl;
     // Initialize Market Server (this will set up 0MQ publishing)
     // Exchange and symbol are already set above
-    market_server->initialize("../tests/test_config.ini");
+    market_server->initialize(config_file);
+    
+    // Create ZmqPublisher for market server to publish to
+    auto market_pub = std::make_shared<ZmqPublisher>("tcp://127.0.0.1:6200");
+    market_server->set_zmq_publisher(market_pub);
+    
     // Inject the mock WebSocket transport into Market Server
     market_server->set_websocket_transport(std::move(mock_transport));
     // Give publisher time to bind and be ready
@@ -183,7 +222,7 @@ TEST_CASE("GRVT FULL FLOW INTEGRATION TEST - Market Server Direct") {
     // Configure trader library
     trader_lib->set_symbol("ETH_USDT_Perp");
     trader_lib->set_exchange("grvt");
-    trader_lib->initialize("../tests/test_config.ini");
+    trader_lib->initialize(config_file);
     
     // Give subscriber time to connect to ZMQ publisher
     // ZMQ connections need time to establish (ZMQ "slow joiner" problem)
@@ -193,6 +232,31 @@ TEST_CASE("GRVT FULL FLOW INTEGRATION TEST - Market Server Direct") {
     trader_lib->set_strategy(std::shared_ptr<GrvtMarketDataCaptureStrategy>(test_strategy.release()));
     // Start trader library after publisher is up and subscriber is connected
     trader_lib->start();
+    
+    // Send mock balance, position, and order events to allow strategy to start
+    proto::AccountBalanceUpdate balance_update;
+    auto* balance = balance_update.add_balances();
+    balance->set_exch("grvt");
+    balance->set_instrument("USDT");
+    balance->set_available(10000.0);
+    balance->set_locked(0.0);
+    trader_lib->simulate_balance_update(balance_update);
+    
+    proto::PositionUpdate position_update;
+    position_update.set_exch("grvt");
+    position_update.set_symbol("ETH_USDT_Perp");
+    position_update.set_qty(0.0);
+    trader_lib->simulate_position_update(position_update);
+    
+    proto::OrderEvent order_event;
+    order_event.set_cl_ord_id("test_order");
+    order_event.set_exch("grvt");
+    order_event.set_symbol("ETH_USDT_Perp");
+    order_event.set_event_type(proto::ACK);
+    trader_lib->simulate_order_event(order_event);
+    
+    // Give strategy container time to process and start
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
     
     // Give subscriber time to fully connect and be ready to receive messages
     // This ensures the ZMQ connection is fully established before we start sending messages

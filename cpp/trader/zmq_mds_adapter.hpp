@@ -28,11 +28,16 @@ public:
   void stop() {
     LOG_INFO_COMP("MDS_ADAPTER", "Stopping MDS adapter");
     running_.store(false);
-    if (subscriber_) {
-      subscriber_.reset(); // This will call the destructor and close the ZMQ socket
-    }
+    
+    // Join thread first - it will exit due to running_ being false and receive timeout
     if (worker_.joinable()) {
       worker_.join();
+      LOG_INFO_COMP("MDS_ADAPTER", "MDS adapter thread joined");
+    }
+    
+    // Now safe to destroy subscriber after thread has exited
+    if (subscriber_) {
+      subscriber_.reset();
       LOG_INFO_COMP("MDS_ADAPTER", "MDS adapter stopped");
     }
   }
@@ -45,7 +50,8 @@ private:
     LOG_INFO_COMP("MDS_ADAPTER", "Starting to listen on " + endpoint_ + " topic: " + topic_);
     
     while (running_.load()) {
-      auto msg = subscriber_->receive();
+      // Use blocking receive with timeout so thread can check running_ flag
+      auto msg = subscriber_->receive_blocking(100); // 100ms timeout
       if (!msg) continue;
       
       LOG_INFO_COMP("MDS_ADAPTER", "Received message of size: " + std::to_string(msg->size()) + " bytes");

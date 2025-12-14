@@ -94,6 +94,17 @@ void MarketMakingStrategy::apply_config(const MarketMakingStrategyConfig& config
     
     // Apply volatility config
     set_ewma_decay_factor(config.ewma_decay_factor);
+    
+    // Apply micro price skew config
+    micro_price_skew_alpha_ = config.micro_price_skew_alpha;
+    
+    // Apply net inventory skew config
+    net_inventory_skew_gamma_ = config.net_inventory_skew_gamma;
+    
+    // Apply DeFi inventory flow weights
+    flow_5s_weight_ = config.defi_flow_5s_weight;
+    flow_1m_weight_ = config.defi_flow_1m_weight;
+    flow_5m_weight_ = config.defi_flow_5m_weight;
 }
 
 void MarketMakingStrategy::start() {
@@ -204,104 +215,6 @@ void MarketMakingStrategy::on_account_balance_update(const proto::AccountBalance
     // Update internal balance tracking or risk management
 }
 
-void MarketMakingStrategy::on_defi_delta_update(const std::string& asset_symbol, double delta_tokens) {
-    if (!running_.load()) {
-        return;
-    }
-    
-    logging::Logger logger = get_logger();
-    logger.info("DeFi delta update: " + asset_symbol + " delta=" + std::to_string(delta_tokens) + " tokens");
-    
-    // Verify asset_symbol matches our symbol's base token
-    // For BTCUSDT-PERP, we expect "BTC" or similar
-    // Extract base token from symbol_ (e.g., "BTC" from "BTCUSDT-PERP")
-    std::string base_token = symbol_;
-    size_t usdt_pos = base_token.find("USDT");
-    size_t usdc_pos = base_token.find("USDC");
-    size_t perp_pos = base_token.find("-PERP");
-    
-    if (usdt_pos != std::string::npos) {
-        base_token = base_token.substr(0, usdt_pos);
-    } else if (usdc_pos != std::string::npos) {
-        base_token = base_token.substr(0, usdc_pos);
-    } else if (perp_pos != std::string::npos) {
-        base_token = base_token.substr(0, perp_pos);
-    }
-    
-    // Check if asset_symbol matches our base token (case-insensitive)
-    std::string asset_upper = asset_symbol;
-    std::string base_upper = base_token;
-    std::transform(asset_upper.begin(), asset_upper.end(), asset_upper.begin(), ::toupper);
-    std::transform(base_upper.begin(), base_upper.end(), base_upper.begin(), ::toupper);
-    
-    if (asset_upper != base_upper) {
-        logger.debug("Ignoring DeFi delta for " + asset_symbol + " (expected " + base_token + ")");
-        return;
-    }
-    
-    // Convert delta from tokens to contracts using current spot price
-    double spot_price = current_spot_price_.load();
-    if (spot_price <= 0.0) {
-        logger.warn("Cannot convert DeFi delta to contracts: invalid spot price");
-        return;
-    }
-    
-    auto& symbol_registry = ExchangeSymbolRegistry::get_instance();
-    double delta_contracts = symbol_registry.token_qty_to_contracts(
-        exchange_, symbol_, delta_tokens, spot_price);
-    
-    if (delta_contracts == 0.0 && delta_tokens != 0.0) {
-        logger.error("Failed to convert DeFi delta to contracts: " + std::to_string(delta_tokens) + " tokens");
-        return;
-    }
-    
-    logger.info("Converted DeFi delta: " + std::to_string(delta_tokens) + " tokens -> " + 
-                std::to_string(delta_contracts) + " contracts (price=" + std::to_string(spot_price) + ")");
-    
-    // Update DeFi position
-    // For now, we'll create/update a synthetic DeFi position entry
-    // In production, this would update actual Uniswap LP position tracking
-    // We use a synthetic pool address to represent the aggregate DeFi delta
-    std::string synthetic_pool_address = "DEFI_DELTA_" + symbol_;
-    
-    {
-        std::lock_guard<std::mutex> lock(defi_positions_mutex_);
-        
-        // Get current DeFi position if it exists
-        auto it = defi_positions_.find(synthetic_pool_address);
-        double current_token1_contracts = 0.0;
-        if (it != defi_positions_.end()) {
-            current_token1_contracts = it->second.token1_amount;  // Already in contracts
-        }
-        
-        // Accumulate delta (delta_contracts is the change, not absolute value)
-        double new_token1_contracts = current_token1_contracts + delta_contracts;
-        
-        // Update token1_amount (in contracts after conversion)
-        DefiPosition defi_pos;
-        defi_pos.pool_address = synthetic_pool_address;
-        defi_pos.token0_amount = 0.0;  // Not tracking token0 for perps
-        defi_pos.token1_amount = new_token1_contracts;  // Store accumulated contracts
-        defi_pos.liquidity = 0.0;
-        defi_pos.range_lower = 0.0;
-        defi_pos.range_upper = 0.0;
-        defi_pos.fee_tier = 0;
-        
-        defi_positions_[synthetic_pool_address] = defi_pos;
-        
-        logger.info("Updated DeFi position: " + synthetic_pool_address + 
-                   " delta=" + std::to_string(delta_contracts) + " contracts" +
-                   " total=" + std::to_string(new_token1_contracts) + " contracts");
-    }
-    
-    // Trigger quote update if inventory changed significantly
-    if (std::abs(delta_tokens) > 0.001) {  // Threshold: 0.001 tokens
-        double spot_price_check = current_spot_price_.load();
-        if (spot_price_check > 0.0) {
-            update_quotes();
-        }
-    }
-}
 
 // Order management methods removed - Strategy calls Container instead
 
@@ -411,38 +324,35 @@ void MarketMakingStrategy::update_quotes() {
         return;
     }
     
-    // Calculate combined inventory (CeFi + DeFi)
+    // Calculate CeFi-only inventory (GLFT uses only CeFi inventory)
     double spot_price = current_spot_price_.load();
-    CombinedInventory combined = calculate_combined_inventory(spot_price);
+    CeFiInventory cefi = calculate_cefi_inventory();
     
     // Get current volatility
     double volatility = current_volatility_.load();
     
-    // Convert combined position from contracts to tokens for GLFT
-    // GLFT expects token1_total in tokens (BTC), but combined.token1_total is in contracts
+    // Convert CeFi position from contracts to tokens for GLFT
+    // GLFT expects token1 in tokens (BTC), but cefi.token1 is in contracts
     auto& symbol_registry = ExchangeSymbolRegistry::get_instance();
-    double combined_token1_tokens = 0.0;
-    if (combined.token1_total != 0.0 && spot_price > 0.0) {
-        combined_token1_tokens = symbol_registry.contracts_to_token_qty(
-            exchange_, symbol_, combined.token1_total, spot_price);
+    double cefi_token1_tokens = 0.0;
+    if (cefi.token1 != 0.0 && spot_price > 0.0) {
+        cefi_token1_tokens = symbol_registry.contracts_to_token_qty(
+            exchange_, symbol_, cefi.token1, spot_price);
     }
     
-    // Calculate target inventory using GLFT model
-    // GLFT expects: token0_total (collateral in USD), token1_total (position in tokens/BTC)
+    // Calculate target inventory using GLFT model (CeFi-only)
+    // GLFT expects: token0 (collateral in USD), token1 (position in tokens/BTC)
     double target_offset = glft_model_->compute_target(
-        combined.token0_total,      // Collateral in USD
-        combined_token1_tokens,      // Position in tokens (BTC), converted from contracts
+        cefi.token0,           // Collateral in USD (CeFi only)
+        cefi_token1_tokens,   // Position in tokens (BTC), converted from contracts (CeFi only)
         spot_price,
         volatility
     );
     
     std::stringstream ss;
-    ss << "GLFT target calculation:" << std::endl
-       << "  Combined inventory - Token0: " << combined.token0_total 
-       << " (CeFi: " << combined.token0_cefi << ", DeFi: " << combined.token0_defi << ")" << std::endl
-       << "  Combined inventory - Token1: " << combined.token1_total << " contracts"
-       << " (CeFi: " << combined.token1_cefi << " contracts, DeFi: " << combined.token1_defi << " contracts)" << std::endl
-       << "  Combined inventory - Token1: " << combined_token1_tokens << " tokens (for GLFT)" << std::endl
+    ss << "GLFT target calculation (CeFi-only):" << std::endl
+       << "  CeFi inventory - Token0 (collateral): " << cefi.token0 << " USD" << std::endl
+       << "  CeFi inventory - Token1: " << cefi.token1 << " contracts = " << cefi_token1_tokens << " tokens" << std::endl
        << "  Spot price: " << spot_price << std::endl
        << "  Volatility: " << volatility << std::endl
        << "  Target offset: " << target_offset;
@@ -451,13 +361,13 @@ void MarketMakingStrategy::update_quotes() {
     // Update current inventory delta with target offset
     current_inventory_delta_.store(target_offset);
     
-    // Calculate bid/ask prices based on GLFT model
+    // Calculate bid/ask prices based on GLFT model (CeFi-only)
     // The GLFT model gives us a target offset, but we need to convert this to actual bid/ask prices
     // For market making, we place limit orders around the mid price with a spread
     
     // Calculate effective spread from GLFT components
-    // Use token1_total in tokens (not contracts) for skew calculation
-    double normalized_skew = (combined_token1_tokens * spot_price) / std::max(combined.token0_total, 1.0);
+    // Use CeFi token1 in tokens (not contracts) for skew calculation
+    double normalized_skew = (cefi_token1_tokens * spot_price) / std::max(cefi.token0, 1.0);
     double base_spread = glft_model_->get_config().base_spread;
     double risk_aversion = glft_model_->get_config().risk_aversion;
     double inventory_penalty = glft_model_->get_config().inventory_penalty;
@@ -469,18 +379,106 @@ void MarketMakingStrategy::update_quotes() {
     double terminal_risk = terminal_penalty * (normalized_skew * normalized_skew);
     double total_spread = base_spread + inventory_risk + terminal_risk;
     
-    // Calculate bid/ask prices
+    // Calculate base bid/ask prices from GLFT (CeFi-only)
     // Mid price is the current spot price
     double mid_price = spot_price;
     double half_spread = total_spread * mid_price / 2.0;  // Half spread in price units
     
-    // Adjust quotes based on target offset
+    // Adjust quotes based on GLFT target offset (CeFi-only)
     // Negative target_offset means we want to reduce position -> widen ask (discourage buying), narrow bid (encourage selling)
     // Positive target_offset means we want to increase position -> narrow ask (encourage buying), widen bid (discourage selling)
-    double offset_adjustment = target_offset * spot_price / std::max(combined.token0_total, 1.0);  // Normalize adjustment
+    double offset_adjustment = target_offset * spot_price / std::max(cefi.token0, 1.0);  // Normalize adjustment
     
-    double bid_price = mid_price - half_spread - offset_adjustment;  // Adjust bid based on target
-    double ask_price = mid_price + half_spread - offset_adjustment;  // Adjust ask based on target
+    double bid_price = mid_price - half_spread - offset_adjustment;  // Base bid from GLFT
+    double ask_price = mid_price + half_spread - offset_adjustment;  // Base ask from GLFT
+    
+    // Apply micro price skew signal (order flow imbalance)
+    // Widen spread based on micro price deviation from mid and orderbook imbalance
+    // This is a risk management measure - wider spread when there's order flow imbalance
+    double micro_price_skew = get_micro_price_skew();
+    double orderbook_imbalance = get_orderbook_imbalance();
+    
+    if (std::abs(micro_price_skew) > 0.0001 || std::abs(orderbook_imbalance) > 0.1) {
+        // Combine micro price deviation and orderbook imbalance
+        // Micro price deviation: |micro_price - mid_price| / mid_price
+        // Orderbook imbalance: |bid_qty - ask_qty| / (bid_qty + ask_qty)
+        double micro_deviation = std::abs(micro_price_skew);
+        double imbalance_magnitude = std::abs(orderbook_imbalance);
+        
+        // Combined signal: use max of micro price deviation and imbalance
+        // Clamp to reasonable range (max 0.5% = 50 bps)
+        double combined_signal = std::max(micro_deviation, imbalance_magnitude);
+        double clamped_signal = std::clamp(combined_signal, 0.0, 0.005);
+        
+        // Apply alpha parameter to control sensitivity
+        double adjusted_signal = clamped_signal * micro_price_skew_alpha_;
+        
+        // Widen spread symmetrically: both bid and ask move away from mid
+        // This reduces risk when there's order flow imbalance
+        double spread_widening = adjusted_signal * mid_price;
+        bid_price -= spread_widening;  // Move bid down (away from mid)
+        ask_price += spread_widening;  // Move ask up (away from mid)
+        
+        std::stringstream micro_ss;
+        micro_ss << "Applied micro price spread widening: "
+                 << "micro_dev=" << (micro_deviation * 10000) << " bps, "
+                 << "imbalance=" << (imbalance_magnitude * 100) << "%, "
+                 << "combined=" << (combined_signal * 10000) << " bps, "
+                 << "alpha=" << micro_price_skew_alpha_ 
+                 << ", final widening=" << (adjusted_signal * 10000) << " bps";
+        get_logger().debug(micro_ss.str());
+    }
+    
+    // Apply net inventory skew (CeFi inventory + DeFi flow combined)
+    // Calculate net inventory: CeFi position + DeFi flow (both in contracts)
+    // Normalize as % of collateral and apply single asymmetric skew
+    double defi_flow_contracts = cached_defi_flow_contracts_.load();
+    double net_inventory_contracts = cefi.token1 + defi_flow_contracts;  // Net position in contracts
+    
+    if (std::abs(net_inventory_contracts) > 0.0001 && cefi.token0 > 0.0 && spot_price > 0.0) {
+        // Convert net inventory from contracts to tokens
+        double net_inventory_tokens = symbol_registry.contracts_to_token_qty(
+            exchange_, symbol_, net_inventory_contracts, spot_price);
+        
+        // Normalize net inventory: convert to USD value, then divide by collateral
+        // Result is unitless percentage (e.g., 0.1 = 10% of collateral)
+        double net_skew_normalized = (net_inventory_tokens * spot_price) / cefi.token0;
+        
+        // Apply gamma parameter to control sensitivity
+        double adjusted_skew_normalized = net_skew_normalized * net_inventory_skew_gamma_;
+        
+        // Calculate skew factor (max 10% skew)
+        double net_skew_factor = std::clamp(std::abs(adjusted_skew_normalized), 0.0, 0.1);
+        
+        // Calculate skew adjustment in price units
+        double skew_adjustment = net_skew_factor * mid_price;
+        
+        if (net_inventory_contracts > 0.0) {
+            // Net long position: encourage selling to bring inventory to zero
+            // Bring ask closer (narrow) = ask_price DOWN (toward mid)
+            // Widen bid = bid_price DOWN (away from mid)
+            bid_price -= skew_adjustment;  // Move bid down (wider, away from mid)
+            ask_price -= skew_adjustment;  // Move ask down (closer/narrow, toward mid)
+        } else {
+            // Net short position: encourage buying to bring inventory to zero
+            // Bring bid closer (narrow) = bid_price UP (toward mid)
+            // Widen ask = ask_price UP (away from mid)
+            bid_price += skew_adjustment;  // Move bid up (closer/narrow, toward mid)
+            ask_price += skew_adjustment;  // Move ask up (wider, away from mid)
+        }
+        
+        std::stringstream skew_ss;
+        skew_ss << "Applied net inventory skew: "
+                << "CeFi=" << cefi.token1 << " contracts, "
+                << "DeFi_flow=" << defi_flow_contracts << " contracts, "
+                << "Net=" << net_inventory_contracts << " contracts (" 
+                << net_inventory_tokens << " tokens), "
+                << "normalized: " << (net_skew_normalized * 100) << "% of collateral, "
+                << "gamma=" << net_inventory_skew_gamma_ 
+                << ", adjusted: " << (adjusted_skew_normalized * 100) << "%, "
+                << "skew factor: " << (net_skew_factor * 100) << "%";
+        get_logger().debug(skew_ss.str());
+    }
     
     // CRITICAL: Ensure quotes never cross the best bid/ask
     // Strategy: If GLFT calculates aggressive quotes that would cross, match best bid/ask on our side
@@ -547,9 +545,9 @@ void MarketMakingStrategy::update_quotes() {
             return;
         }
         
-        // Calculate dynamic quote sizes based on inventory skew and balance
+        // Calculate dynamic quote sizes based on CeFi inventory skew and balance
         // Sizes are calculated as percentages of leveraged collateral balance
-        double actual_collateral_balance = std::max(combined.token0_total, 1.0); // Actual collateral
+        double actual_collateral_balance = std::max(cefi.token0, 1.0); // CeFi collateral only
         double leveraged_balance = actual_collateral_balance * leverage_; // Apply leverage multiplier
         
         // Calculate base sizes as percentages of leveraged balance
@@ -557,9 +555,9 @@ void MarketMakingStrategy::update_quotes() {
         double min_size_absolute = leveraged_balance * min_quote_size_pct_;
         double max_size_absolute = leveraged_balance * max_quote_size_pct_;
         
-        // When inventory is skewed, quote more on the side that reduces inventory
+        // When CeFi inventory is skewed, quote more on the side that reduces inventory
         // Normalize skew by actual collateral (not leveraged) for risk calculations
-        double normalized_skew = (combined.token1_total * spot_price) / actual_collateral_balance;
+        double normalized_skew = (cefi_token1_tokens * spot_price) / actual_collateral_balance;
         
         // Base sizes (symmetric when inventory is neutral)
         double base_bid_size = base_size_absolute;
@@ -591,6 +589,10 @@ void MarketMakingStrategy::update_quotes() {
         double original_ask_price = ask_price;
         double original_bid_size = bid_size;
         double original_ask_size = ask_size;
+        
+        // Initialize quote flags - assume both sides are valid initially
+        bool quote_bid = true;
+        bool quote_ask = true;
         
         // Round prices and sizes to exchange requirements
         if (!symbol_registry.validate_and_round(exchange_, symbol_, bid_size, bid_price)) {
@@ -681,8 +683,10 @@ void MarketMakingStrategy::update_quotes() {
                 get_logger().error("Failed to place bid order");
             }
         } else {
-            get_logger().debug("Skipping bid order - size (" + std::to_string(bid_size) + 
-                              ") below minimum (" + std::to_string(min_size_absolute) + ") after rounding");
+            std::stringstream bid_ss;
+            bid_ss << "Skipping bid order - size (" << bid_size 
+                   << ") below minimum (" << min_size_absolute << ") after rounding";
+            get_logger().debug(bid_ss.str());
         }
         
         // Place ask order (sell limit order) only if size is above minimum after rounding
@@ -701,8 +705,10 @@ void MarketMakingStrategy::update_quotes() {
                 get_logger().error("Failed to place ask order");
             }
         } else {
-            get_logger().debug("Skipping ask order - size (" + std::to_string(ask_size) + 
-                              ") below minimum (" + std::to_string(min_size_absolute) + ") after rounding");
+            std::stringstream ask_ss;
+            ask_ss << "Skipping ask order - size (" << ask_size 
+                   << ") below minimum (" << min_size_absolute << ") after rounding";
+            get_logger().debug(ask_ss.str());
         }
         
         // Track active order IDs and prices for cancellation on next update
@@ -755,14 +761,21 @@ void MarketMakingStrategy::manage_inventory() {
         return;
     }
     
-    CombinedInventory combined = calculate_combined_inventory(spot_price);
+    // Use CeFi-only inventory for risk management
+    CeFiInventory cefi = calculate_cefi_inventory();
+    double cefi_token1_tokens = 0.0;
+    if (cefi.token1 != 0.0 && spot_price > 0.0) {
+        auto& symbol_registry = ExchangeSymbolRegistry::get_instance();
+        cefi_token1_tokens = symbol_registry.contracts_to_token_qty(
+            exchange_, symbol_, cefi.token1, spot_price);
+    }
     
-    // Calculate total position value
-    double total_value = combined.token0_total + (combined.token1_total / spot_price);
+    // Calculate total position value (CeFi only)
+    double total_value = cefi.token0 + cefi_token1_tokens * spot_price;
     
     // Check if inventory exceeds limits
-    double inventory_ratio_0 = combined.token0_total / total_value;
-    double inventory_ratio_1 = (combined.token1_total / spot_price) / total_value;
+    double inventory_ratio_0 = cefi.token0 / total_value;
+    double inventory_ratio_1 = (cefi_token1_tokens * spot_price) / total_value;
     
     if (inventory_ratio_0 > max_position_size_ / 100.0 || inventory_ratio_1 > max_position_size_ / 100.0) {
         std::stringstream ss;
@@ -805,6 +818,37 @@ std::vector<MarketMakingStrategy::DefiPosition> MarketMakingStrategy::get_defi_p
     return positions;
 }
 
+// CeFi-only inventory calculation (for GLFT model)
+MarketMakingStrategy::CeFiInventory MarketMakingStrategy::calculate_cefi_inventory() const {
+    CeFiInventory cefi;
+    
+    // Get CeFi positions from exchange via Mini PMS (queried through StrategyContainer)
+    auto position_info = get_position(exchange_, symbol_);
+    if (position_info.has_value()) {
+        // token1 = perpetual position quantity in CONTRACTS
+        cefi.token1 = position_info->qty;  // Already in contracts
+    } else {
+        // Fallback: use cached inventory delta if position query fails
+        cefi.token1 = current_inventory_delta_.load();
+    }
+    
+    // Get account balances for collateral (token0, e.g., USDC)
+    auto balance_info = get_account_balance(exchange_, "USDT");  // Assuming USDT/USDC as collateral
+    if (balance_info.has_value()) {
+        cefi.token0 = balance_info->available + balance_info->locked;
+    } else {
+        // Try alternative collateral symbols
+        balance_info = get_account_balance(exchange_, "USDC");
+        if (balance_info.has_value()) {
+            cefi.token0 = balance_info->available + balance_info->locked;
+        } else {
+            cefi.token0 = 0.0;
+        }
+    }
+    
+    return cefi;
+}
+
 // Combined inventory calculation
 MarketMakingStrategy::CombinedInventory MarketMakingStrategy::calculate_combined_inventory(double spot_price) const {
     CombinedInventory inventory;
@@ -839,14 +883,14 @@ MarketMakingStrategy::CombinedInventory MarketMakingStrategy::calculate_combined
     }
     
     // DeFi inventory (from Uniswap V3 LP positions)
-    // These are tracked separately and updated via update_defi_position() or on_defi_delta_update()
-    // Note: DeFi positions stored in defi_positions_ are in CONTRACTS (after conversion from tokens in on_defi_delta_update)
+    // These are tracked separately and updated via update_defi_position()
+    // Note: DeFi positions stored in defi_positions_ are in CONTRACTS
     // So we can directly add them to CeFi contracts
     {
         std::lock_guard<std::mutex> lock(defi_positions_mutex_);
         for (const auto& [pool_address, position] : defi_positions_) {
             inventory.token0_defi += position.token0_amount;
-            inventory.token1_defi += position.token1_amount;  // Already in contracts (from on_defi_delta_update)
+            inventory.token1_defi += position.token1_amount;  // Already in contracts
         }
     }
     
@@ -855,6 +899,129 @@ MarketMakingStrategy::CombinedInventory MarketMakingStrategy::calculate_combined
     inventory.token1_total = inventory.token1_cefi + inventory.token1_defi;  // Net position in contracts
     
     return inventory;
+}
+
+double MarketMakingStrategy::calculate_micro_price(const proto::OrderBookSnapshot& orderbook, int num_levels) const {
+    // Micro price = weighted mid price from top N levels
+    // weighted_bid = sum(bid_price_i * bid_qty_i) / sum(bid_qty_i)
+    // weighted_ask = sum(ask_price_i * ask_qty_i) / sum(ask_qty_i)
+    // micro_price = (weighted_bid + weighted_ask) / 2
+    
+    if (orderbook.bids_size() == 0 || orderbook.asks_size() == 0) {
+        return 0.0;
+    }
+    
+    int bid_levels = std::min(num_levels, orderbook.bids_size());
+    int ask_levels = std::min(num_levels, orderbook.asks_size());
+    
+    if (bid_levels == 0 || ask_levels == 0) {
+        return 0.0;
+    }
+    
+    // Calculate weighted bid price
+    double weighted_bid_price = 0.0;
+    double total_bid_qty = 0.0;
+    for (int i = 0; i < bid_levels; ++i) {
+        const auto& level = orderbook.bids(i);
+        double price = level.price();
+        double qty = level.qty();
+        if (price > 0.0 && qty > 0.0) {
+            weighted_bid_price += price * qty;
+            total_bid_qty += qty;
+        }
+    }
+    
+    if (total_bid_qty <= 0.0) {
+        return 0.0;
+    }
+    weighted_bid_price /= total_bid_qty;
+    
+    // Calculate weighted ask price
+    double weighted_ask_price = 0.0;
+    double total_ask_qty = 0.0;
+    for (int i = 0; i < ask_levels; ++i) {
+        const auto& level = orderbook.asks(i);
+        double price = level.price();
+        double qty = level.qty();
+        if (price > 0.0 && qty > 0.0) {
+            weighted_ask_price += price * qty;
+            total_ask_qty += qty;
+        }
+    }
+    
+    if (total_ask_qty <= 0.0) {
+        return 0.0;
+    }
+    weighted_ask_price /= total_ask_qty;
+    
+    // Micro price is the average of weighted bid and weighted ask
+    double micro_price = (weighted_bid_price + weighted_ask_price) / 2.0;
+    
+    return micro_price;
+}
+
+double MarketMakingStrategy::get_micro_price_skew() const {
+    // Returns normalized skew: (micro_price - mid_price) / mid_price
+    // Positive = buying pressure (micro_price > mid_price)
+    // Negative = selling pressure (micro_price < mid_price)
+    
+    std::lock_guard<std::mutex> lock(orderbook_mutex_);
+    
+    if (!orderbook_cached_ || best_bid_ <= 0.0 || best_ask_ <= 0.0) {
+        return 0.0;  // No skew if no orderbook data
+    }
+    
+    double mid_price = (best_bid_ + best_ask_) / 2.0;
+    if (mid_price <= 0.0) {
+        return 0.0;
+    }
+    
+    double micro_price = calculate_micro_price(cached_orderbook_, 5);
+    if (micro_price <= 0.0) {
+        return 0.0;
+    }
+    
+    // Calculate normalized skew
+    double skew = (micro_price - mid_price) / mid_price;
+    
+    return skew;
+}
+
+double MarketMakingStrategy::get_orderbook_imbalance() const {
+    // Returns orderbook imbalance: (bid_qty - ask_qty) / (bid_qty + ask_qty)
+    // Range: [-1, 1]
+    // Positive = more bid liquidity (selling pressure)
+    // Negative = more ask liquidity (buying pressure)
+    
+    std::lock_guard<std::mutex> lock(orderbook_mutex_);
+    
+    if (!orderbook_cached_) {
+        return 0.0;
+    }
+    
+    // Sum quantities from top 5 levels
+    double total_bid_qty = 0.0;
+    double total_ask_qty = 0.0;
+    
+    int bid_levels = std::min(5, cached_orderbook_.bids_size());
+    int ask_levels = std::min(5, cached_orderbook_.asks_size());
+    
+    for (int i = 0; i < bid_levels; ++i) {
+        total_bid_qty += cached_orderbook_.bids(i).qty();
+    }
+    
+    for (int i = 0; i < ask_levels; ++i) {
+        total_ask_qty += cached_orderbook_.asks(i).qty();
+    }
+    
+    if (total_bid_qty + total_ask_qty <= 0.0) {
+        return 0.0;
+    }
+    
+    // Calculate imbalance: (bid_qty - ask_qty) / (bid_qty + ask_qty)
+    double imbalance = (total_bid_qty - total_ask_qty) / (total_bid_qty + total_ask_qty);
+    
+    return imbalance;
 }
 
 double MarketMakingStrategy::calculate_volatility_from_orderbook(const proto::OrderBookSnapshot& orderbook) const {
@@ -939,11 +1106,15 @@ void MarketMakingStrategy::update_spot_price_from_orderbook(const proto::OrderBo
         double mid_price = (best_bid + best_ask) / 2.0;
         current_spot_price_.store(mid_price);
         
-        // Store best bid/ask for quote validation
+        // Store best bid/ask for quote validation and cache orderbook for micro price calculation
         {
             std::lock_guard<std::mutex> lock(orderbook_mutex_);
             best_bid_ = best_bid;
             best_ask_ = best_ask;
+            
+            // Cache orderbook for micro price calculation (top 5 levels)
+            cached_orderbook_ = orderbook;
+            orderbook_cached_ = true;
         }
     }
 }

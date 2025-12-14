@@ -2,6 +2,7 @@
 #include <memory>
 #include <string>
 #include <atomic>
+#include <thread>
 #include "../proto/order.pb.h"
 #include "../proto/market_data.pb.h"
 #include "../proto/position.pb.h"
@@ -86,8 +87,7 @@ public:
     void on_trade_execution(const proto::Trade& trade) override;
     void on_account_balance_update(const proto::AccountBalanceUpdate& balance_update) override;
     
-    // DeFi delta update handler (not in interface, specific to StrategyContainer)
-    void on_defi_delta_update(const std::string& asset_symbol, double delta_tokens);
+    // DeFi inventory flow update handler (not in interface, specific to StrategyContainer)
     
     // Configuration
     void set_symbol(const std::string& symbol) override;

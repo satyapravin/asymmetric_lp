@@ -980,22 +980,10 @@ class AutomatedRebalancer:
                         volatility = self.inventory_model.calculate_volatility(self.price_history)
                         
                         self.inventory_publisher.update_inventory_data(
-                            token_a_symbol=token_a_info['symbol'],
-                            token_b_symbol=token_b_info['symbol'],
                             token_a_address=token0,
                             token_b_address=token1,
-                            spot_price=spot_price,
-                            inventory_ratio=inventory_status['token_a_ratio'],
                             token_a_balance=inventory_status['token_a_balance'],
-                            token_b_balance=inventory_status['token_b_balance'],
-                            token_a_usd_value=inventory_status['token_a_usd_value'],
-                            token_b_usd_value=inventory_status['token_b_usd_value'],
-                            total_usd_value=inventory_status['total_value_usd'],
-                            target_ratio=self.config.TARGET_INVENTORY_RATIO,
-                            deviation=inventory_status['inventory_imbalance'],
-                            should_rebalance=inventory_status['target_rebalance'],
-                            volatility=volatility,
-                            ranges=ranges
+                            token_b_balance=inventory_status['token_b_balance']
                         )
                     except Exception as publish_error:
                         logger.warning(f"Failed to publish inventory data: {publish_error}")

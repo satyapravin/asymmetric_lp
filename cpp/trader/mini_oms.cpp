@@ -1,4 +1,5 @@
 #include "mini_oms.hpp"
+#include "zmq_oms_adapter.hpp"
 #include "../utils/logging/logger.hpp"
 #include "../utils/exchange/exchange_symbol_registry.hpp"
 #include <random>
@@ -133,7 +134,6 @@ bool MiniOMS::send_order(const std::string& cl_ord_id,
     
     // Send order via ZMQ adapter
     if (oms_adapter_) {
-        logging::Logger logger("MINI_OMS");
         std::stringstream ss;
         ss << "Sending order: " << cl_ord_id << " " << symbol 
            << " " << (side == proto::BUY ? "BUY" : "SELL")
@@ -159,7 +159,6 @@ bool MiniOMS::send_order(const std::string& cl_ord_id,
         return true;
     }
     
-    logging::Logger logger("MINI_OMS");
     logger.error("No OMS adapter available");
     // Update state to REJECTED if no adapter
     update_order_state(cl_ord_id, OrderState::REJECTED, "No OMS adapter available");
@@ -173,33 +172,34 @@ bool MiniOMS::cancel_order(const std::string& cl_ord_id) {
         return false;
     }
     
-    std::lock_guard<std::mutex> lock(orders_mutex_);
-    auto it = orders_.find(cl_ord_id);
-    if (it == orders_.end()) {
-        logging::Logger logger("MINI_OMS");
-        logger.error("Order not found: " + cl_ord_id);
-        return false;
+    std::string exchange;
+    {
+        std::lock_guard<std::mutex> lock(orders_mutex_);
+        auto it = orders_.find(cl_ord_id);
+        if (it == orders_.end()) {
+            logging::Logger logger("MINI_OMS");
+            logger.error("Order not found: " + cl_ord_id);
+            return false;
+        }
+        
+        OrderStateInfo& order_info = it->second;
+        
+        // Check if order can be cancelled
+        if (!is_valid_order_transition(cl_ord_id, OrderState::CANCELLED)) {
+            logging::Logger logger("MINI_OMS");
+            std::stringstream ss;
+            ss << "Cannot cancel order in state: " << to_string(order_info.state);
+            logger.warn(ss.str());
+            return false;
+        }
+        
+        // Get exchange name from order info
+        exchange = order_info.exch;
+        if (exchange.empty()) {
+            exchange = exchange_name_; // Fallback to default exchange name
+        }
+        // lock automatically unlocks when it goes out of scope
     }
-    
-    OrderStateInfo& order_info = it->second;
-    
-    // Check if order can be cancelled
-    if (!is_valid_order_transition(cl_ord_id, OrderState::CANCELLED)) {
-        logging::Logger logger("MINI_OMS");
-        std::stringstream ss;
-        ss << "Cannot cancel order in state: " << to_string(order_info.state);
-        logger.warn(ss.str());
-        return false;
-    }
-    
-    // Get exchange name from order info
-    std::string exchange = order_info.exch;
-    if (exchange.empty()) {
-        exchange = exchange_name_; // Fallback to default exchange name
-    }
-    
-    // Release lock before sending cancel (prevent deadlock)
-    lock.unlock();
     
     // Send cancel request via ZMQ adapter
     if (oms_adapter_) {

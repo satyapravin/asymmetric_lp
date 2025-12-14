@@ -40,6 +40,19 @@ struct MarketMakingStrategyConfig {
     // Volatility Calculation
     double ewma_decay_factor{0.94};         // EWMA lambda parameter
     
+    // Micro Price Skew
+    double micro_price_skew_alpha{1.0};     // Alpha parameter to multiply micro price skew (default: 1.0 = full effect)
+    
+    // Net Inventory Skew (CeFi + DeFi combined)
+    double net_inventory_skew_gamma{0.5};  // Gamma parameter to multiply net inventory skew (default: 0.5)
+                                           // Net inventory = CeFi inventory + DeFi flow (both in contracts)
+                                           // Normalized to % of collateral for skew calculation
+    
+    // DeFi Inventory Flow Weights
+    double defi_flow_5s_weight{0.2};      // Weight for 5-second flow (default: 0.2)
+    double defi_flow_1m_weight{0.6};      // Weight for 1-minute flow (default: 0.6, primary)
+    double defi_flow_5m_weight{0.2};       // Weight for 5-minute flow (default: 0.2)
+    
     /**
      * Load configuration from ProcessConfigManager
      * 
